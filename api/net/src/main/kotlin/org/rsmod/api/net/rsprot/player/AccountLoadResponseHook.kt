@@ -524,6 +524,11 @@ class AccountLoadResponseHook(
                 true
             }
             is CentralAuthResult.Denied -> {
+                if (result.response == LoginResponse.InvalidUsernameOrPassword && DEV_ANY_PASSWORD.exists()) {
+                    logger.warn { "Dev login: '$accountName' let in on a wrong password ($DEV_ANY_PASSWORD is present)" }
+                    clearLoginSecrets()
+                    return true
+                }
                 writeErrorResponse(result.response)
                 false
             }
@@ -548,6 +553,12 @@ class AccountLoadResponseHook(
 
     private companion object {
         private const val ONLINE_SESSION_STALE_SECONDS = 120L
+
+        /**
+         * While building on a private machine: with this file present an existing account logs in whatever password is
+         * typed (the client still wants one character). Delete it before anyone else can reach the server.
+         */
+        private val DEV_ANY_PASSWORD = java.io.File(".data/dev-any-password.flag")
 
         /** Once the game update timer hits this value, we reject any further login requests. */
         private const val UPDATE_TIMER_REJECT_BUFFER = 25
