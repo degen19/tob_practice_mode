@@ -1,0 +1,10 @@
+# Aether runes count as a soul rune and a cosmic rune (the client's magic_runecount does the same).
+[[enum]]
+isServerOnly = true
+id = "enum.combo_rune_aether"
+keyType = "INT"
+valueType = "OBJ"
+
+[enum.values]
+0 = "obj.soulrune"
+1 = "obj.cosmicrune"

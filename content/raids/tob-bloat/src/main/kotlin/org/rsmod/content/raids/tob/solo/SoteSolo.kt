@@ -24,8 +24,8 @@ import org.rsmod.map.CoordGrid
  *   one in a solo. The path is lit under you; walk it (or not - nothing hurts you there but the realm itself, 1-3
  *   every 7 ticks) and leave by the portal at the top. Above, only the tile you stand on below glows.
  * - Normal mode solo: someone has to run the maze above for it to clear, so the portal puts you back at its start
- *   and you run it as if you weren't chosen: the path isn't shown (players screenshot it below) and a tile off it
- *   hurts 6.67% of your hitpoints + 15 each tick. She wakes (Defence back to full, attacking at once) at the start of
+ *   and you run it as if you weren't chosen: the path isn't shown (players screenshot it below) and each tick on a
+ *   tile off it hurts (the sim's maze hit for your hitpoints, 16 to 22, never more than you have). She wakes (Defence back to full, attacking at once) at the start of
  *   the next 4-tick cycle once you're off the top: off on a 4, she's attackable on the 1 after.
  * - Entry mode: the portal puts you back where the maze caught you and that's it - she wakes on the next 1.
  * - The maze procs on the landing of the hit that brings her to the threshold; you're held still until the
@@ -304,7 +304,8 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         glowAt(-1, -1)
         val x = here.x - OVER_X
         val y = here.z - OVER_Y
-        if (crossed < 0 && x in 0 until W && y in 0 until H && !m[x][y]) hurt(p, p.hitpoints / 15 + OFF_PATH)
+        // every tick on a wrong tile: the sim's maze hit for your hitpoints, never more than you have (so it can be tick-eaten)
+        if (crossed < 0 && x in 0 until W && y in 0 until H && !m[x][y]) hurt(p, minOf(org.rsmod.content.raids.tob.bloat.sote.SoteEngine.mazeDmg(p.hitpoints), p.hitpoints))
         if (crossed >= 0) {
             // she wakes at the start of the next 4-tick cycle (instance tick 1) once you're off the top
             if (now - crossed >= (if (entryMode) WAKE_ENTRY else WAKE) && instanceTick == WAKE_TICK) endMaze(quiet = false)
@@ -430,7 +431,6 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val WAKE = 0
         const val WAKE_TICK = 1
         const val WAKE_CYCLE = 4
-        const val OFF_PATH = 15
         const val WAKE_ENTRY = 1
         const val LIT = "loc.tob_sotetseg_lighttile"
         const val PLAIN = "loc.tob_sotetseg_plaintile"

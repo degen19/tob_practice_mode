@@ -97,6 +97,7 @@ valueType = "ENUM"
 "obj.smokerune" = "enum.combo_rune_smoke"
 "obj.steamrune" = "enum.combo_rune_steam"
 "obj.lavarune" = "enum.combo_rune_lava"
+"obj.aetherrune" = "enum.combo_rune_aether"
 
 [[enum]]
 isServerOnly = true

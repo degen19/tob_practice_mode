@@ -13,6 +13,10 @@ import org.rsmod.api.player.hit.queueHit
 import org.rsmod.api.player.output.mes
 import org.rsmod.api.player.protect.ProtectedAccess
 import org.rsmod.api.player.stat.baseHitpointsLvl
+import org.rsmod.api.player.stat.stat
+import org.rsmod.api.player.stat.statBase
+import org.rsmod.api.player.stat.statRestore
+import org.rsmod.api.player.vars.intVarp
 import org.rsmod.api.player.stat.hitpoints
 import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
@@ -128,6 +132,21 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
         val mode = if (entryMode) "Entry" else "Normal"
         owner.mes("Wave '${id.label}' ($mode Mode) complete! Duration: <col=ff0000>${raidTime(t)}</col> Total: <col=ff0000>${raidTime(total)}</col>")
         owner.mes("The vampyres are impressed by your prowess. <col=ff0000>Check the chest</col> to see what they've sent you.")
+        refresh(owner)
+    }
+
+    /**
+     * A room done: every stat below its base (hitpoints and prayer too) goes back up to it, boosts are left alone, special
+     * attack goes to 100% with its regen starting over, and run energy to full.
+     */
+    private fun refresh(p: Player) {
+        for (type in ServerCacheManager.getStats().values) {
+            val stat = dev.openrune.rscm.RSCM.getReverseMapping(RSCMType.STAT, type.id)
+            if (p.stat(stat) < p.statBase(stat)) p.statRestore(stat)
+        }
+        p.specialEnergy = org.rsmod.api.config.constants.sa_max_energy
+        p.softTimer("timer.spec_regen", org.rsmod.api.config.constants.spec_regen_interval)
+        p.runEnergy = org.rsmod.api.config.constants.run_max_energy
     }
 
     /* ---- the recording: every tick of the room in Blert's shape (stage events), to set beside real raids */
@@ -229,7 +248,7 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     open fun attackable(npc: Npc): Boolean = true
 
     /** Whether hits on one of this room's NPCs heal it right now instead of hurting it. */
-    open fun healedByHits(npc: Npc): Boolean = false
+    open fun healedByHits(npc: Npc, hit: Hit): Boolean = false
 
     /** The lowest an NPC's hitpoints can be taken by a hit (null: not ours). */
     open fun floor(npc: Npc): Int? = null
@@ -551,3 +570,5 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
         fun sign(v: Int): Int = if (v > 0) 1 else if (v < 0) -1 else 0
     }
 }
+
+private var Player.specialEnergy by intVarp("varp.sa_energy")

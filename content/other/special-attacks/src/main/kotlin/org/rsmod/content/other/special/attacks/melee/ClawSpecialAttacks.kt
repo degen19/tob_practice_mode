@@ -4,6 +4,7 @@ import jakarta.inject.Inject
 import org.rsmod.api.combat.commons.CombatAttack
 import org.rsmod.api.config.constants
 import org.rsmod.api.mechanics.burn.Burn
+import org.rsmod.api.player.cheat.adminMaxHit
 import org.rsmod.api.player.protect.ProtectedAccess
 import org.rsmod.api.specials.SpecialAttackManager
 import org.rsmod.api.specials.SpecialAttackMap
@@ -65,7 +66,7 @@ class ClawSpecialAttacks @Inject constructor(private val burn: Burn) : SpecialAt
             val hits = IntArray(HITS)
             when (landed) {
                 0 -> {
-                    hits[0] = random.of(max / 2, (max - 1).coerceAtLeast(max / 2))
+                    hits[0] = if (player.adminMaxHit) (max - 1).coerceAtLeast(max / 2) else random.of(max / 2, (max - 1).coerceAtLeast(max / 2))
                     hits[1] = hits[0] / 2
                     hits[2] = hits[1] / 2
                     hits[3] = hits[2] + 1
@@ -168,7 +169,7 @@ class ClawSpecialAttacks @Inject constructor(private val burn: Burn) : SpecialAt
             var burnChance = 0
             when (landed) {
                 0 -> {
-                    val total = random.of(max * 3 / 4, max * 7 / 4)
+                    val total = if (player.adminMaxHit) max * 7 / 4 else random.of(max * 3 / 4, max * 7 / 4)
                     hits[0] = total / 4
                     hits[1] = total / 4
                     hits[2] = total / 2

@@ -215,7 +215,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
      * red appears) and the live recording (first attack 12 ticks after the summon; the pop and its heal splat on the same
      * tick, 4 after her last attack).
      */
-    override fun healedByHits(npc: Npc): Boolean = npc === verzik && phase == 2 && summoning >= 0 && t - 1 - summoning in 1..SHIELD_TICKS
+    override fun healedByHits(npc: Npc, hit: Hit): Boolean = npc === verzik && phase == 2 && summoning >= 0 && t - 1 - summoning in 1..SHIELD_TICKS
 
         private fun poisoned(hit: Hit): Boolean {
         val name = hit.righthandType()?.name?.lowercase() ?: return false

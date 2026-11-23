@@ -1,6 +1,7 @@
 package org.rsmod.api.specials.energy
 
 import jakarta.inject.Inject
+import org.rsmod.api.player.PracticeSettings
 import org.rsmod.api.player.vars.intVarp
 import org.rsmod.api.specials.events.SpecialAttackEvents
 import org.rsmod.events.EventBus
@@ -37,6 +38,7 @@ public class SpecialAttackEnergy @Inject constructor(private val eventBus: Event
                 "Use `hasSpecialEnergy` first for validation."
         }
 
+        if (PracticeSettings.infiniteSpec) return
         player.specialEnergy -= cost
     }
 

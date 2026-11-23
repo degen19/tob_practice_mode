@@ -118,7 +118,7 @@ class SoloRaids {
 class SoloLand @Inject constructor(private val raids: SoloRaids) : NpcHitLandHook {
     override fun land(npc: Npc, hit: Hit): Int = raids.forNpc(npc)?.land(npc, hit) ?: hit.damage
 
-    override fun heals(npc: Npc, hit: Hit): Boolean = raids.forNpc(npc)?.healedByHits(npc) == true
+    override fun heals(npc: Npc, hit: Hit): Boolean = raids.forNpc(npc)?.healedByHits(npc, hit) == true
 }
 
 /** A room's NPC that can't be attacked right now isn't a target: no swing, no message. */

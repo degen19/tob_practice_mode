@@ -14,8 +14,7 @@ import org.rsmod.plugin.scripts.ScriptContext
 
 /**
  * Special attack energy regenerates 10% every 50 ticks, or every 25 ticks while a Lightbearer is
- * worn. The regen timer ticks every 25 ticks and only regenerates on every other tick unless the
- * player wears a Lightbearer.
+ * worn.
  */
 public class SpecialEnergyScript() : PluginScript() {
     private val Player.newAccount by boolVarBit("varbit.new_player_account")
@@ -30,20 +29,20 @@ public class SpecialEnergyScript() : PluginScript() {
         if (newAccount) {
             specialAttackEnergy = constants.sa_max_energy
         }
-        softTimer("timer.spec_regen", LIGHTBEARER_REGEN_INTERVAL)
+        softTimer("timer.spec_regen", interval())
     }
 
     private fun Player.specRegen() {
-        val lightbearer = ring.isAnyType("obj.lightbearer", "obj.br_lightbearer")
-        val normalRegenTick = (currentMapClock / LIGHTBEARER_REGEN_INTERVAL) % 2 == 0
-        if (!lightbearer && !normalRegenTick) {
-            return
-        }
+        softTimer("timer.spec_regen", interval())
         val increased = min(constants.sa_max_energy, specialAttackEnergy + 100)
         if (increased > specialAttackEnergy) {
             specialAttackEnergy = increased
         }
     }
+
+    /** Each player's regen counts from their own timer, so setting it again (a room done) starts it over. */
+    private fun Player.interval(): Int =
+        if (ring.isAnyType("obj.lightbearer", "obj.br_lightbearer")) LIGHTBEARER_REGEN_INTERVAL else constants.spec_regen_interval
 
     private companion object {
         const val LIGHTBEARER_REGEN_INTERVAL = constants.spec_regen_interval / 2

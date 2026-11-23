@@ -1,6 +1,7 @@
 package org.rsmod.content.raids.tob.solo
 
 import org.rsmod.api.instances.InstanceSession
+import org.rsmod.api.player.clearInteractionRoute
 import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
 import org.rsmod.game.hit.Hit
@@ -21,8 +22,8 @@ import kotlin.math.abs
  *   within 2). Only their own style hurts them; a wrong-style hit nulls one, and after that nothing you do hurts it -
  *   every hit shows its shield and a blue 0.
  * - A flicker changes style halfway down its lane (5 ticks in), and again 2 ticks later to its last style.
- * - A big one dying splits into two small ones of random styles. Every nylocas explodes 52 ticks after it spawns
- *   (a big one 53), hurting anyone next to it.
+ * - A big one killed splits into two small ones of random styles. Every nylocas explodes 52 ticks after it spawns
+ *   (a big one 53), hurting anyone next to it; a big one that explodes doesn't split.
  * - A pillar that falls hurts you for up to 50, and the nylocas that were on it come for you. When all four are down
  *   the game wipes the room; for practice the waves carry on and Vasilias still comes.
  * - Vasilias drops in 16 ticks after the last nylocas goes, melee first; every 10 ticks he changes to another style.
@@ -109,11 +110,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         if (pillars.any { it.npc === npc }) return 0
         if (npc === boss) {
             if (bossDead >= 0 || bossStyle == '-') return 0
-            if (hit.type == HitType.Typeless || hit.type == styleType(bossStyle)) return hit.damage
-            // the wrong style: it heals him and comes back at you
-            npc.hitpoints = (npc.hitpoints + hit.damage).coerceAtMost(npc.baseHitpointsLvl)
-            inside()?.let { hurt(it, hit.damage, source = npc) }
-            return 0
+            return hit.damage
         }
         val n = nylos.firstOrNull { it.npc === npc } ?: return null
         if (hit.type == HitType.Typeless) return hit.damage
@@ -122,6 +119,14 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         if (!n.nulled) return hit.damage
         npc.spotanim(SHIELDED)
         return 0
+    }
+
+    /** The wrong style heals Vasilias (the purple heal splat) and comes back at you. */
+    override fun healedByHits(npc: Npc, hit: Hit): Boolean {
+        if (npc !== boss || bossDead >= 0 || bossStyle == '-') return false
+        if (hit.type == HitType.Typeless || hit.type == styleType(bossStyle)) return false
+        inside()?.let { hurt(it, hit.damage, source = npc) }
+        return true
     }
 
     private fun styleType(s: Char): HitType = when (s) {
@@ -241,10 +246,8 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
                 val max = if (n.big) BIG_BOOM else SMALL_BOOM
                 p?.let { q -> if (boxDist(real(q.coords).x, real(q.coords).z, here.x, here.z, here.x + n.size - 1, here.z + n.size - 1) <= 1) hurt(q, rand(0, max), source = npc) }
             }
-            if (t - n.exploding >= (if (n.big) BIG_BOOM_TICKS else DETONATE_TICKS)) {
-                despawn(npc)
-                if (n.big) split(here)
-            }
+            // only a kill splits a big one; one that goes off on its timer just goes
+            if (t - n.exploding >= (if (n.big) BIG_BOOM_TICKS else DETONATE_TICKS)) despawn(npc)
             return
         }
         // flickers: halfway down the lane, then 2 ticks later
@@ -405,7 +408,8 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         val b = boss ?: return
         if (bossDead >= 0) {
             if (t - bossDead == BOSS_DEATH_SEQ_TICKS) despawn(b)
-            if (t - bossDead == BOSS_DEATH_TICKS) {
+            // the room is done at the start of the first cycle after his death animation
+            if (!cleared && t - bossDead >= BOSS_DEATH_SEQ_TICKS && instanceTick == WAVE_TICK) {
                 cleared = true
                 mes("The way on is open: go back out through the barrier for Sotetseg.")
             }
@@ -454,6 +458,11 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         val b = boss ?: return
         bossStyle = s
         formAt = t
+        // a new form is a new npc to the client: anyone attacking him stops
+        for (p in d.players) {
+            val i = p.interaction as? org.rsmod.game.interact.InteractionNpc ?: continue
+            if (i.target === b) p.clearInteractionRoute()
+        }
         transmog(b, when (s) {
             'M' -> "npc.nylocas_boss_melee"
             'R' -> "npc.nylocas_boss_ranged"
@@ -484,7 +493,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     private companion object {
         const val OX = 3264
         const val OY = 4224
-        const val FIRST_WAVE = 4
+        const val FIRST_WAVE = 3
         const val CYCLE = 4
         const val WAVE_TICK = 1
         const val CAP_WAVE = 20
@@ -534,7 +543,6 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val RANGED_FIRST = 5
         const val RANGED_GAP = 8
         const val BOSS_MAX = 70
-        const val BOSS_DEATH_TICKS = 5
         const val BOSS_DEATH_SEQ_TICKS = 5
 
         val WAVES =

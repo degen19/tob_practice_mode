@@ -12,4 +12,5 @@ public object PracticeSettings {
     @Volatile public var infiniteSupplies: Boolean = false
     @Volatile public var infinitePrayer: Boolean = false
     @Volatile public var alwaysMaxHit: Boolean = false
+    @Volatile public var infiniteSpec: Boolean = false
 }

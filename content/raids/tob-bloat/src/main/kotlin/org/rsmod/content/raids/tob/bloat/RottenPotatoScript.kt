@@ -15,7 +15,7 @@ import org.rsmod.plugin.scripts.ScriptContext
 
 /**
  * The rotten potato: the practice switches ([PracticeSettings]) on its right-click. Settings lists them all (deaths,
- * NPC hitpoints, supplies, infinite prayer, always max hit) and flips the one you pick; Toggle deaths, Toggle NPC HP
+ * NPC hitpoints, supplies, infinite prayer, always max hit, infinite special attack) and flips the one you pick; Toggle deaths, Toggle NPC HP
  * and Toggle supplies flip theirs straight away (any time, mid-fight too). Restart room puts you back outside the
  * barrier with the room as it was (Verzik: in the middle before P1, the Dawnbringer on the floor).
  */
@@ -42,6 +42,7 @@ class RottenPotatoScript @Inject constructor(private val solo: SoloRaids) : Plug
                 "Supplies: ${if (s.infiniteSupplies) "infinite" else "normal"}",
                 "Infinite prayer: ${if (s.infinitePrayer) "on" else "off"}",
                 "Always max hit: ${if (s.alwaysMaxHit) "on" else "off"}",
+                "Infinite special attack: ${if (s.infiniteSpec) "on" else "off"}",
             )
         ifClose()
         when (choice) {
@@ -55,6 +56,10 @@ class RottenPotatoScript @Inject constructor(private val solo: SoloRaids) : Plug
             4 -> {
                 s.alwaysMaxHit = !s.alwaysMaxHit
                 mes("Always max hit: ${if (s.alwaysMaxHit) "on - every attack hits, for its max" else "off"}.")
+            }
+            5 -> {
+                s.infiniteSpec = !s.infiniteSpec
+                mes("Infinite special attack: ${if (s.infiniteSpec) "on - specials don't use energy" else "off"}.")
             }
         }
     }
