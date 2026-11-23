@@ -69,8 +69,9 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private var sincePurple = 0
     private var reds = false
     private var redsAt = -1
-    private var redsAttacks = 0
     private val redBorn = HashMap<Npc, Int>()
+    private val redHome = HashMap<Npc, CoordGrid>()
+    private val redGoal = HashMap<Npc, CoordGrid>()
     private val redHeals = ArrayList<Pair<Int, Int>>()
     private var p2Killed = false
     private var summoning = -1
@@ -121,6 +122,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         redHeals.clear()
         p2Killed = false
         redBorn.clear()
+        redHome.clear()
+        redGoal.clear()
         webs.clear()
         for (p in pillars) {
             p.hp = PILLAR_HP
@@ -201,8 +204,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             }
         }
         if (phase == 2 && summoning >= 0 && t - summoning < SUMMON_TICKS) {
-            // hitting her while she summons heals her
-            npc.hitpoints = minOf(p2Hp, npc.hitpoints + hit.damage)
+            // hitting her while she summons heals her (Blert: hits landing in the first ticks of it put the damage back on)
+            healNpc(npc, hit.damage)
             return 0
         }
         return hit.damage
@@ -372,6 +375,10 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             summonReds(v)
             return
         }
+        if (reds && redsAt >= 0 && t - redsAt >= RED_CYCLE) {
+            summonReds(v)
+            return
+        }
         if (summoning >= 0 && t - summoning < SUMMON_TICKS) return
         if (t < nextAttack) return
         nextAttack = t + P2_EVERY
@@ -384,8 +391,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             return
         }
         if (reds) {
-            redsAttacks++
-            if (redsAttacks >= REDS_ATTACKS) summonReds(v)
+            // Blert: seven attacks a cycle (12 to 36 ticks after the summon), then nothing until the next one at 44
+            if (t - redsAt > REDS_LAST_ATTACK) return
             if (chance(0.75)) bloodBlast(v, p) else if (chance(0.5)) urn(v, p) else zap(v, p)
             return
         }
@@ -492,12 +499,11 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         if (t >= athanatosNext) {
             athanatosNext = t + ATHANATOS_EVERY
             projTiles("spotanim.verzik_phase2_poisonglobule", real(a.coords), center(v), speed = 6, startHeight = 20, endHeight = 80)
-            v.hitpoints = minOf(p2Hp, v.hitpoints + rand(9, 10))
+            healNpc(v, rand(9, 10))
         }
     }
 
     private fun summonReds(v: Npc) {
-        redsAttacks = 0
         summoning = t
         nextAttack = t + SUMMON_TICKS
         v.anim("seq.verzik_phase2_heal")
@@ -505,10 +511,11 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val tiles = listOf(CoordGrid(P2_X - 4, P2_Y + 1, 0), CoordGrid(P2_X + 4, P2_Y + 1, 0))
         for (tile in tiles.take(if (alivePlayers() >= 2) 2 else 1)) {
             gfx("spotanim.verzik_phase2_spawning", tile)
-            val r = spawn(RED, tile, RED_HP)
+            val r = spawn(RED, tile, hp(RED_HP, ENTRY_RED_HP))
             // the spawn animation a tick on, once the client has the crab
             later(1) { if (r.isSlotAssigned) r.anim(RED_SPAWN_SEQ) }
             redBorn[r] = t
+            redHome[r] = tile
             redCrabs += r
         }
         if (redsAt < 0) mes("Verzik Vitur summons her Nylocas!")
@@ -519,13 +526,11 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private fun alivePlayers(): Int = if (inside() != null) 1 else 0
 
     /**
-     * The reds don't walk into her: they wander until the back end of their cycle, then pop (their death animation)
-     * and send what they have left to her as a heal (Blert: a cycle every 44 ticks, gone 42 ticks on unless killed first; one in a
-     * solo, one each side with two or more alive).
-     */
-    /**
-     * A popped red's heal reaches her on the tick after its animation (R41), after the players' hits that tick: if
-     * those took her down, the heal still shows but she dies.
+     * The reds pop (their death animation) 40 ticks after the summon and send what they have left to her as a heal, gone 42
+     * ticks on (Blert); the next summon, her shield, comes 4 ticks after the pop.
+     *
+     * A popped red's heal lands on its pop tick (Blert: 40 ticks after the summon, what it had left), after the players'
+     * hits that tick: if those took her down, the heal still shows but she dies.
      */
     override fun late() {
         if (redHeals.none { it.first <= t }) return
@@ -542,6 +547,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             val r = it.next()
             if (!r.isSlotAssigned) {
                 redBorn.remove(r)
+                redHome.remove(r)
+                redGoal.remove(r)
                 it.remove()
                 continue
             }
@@ -549,7 +556,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             val age = t - (redBorn[r] ?: t)
             if (age >= RED_POP_AT) {
                 projTiles(RED_HEAL_PROJ, center(r), center(v), speed = RED_HEAL_SPEED, startHeight = 40, endHeight = 100)
-                redHeals += (t + 1) to r.hitpoints
+                redHeals += t to r.hitpoints
                 r.routeDestination.clear()
                 r.anim(RED_POP_SEQ)
                 r.hitpoints = 0
@@ -559,13 +566,29 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                 continue
             }
             if (r.vars["varn.freeze_end_clock"] > r.currentMapClock) continue
-            // a slow random wander
-            if (age % 2 == 0) {
-                val rr = real(r.coords)
-                val to = CoordGrid(rr.x + rand(-1, 1), rr.z + rand(-1, 1), 0)
-                if (inArena(to) && !blocked(to)) r.walk(at(to))
-            }
+            wander(r, age)
         }
+    }
+
+    /**
+     * A red's wander, the game's NPC random walk round where it was summoned (Blert: never more than 3 tiles from it, so it
+     * stays on its own side and never comes under her): standing, each tick a 1 in 8 chance of a new spot, walked to a tile a
+     * tick diagonal-first.
+     */
+    private fun wander(r: Npc, age: Int) {
+        val home = redHome[r] ?: return
+        val here = real(r.coords)
+        val goal = redGoal[r]
+        if (goal != null && goal != here) {
+            if (!stepToward(r, goal.x, goal.z)) redGoal.remove(r)
+            return
+        }
+        redGoal.remove(r)
+        if (age < RED_STILL || rand(RED_WANDER_CHANCE) != 0) return
+        val to = CoordGrid(home.x + rand(-RED_RANGE, RED_RANGE), home.z + rand(-RED_RANGE, RED_RANGE), 0)
+        if (to == here || !inArena(to)) return
+        redGoal[r] = to
+        stepToward(r, to.x, to.z)
     }
 
     private fun bloodBlast(v: Npc, p: Player) {
@@ -579,7 +602,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             q.spotanim("spotanim.verzik_phase2_bloodimpact")
             val dealt = if (prays(q, "magic")) 0 else roll
             hurt(q, dealt, source = v)
-            verzik?.let { it.hitpoints = minOf(p2Hp, it.hitpoints + roll / 2) }
+            verzik?.let { healNpc(it, dealt / 2) }
         }
     }
 
@@ -633,9 +656,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val here = real(p.coords)
         val vr = real(v.coords)
         val dist = boxDist(here.x, here.z, vr.x, vr.z, vr.x + v.size - 1, vr.z + v.size - 1)
-        if (dist > 1 && v.vars["varn.freeze_end_clock"] <= v.currentMapClock) {
-            v.walk(at(vr.x + sign(here.x - (vr.x + v.size / 2)), vr.z + sign(here.z - (vr.z + v.size / 2))))
-        }
+        // Blert: she steps toward you from her south-west tile, not her middle (173 of 190 chase steps; the rest blocked)
+        if (dist > 1 && v.vars["varn.freeze_end_clock"] <= v.currentMapClock) stepToward(v, here.x, here.z)
         if (t < nextAttack) return
         nextAttack = t + if (enraged) P3_EVERY_ENRAGED else P3_EVERY
         attacks++
@@ -817,14 +839,19 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         if (tr == here) {
             val dmg = p.hitpoints / 2
             hurt(p, dmg)
-            v.hitpoints = minOf(v.baseHitpointsLvl, v.hitpoints + dmg * 3)
+            healNpc(v, dmg * 3)
             v.spotanim("spotanim.verzik_p3_creeper_spot")
             vanish(tor)
             tornado = null
             tornadoAt = t + TORNADO_BACK
             return
         }
-        tor.walk(at(tr.x + sign(here.x - tr.x), tr.z + sign(here.z - tr.z)))
+        val dx = here.x - tr.x
+        val dz = here.z - tr.z
+        val m = max(abs(dx), abs(dz))
+        // Blert: it steps along the straight line at you, diagonal only when the short side is over half the long one
+        // (598 of 645 steps)
+        tor.walk(at(tr.x + if (2 * abs(dx) > m) sign(dx) else 0, tr.z + if (2 * abs(dz) > m) sign(dz) else 0))
     }
 
     /**
@@ -1027,7 +1054,11 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val ATHANATOS_FLIGHT = 6
         const val ATHANATOS_EVERY = 4
         const val REDS_PCT = 35
-        const val REDS_ATTACKS = 8
+        const val RED_CYCLE = 44
+        const val REDS_LAST_ATTACK = 36
+        const val RED_STILL = 3
+        const val RED_WANDER_CHANCE = 8
+        const val RED_RANGE = 3
         const val RED_LIFE = 42
         const val RED_SPAWN_SEQ = "seq.elemental_spawn"
         const val RED_POP_SEQ = "seq.elemental_death"
@@ -1036,6 +1067,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val RED_HEAL_SPEED = 4
         const val SUMMON_TICKS = 12
         const val RED_HP = 150
+        /** Not recorded; scaled from the Maiden crabs (75 a solo on Normal, 16 on Entry). */
+        const val ENTRY_RED_HP = 32
         const val BLOOD_MAX = 45
         const val T23_AT = 1
         const val T23_TICKS = 5
