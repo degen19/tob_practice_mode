@@ -206,8 +206,11 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         return hit.damage
     }
 
-    /** Her shield while she summons the reds (R0-R10): hits show as shield hitsplats and take nothing. */
-    override fun shielded(npc: Npc): Boolean = npc === verzik && phase == 2 && summoning >= 0 && t - 1 - summoning < SHIELD_TICKS
+    /**
+     * Her shield while she summons the reds, R1-R10 of the 44-tick cycle (the summon itself is R44 of the last one, the
+     * sim's R0): hits show as shield hitsplats and take nothing.
+     */
+    override fun shielded(npc: Npc): Boolean = npc === verzik && phase == 2 && summoning >= 0 && t - 1 - summoning in 1..SHIELD_TICKS
 
         private fun poisoned(hit: Hit): Boolean {
         val name = hit.righthandType()?.name?.lowercase() ?: return false
@@ -1069,7 +1072,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val RED_HEAL_PROJ = "spotanim.verzik_phase2_bloodproj"
         const val RED_HEAL_SPEED = 4
         const val SUMMON_TICKS = 12
-        const val SHIELD_TICKS = 11
+        const val SHIELD_TICKS = 10
         const val RED_HP = 150
         /** Not recorded; scaled from the Maiden crabs (75 a solo on Normal, 16 on Entry). */
         const val ENTRY_RED_HP = 32
