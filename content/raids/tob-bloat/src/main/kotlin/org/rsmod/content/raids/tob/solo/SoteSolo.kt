@@ -23,11 +23,11 @@ import org.rsmod.map.CoordGrid
  * - At 66.6% and 33.3% the maze: she goes still, and 3 ticks later you're taken to the Shadow Realm - you're the chosen
  *   one in a solo. The path is lit under you; walk it (or not - nothing hurts you there but the realm itself, 1-3
  *   every 7 ticks) and leave by the portal at the top. Above, only the tile you stand on below glows.
- * - Back in the room you come in where the maze caught you (a stall that procs it at the top skips the run); from
- *   below you run it as if you weren't chosen: the path isn't shown (players screenshot it below) and a tile off it
- *   hurts 6.67% of your hitpoints + 15 each tick (11 in Entry mode). She wakes
+ * - Normal mode: back in the room you come in below the maze and run it as if you weren't chosen: the path isn't
+ *   shown (players screenshot it below) and a tile off it hurts 6.67% of your hitpoints + 15 each tick. She wakes
  *   (Defence back to full, attacking at once) on the first instance tick 1 at least two ticks after you reach the
  *   top (Blert's solos; the tick from a real clip's instance timer).
+ * - Entry mode: the portal puts you back where the maze caught you and that's it - she wakes on the next 1.
  * - The maze procs on the landing of the hit that brings her to the threshold; you're held still until the
  *   teleport 3 ticks later. Every 11th orb (melees don't count, mazes don't reset it) is the death ball.
  */
@@ -52,7 +52,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     private var under = false
     private var crossed = -1
 
-    /** Where the maze caught you: the portal below brings you back to it (stalled at the top, you skip the run). */
+    /** Where the maze caught you: in Entry mode the portal below brings you back to it, and that's the maze done. */
     private var caughtAt = RETURN
     private val lit = ArrayList<LocInfo>()
     private var glow: Pair<Pair<Int, Int>, LocInfo>? = null
@@ -304,10 +304,10 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         glowAt(-1, -1)
         val x = here.x - OVER_X
         val y = here.z - OVER_Y
-        if (crossed < 0 && x in 0 until W && y in 0 until H && !m[x][y]) hurt(p, if (entryMode) OFF_PATH_ENTRY else p.hitpoints / 15 + OFF_PATH)
+        if (crossed < 0 && x in 0 until W && y in 0 until H && !m[x][y]) hurt(p, p.hitpoints / 15 + OFF_PATH)
         if (crossed >= 0) {
-            // she wakes on the first instance tick 1 at least two ticks after you reach the top
-            if (now - crossed >= WAKE && instanceTick == WAKE_TICK) endMaze(quiet = false)
+            // she wakes on the first instance tick 1 at least two ticks after you reach the top (Entry: the next 1)
+            if (now - crossed >= (if (entryMode) WAKE_ENTRY else WAKE) && instanceTick == WAKE_TICK) endMaze(quiet = false)
             return
         }
         if (here.z >= OVER_Y + H) {
@@ -319,8 +319,9 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     override suspend fun opLoc(name: String, at: CoordGrid, op: Int, access: ProtectedAccess): Boolean {
         if (name != "loc.tob_sotetseg_darkrealm_exit") return false
         if (maze == null) return true
-        jump(access.player, this.at(caughtAt))
+        jump(access.player, this.at(if (entryMode) caughtAt else RETURN))
         under = false
+        if (entryMode) crossed = now
         return true
     }
 
@@ -430,7 +431,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val WAKE_TICK = 1
         const val WAKE_CYCLE = 4
         const val OFF_PATH = 15
-        const val OFF_PATH_ENTRY = 11
+        const val WAKE_ENTRY = 1
         const val LIT = "loc.tob_sotetseg_lighttile"
         const val PLAIN = "loc.tob_sotetseg_plaintile"
         const val DARK = "loc.tob_sotetseg_darktile"
