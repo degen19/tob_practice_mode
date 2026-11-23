@@ -109,6 +109,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         if (dead >= 0) {
             if (t - dead == DEATH_TICKS) {
                 cleared = true
+                despawn(sote)
                 blockPlayers(CoordGrid(X, Y, 0), SIZE, false)
                 mes("The way on is open: go back out through the barrier for Xarpus.")
             }

@@ -96,6 +96,7 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                     xarpus.anim("seq.tob_xarpus_death_b")
                 }
                 DEATH_TICKS -> {
+                    despawn(xarpus)
                     cleared = true
                     mes("The way on is open: leave by the north barrier for Verzik Vitur.")
                 }

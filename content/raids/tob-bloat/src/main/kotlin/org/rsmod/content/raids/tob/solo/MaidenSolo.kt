@@ -318,6 +318,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                 maiden.anim(DEATH_B)
             }
             DEATH_END -> {
+                despawn(maiden)
                 cleared = true
                 mes("The way on is open: pass the barrier to go on to the Pestilent Bloat.")
             }
