@@ -208,9 +208,11 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
 
     /**
      * The reds run on a 44-tick cycle from the summon (her shield animation and the red, the last cycle's R44): her shield
-     * R1-R10, when hits on her heal her (pink heal splats); her attacks R12-R36; the red pops on R40 and heals her on R41;
-     * the next summon 44 ticks on. Checked against Blert (hits landing on the summon tick hurt her, R1-R10 heal, R11 hurts)
-     * and the live Entry recording (her first attack 12 ticks after the shield goes up).
+     * R1-R10, when hits on her heal her (pink heal splats); her attacks from 12 ticks after the summon, every 4, seven of
+     * them; the red pops and heals her 40 ticks after the summon, 4 after her last attack; the next summon 4 after that.
+     * Checked against Blert (hits landing on the summon tick hurt her, R1-R10 heal, R11 hurts; the heal 40 ticks after the
+     * red appears) and the live recording (first attack 12 ticks after the summon; the pop and its heal splat on the same
+     * tick, 4 after her last attack).
      */
     override fun healedByHits(npc: Npc): Boolean = npc === verzik && phase == 2 && summoning >= 0 && t - 1 - summoning in 1..SHIELD_TICKS
 
@@ -529,10 +531,9 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private fun alivePlayers(): Int = if (inside() != null) 1 else 0
 
     /**
-     * The reds pop (their death animation) on R40 and send what they have left to her as a heal, gone two ticks later.
-     *
-     * A popped red heals her on R41 for what it has left after that tick's hits: you can still hit it on R40 and a
-     * scythe swung then lands on R41 ahead of the heal. If the hits took her down, the heal still shows but she dies.
+     * The reds pop (their death animation) 40 ticks after the summon and heal her that tick for what they have left after
+     * the tick's hits (a scythe swung the tick before lands first), gone two ticks later. If the hits took her down, the
+     * heal still shows but she dies.
      */
     override fun late() {
         val now = t - 1
@@ -563,7 +564,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             val age = t - (redBorn[r] ?: t)
             if (age >= RED_POP_AT) {
                 projTiles(RED_HEAL_PROJ, center(r), center(v), speed = RED_HEAL_SPEED, startHeight = 40, endHeight = 100)
-                redHeals += (t + 1) to r
+                redHeals += t to r
                 r.routeDestination.clear()
                 r.anim(RED_POP_SEQ)
                 later(RED_LIFE - RED_POP_AT) { if (r.isSlotAssigned) despawn(r) }
