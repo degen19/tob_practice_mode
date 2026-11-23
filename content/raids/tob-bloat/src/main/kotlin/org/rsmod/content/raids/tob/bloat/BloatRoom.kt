@@ -323,14 +323,15 @@ class BloatRoom(
                 val roll = random.of(1, if (entry) ENTRY_MAX_FLIES else BloatRules.MAX_FLIES)
                 val dmg = if (p.overheadIcon == Constants.overhead_protect_from_missiles) roll * 3 / 4 else roll
                 val src = npc.coords.translate(2, 2)
+                // the swarm drifts across the floor upright, like Maiden's shadow: no climb or drop, no arc
                 worldRepo.projAnim(
                     org.rsmod.game.proj.ProjAnim(
                         FLIES_PROJ.asRSCM(RSCMType.SPOTANIM),
-                        FLY_START_HEIGHT,
-                        FLY_END_HEIGHT,
+                        0,
+                        0,
                         0,
                         FLY_TICKS * 30,
-                        16,
+                        0,
                         64 * 5,
                         npc.slotId + 1,
                         -(p.slotId + 1),
@@ -440,8 +441,6 @@ class BloatRoom(
         const val ENTRY_MAX_FLIES = 8
         const val SHAKE_RANDOM = 6
         const val SHAKE_TICKS = 3
-        const val FLY_START_HEIGHT = 60
-        const val FLY_END_HEIGHT = 40
         const val STUN_SPOT = "spotanim.tob_bloat_stunned"
         val FLESH =
             listOf(
