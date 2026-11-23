@@ -268,7 +268,7 @@ class BloatRoom(
             for (p in inside) shake(p)
             for (p in stompOn) {
                 if (p !in inside) continue
-                p.queueHit(npc, 1, HitType.Typeless, if (entry) random.of(BloatRules.STOMP_MIN / 2, BloatRules.STOMP_MAX / 2) else random.of(BloatRules.STOMP_MIN, BloatRules.STOMP_MAX), hitModifier)
+                p.queueHit(npc, BloatRules.STOMP_HIT_DELAY, HitType.Typeless, if (entry) random.of(BloatRules.STOMP_MIN / 2, BloatRules.STOMP_MAX / 2) else random.of(BloatRules.STOMP_MIN, BloatRules.STOMP_MAX), hitModifier)
             }
         }
 

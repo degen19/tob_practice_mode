@@ -22,9 +22,13 @@ object BloatRules {
     /** Down for 33 ticks from the first tick he stands still; he steps again on the 34th (Blert: always 33). */
     const val DOWN_TICKS = 33
 
-    /** The stomp animation 29 ticks into a down; its damage lands 2 ticks later (Blert recordings). */
+    /**
+     * The stomp animation 29 ticks into a down; the shake a tick later and the damage the tick after that, on the
+     * counter's 1: a player who clicks a shark on 2 eats on 1, the tick it lands (Blert and live recordings).
+     */
     const val STOMP_AT = 29
     const val STOMP_HIT = 30
+    const val STOMP_HIT_DELAY = 2
     const val TURN_CD = 32
     const val TURN_PER_MILLE = 50
     const val BLOCK = 5
