@@ -10,6 +10,7 @@ import org.rsmod.api.config.refs.params
 import org.rsmod.api.npc.access.StandardNpcAccess
 import org.rsmod.api.npc.events.NpcHitEvents
 import org.rsmod.api.npc.headbar.InternalNpcHeadbars
+import org.rsmod.api.npc.heal
 import org.rsmod.api.npc.hit.NpcDamageContributor
 import org.rsmod.api.npc.hit.NpcHitImpactHook
 import org.rsmod.api.npc.hit.NpcHitLandHook
@@ -33,8 +34,9 @@ constructor(
     private val impactHooks: Set<NpcHitImpactHook>,
 ) : NpcHitProcessor {
     override fun StandardNpcAccess.process(landing: Hit) {
-        if (landHooks.any { it.shielded(npc, landing) }) {
-            showShielded(landing)
+        if (landHooks.any { it.heals(npc, landing) }) {
+            playDefendSound(landing)
+            npc.heal(landing.damage, showHitsplat = true)
             return
         }
         var hit = landing
@@ -130,18 +132,6 @@ constructor(
         }
 
         npc.publishHitEvent(hit)
-    }
-
-    private fun StandardNpcAccess.showShielded(hit: Hit) {
-        val shield = hitmark_groups.shield_damage
-        val mark =
-            hit.hitmark.copy(
-                self = shield.lit.asRSCM(RSCMType.HITMARK),
-                source = shield.lit.asRSCM(RSCMType.HITMARK),
-                public = if (hit.hitmark.isPrivate) null else shield.tint?.asRSCM(RSCMType.HITMARK),
-            )
-        playDefendSound(hit)
-        npc.showHitmark(mark)
     }
 
     private val Npc.hitpointsLocked: Boolean

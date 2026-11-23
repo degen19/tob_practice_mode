@@ -31,7 +31,7 @@ import kotlin.math.max
  *   lightning bolt (48, 25 in insulated boots). Stand next to her or under her and she bounces you back 3 tiles and
  *   stuns you instead. Nylocas come with a purple crab (the Athanatos) that heals her until it's killed - a poisoned
  *   weapon kills it outright and the poison hurts her. At 35% the reds: she stops to summon a Nylocas Matomenos that
- *   walks to her and heals her its hitpoints (her shield takes nothing while she summons), then seven attacks - mostly a
+ *   walks to her and heals her its hitpoints (hits on her heal her while her shield is up), then seven attacks - mostly a
  *   blood blast that heals her half of what it does - and again.
  * - P3: every 7 ticks a melee attack if you're beside her, else a ranged or magic one (33, half on the right prayer).
  *   Every fifth attack is a special, in turn: nylocas, webs (she goes to the middle and shoots webs - one on your tile
@@ -207,11 +207,12 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     }
 
     /**
-     * The reds run on a 44-tick cycle, R1 the summon tick (the sim's numbering): her shield R1-R10, her attacks R12-R36,
-     * the red pops on R40 and heals her on R41, R44 the last tick before the next summon. While the shield is up, hits
-     * show as shield hitsplats and take nothing.
+     * The reds run on a 44-tick cycle from the summon (her shield animation and the red, the last cycle's R44): her shield
+     * R1-R10, when hits on her heal her (pink heal splats); her attacks R12-R36; the red pops on R40 and heals her on R41;
+     * the next summon 44 ticks on. Checked against Blert (hits landing on the summon tick hurt her, R1-R10 heal, R11 hurts)
+     * and the live Entry recording (her first attack 12 ticks after the shield goes up).
      */
-    override fun shielded(npc: Npc): Boolean = npc === verzik && phase == 2 && summoning >= 0 && t - 1 - summoning in 0 until SHIELD_TICKS
+    override fun healedByHits(npc: Npc): Boolean = npc === verzik && phase == 2 && summoning >= 0 && t - 1 - summoning in 1..SHIELD_TICKS
 
         private fun poisoned(hit: Hit): Boolean {
         val name = hit.righthandType()?.name?.lowercase() ?: return false
@@ -1061,17 +1062,17 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val ATHANATOS_EVERY = 4
         const val REDS_PCT = 35
         const val RED_CYCLE = 44
-        const val REDS_LAST_ATTACK = 35
+        const val REDS_LAST_ATTACK = 36
         const val RED_STILL = 3
         const val RED_WANDER_CHANCE = 8
         const val RED_RANGE = 3
-        const val RED_LIFE = 41
+        const val RED_LIFE = 42
         const val RED_SPAWN_SEQ = "seq.elemental_spawn"
         const val RED_POP_SEQ = "seq.elemental_death"
-        const val RED_POP_AT = 39
+        const val RED_POP_AT = 40
         const val RED_HEAL_PROJ = "spotanim.verzik_phase2_bloodproj"
         const val RED_HEAL_SPEED = 4
-        const val SUMMON_TICKS = 11
+        const val SUMMON_TICKS = 12
         const val SHIELD_TICKS = 10
         const val RED_HP = 150
         /** Not recorded; scaled from the Maiden crabs (75 a solo on Normal, 16 on Entry). */

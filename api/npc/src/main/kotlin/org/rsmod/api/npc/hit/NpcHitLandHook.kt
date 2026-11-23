@@ -11,6 +11,6 @@ import org.rsmod.game.hit.Hit
 public fun interface NpcHitLandHook {
     public fun land(npc: Npc, hit: Hit): Int
 
-    /** Whether the npc is shielded from [hit]: it shows as a shield hitsplat and takes nothing off. */
-    public fun shielded(npc: Npc, hit: Hit): Boolean = false
+    /** Whether [hit] heals the npc instead of hurting it (it shows as a heal hitsplat). */
+    public fun heals(npc: Npc, hit: Hit): Boolean = false
 }
