@@ -18,7 +18,7 @@ import kotlin.math.abs
  *
  * - Nylocas walk their lane to its end, then to their pillar (attacking it until it falls) - or, if aggressive, turn
  *   into the "fighting" form there and come for you (melee ones to a tile straight beside you, ranged and magic ones to
- *   within 3). Only their own style hurts them; a wrong-style hit nulls one, and after that nothing you do hurts it -
+ *   within 2). Only their own style hurts them; a wrong-style hit nulls one, and after that nothing you do hurts it -
  *   every hit shows its shield and a blue 0.
  * - A flicker changes style halfway down its lane (5 ticks in), and again 2 ticks later to its last style.
  * - A big one dying splits into two small ones of random styles. Every nylocas explodes 52 ticks after it spawns
@@ -486,7 +486,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val OY = 4224
         const val FIRST_WAVE = 4
         const val CYCLE = 4
-        const val WAVE_TICK = 0
+        const val WAVE_TICK = 1
         const val CAP_WAVE = 20
         const val CAP_EARLY = 12
         const val CAP_LATE = 24
@@ -506,7 +506,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val BIG_MAX = 24
         const val NYLO_SPEED = 4
         const val NYLO_ACCURACY = 0.6
-        const val AGGRO_RANGE = 3
+        const val AGGRO_RANGE = 2
         const val SHIELDED = "spotanim.tob_nylocas_shielded"
         const val FLICK_1 = 5
         const val FLICK_2 = 7

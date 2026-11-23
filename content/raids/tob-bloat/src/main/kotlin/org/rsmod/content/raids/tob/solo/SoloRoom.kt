@@ -191,7 +191,8 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
 
     /**
      * Where the instance is in its 4-tick cycle, numbered as the client's instance timer shows it (3 on the tick you
-     * stand on the line, 0 the tick after). Nylocas waves come on 0; Sotetseg wakes and Xarpus's exhumeds rise on 1.
+     * stand on the line, 0 the tick after). Nylocas waves, Sotetseg waking and Xarpus's exhumeds all come on 1
+     * (a real clip).
      */
     val instanceTick: Int
         get() = Math.floorMod(d.mapClock.cycle - anchor - 1, INSTANCE_CYCLE)

@@ -23,8 +23,9 @@ import org.rsmod.map.CoordGrid
  * - At 66.6% and 33.3% the maze: she goes still, and 3 ticks later you're taken to the Shadow Realm - you're the chosen
  *   one in a solo. The path is lit under you; walk it (or not - nothing hurts you there but the realm itself, 1-3
  *   every 7 ticks) and leave by the portal at the top. Above, only the tile you stand on below glows.
- * - Back in the room you come in below the maze and run it as if you weren't chosen: the path isn't shown (players
- *   screenshot it below) and a tile off it hurts 6.67% of your hitpoints + 15 each tick (11 in Entry mode). She wakes
+ * - Back in the room you come in where the maze caught you (a stall that procs it at the top skips the run); from
+ *   below you run it as if you weren't chosen: the path isn't shown (players screenshot it below) and a tile off it
+ *   hurts 6.67% of your hitpoints + 15 each tick (11 in Entry mode). She wakes
  *   (Defence back to full, attacking at once) on the first instance tick 1 at least two ticks after you reach the
  *   top (Blert's solos; the tick from a real clip's instance timer).
  * - The maze procs on the landing of the hit that brings her to the threshold; you're held still until the
@@ -50,6 +51,9 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     private var mazeAt = -1
     private var under = false
     private var crossed = -1
+
+    /** Where the maze caught you: the portal below brings you back to it (stalled at the top, you skip the run). */
+    private var caughtAt = RETURN
     private val lit = ArrayList<LocInfo>()
     private var glow: Pair<Pair<Int, Int>, LocInfo>? = null
 
@@ -243,6 +247,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         maze = roll()
         paintFloor(DARK)
         // everyone is held where they stand until the teleport
+        caughtAt = inside()?.let { real(it.coords).takeIf { c -> c.level == 0 } } ?: RETURN
         inside()?.let {
             it.anim("seq.human_teleport_other_impact")
             it.frozen = true
@@ -314,7 +319,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     override suspend fun opLoc(name: String, at: CoordGrid, op: Int, access: ProtectedAccess): Boolean {
         if (name != "loc.tob_sotetseg_darkrealm_exit") return false
         if (maze == null) return true
-        jump(access.player, this.at(RETURN))
+        jump(access.player, this.at(caughtAt))
         under = false
         return true
     }
