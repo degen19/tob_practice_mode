@@ -807,7 +807,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val tor = tornado
         if (tor == null) {
             if (tornadoAt in 0..t) {
-                tornado = spawn(TORNADO, CoordGrid(real(v.coords).x, real(v.coords).z, 0), null).also { it.anim(TORNADO_SPAWN_SEQ) }
+                tornado = spawn(TORNADO, tornadoTile(v), null)
                 tornadoAt = -1
             }
             return
@@ -825,6 +825,20 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             return
         }
         tor.walk(at(tr.x + sign(here.x - tr.x), tr.z + sign(here.z - tr.z)))
+    }
+
+    /**
+     * Where a tornado comes up: Blert's solos put it beside her, outside her body, anywhere from her edge to six tiles
+     * off (it appears there as it is, upright, and starts after you a tick later).
+     */
+    private fun tornadoTile(v: Npc): CoordGrid {
+        val sw = real(v.coords)
+        repeat(TORNADO_TRIES) {
+            val c = CoordGrid(sw.x + rand(-TORNADO_REACH, v.size - 1 + TORNADO_REACH), sw.z + rand(-TORNADO_REACH, v.size - 1 + TORNADO_REACH), 0)
+            val inside = c.x in sw.x until sw.x + v.size && c.z in sw.z until sw.z + v.size
+            if (!inside && inArena(c) && !blocked(c)) return c
+        }
+        return CoordGrid(sw.x - 1, sw.z, 0)
     }
 
     private fun vanish(tor: Npc) {
@@ -959,7 +973,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val THRONE_TRANSFORMING = "loc.tob_dungeon_verzik_throne_transforming"
         const val THRONE_DOOR = "loc.tob_dungeon_verzik_throne_door_opened"
         const val THRONE_TRANSFORM_TICKS = 5
-        const val TORNADO_SPAWN_SEQ = "seq.tob_shadow_projectile_spawn"
+        const val TORNADO_REACH = 6
+        const val TORNADO_TRIES = 40
         const val TORNADO_DESPAWN_SEQ = "seq.tob_shadow_projectile_despawn"
         const val TORNADO_DESPAWN_TICKS = 1
         const val DAWNBRINGER = "obj.verzik_special_weapon"

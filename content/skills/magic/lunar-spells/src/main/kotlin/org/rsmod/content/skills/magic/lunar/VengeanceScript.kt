@@ -39,7 +39,8 @@ internal fun Player.startVengeanceCooldown() {
 /**
  * Vengeance (Lunar, level 94): the next hit that damages you also deals 75% of that damage back to
  * whoever hit you, and you say "Taste vengeance!". Vengeance and Vengeance Other share a
- * 30-second cooldown, and you can't cast it while it's already active.
+ * 30-second cooldown counted from the cast; once it's up you can cast again whether or not the last
+ * one has gone off (it doesn't stack).
  */
 class VengeanceScript
 @Inject
@@ -61,10 +62,6 @@ constructor(
     private fun ProtectedAccess.cast() {
         if (player.vengeanceCooldown) {
             mes("You can only cast vengeance spells every 30 seconds.")
-            return
-        }
-        if (player.vengeanceActive) {
-            mes("You already have the power of vengeance.")
             return
         }
         val spell = caster.spell(SPELL_OBJ) ?: return

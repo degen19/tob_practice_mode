@@ -28,6 +28,7 @@ object BloatRules {
     const val TURN_CD = 32
     const val TURN_PER_MILLE = 50
     const val BLOCK = 5
+    const val WALK_AFTER_TURN = 3
     const val HAND_FALL = 3
     const val HAND_STUN = 4
     const val MAX_FLIES = 20
@@ -45,6 +46,8 @@ object BloatRules {
             for (x in 18 downTo 8) add(x to 19)
             for (y in 18 downTo 9) add(8 to y)
         }
+
+    val CORNERS = setOf(8 to 8, 19 to 8, 19 to 19, 8 to 19)
 
     fun inTank(x: Int, y: Int): Boolean = x in TANK_MIN..TANK_MAX && y in TANK_MIN..TANK_MAX
 

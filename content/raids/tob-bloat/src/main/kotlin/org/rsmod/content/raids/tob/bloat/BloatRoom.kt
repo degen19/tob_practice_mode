@@ -82,6 +82,7 @@ class BloatRoom(
     private var turnCd = 0
     private var block = 0
     private var speed = 1
+    private var walkAfterTurn = 0
     private var downAt = 0
     private var attackedInDown = false
     private var flipN = 0
@@ -163,6 +164,7 @@ class BloatRoom(
         turnCd = 0
         block = 0
         speed = 1
+        walkAfterTurn = 0
         attackedInDown = false
         flipN = 0
         below40 = false
@@ -227,6 +229,7 @@ class BloatRoom(
                 dir = -dir
                 turnCd = 0
                 block = BloatRules.BLOCK
+                walkAfterTurn = BloatRules.WALK_AFTER_TURN
             }
             // he goes down on a tick he doesn't step (the real game: his last step, then the down animation on
             // the first tick he stands still), so the decision comes before the step
@@ -239,8 +242,9 @@ class BloatRoom(
             }
             if (!goDown) {
                 val from = LOOP[li]
-                li = Math.floorMod(li + dir * speed, LOOP.size)
+                li = Math.floorMod(li + dir * stride(), LOOP.size)
                 walkTo(from, LOOP[li])
+                if (walkAfterTurn > 0) walkAfterTurn--
             }
             if (pct < 90) {
                 if (handGap <= 0) {
@@ -342,10 +346,10 @@ class BloatRoom(
         }
     }
 
-    /** The stomp's screen shake, eased off two ticks later. */
+    /** The stomp's screen shake: a random jolt both ways (the real one has no sway), stopped two ticks later. */
     private fun shake(p: Player) {
-        org.rsmod.api.player.output.Camera.camShake(p, org.rsmod.api.player.output.CamShakeAxis.UP_DOWN, 0, SHAKE_AMPLITUDE, SHAKE_RATE)
         org.rsmod.api.player.output.Camera.camShake(p, org.rsmod.api.player.output.CamShakeAxis.LEFT_RIGHT, SHAKE_RANDOM, 0, 0)
+        org.rsmod.api.player.output.Camera.camShake(p, org.rsmod.api.player.output.CamShakeAxis.UP_DOWN, SHAKE_RANDOM, 0, 0)
         worldQueues?.add(SHAKE_TICKS) { if (p.isSlotAssigned) org.rsmod.api.player.output.Camera.camShakeResetAll(p) }
     }
 
@@ -356,6 +360,15 @@ class BloatRoom(
     var worldQueues: org.rsmod.game.queue.WorldQueueList? = null
 
     private fun List<Player>.randomOrNull(random: GameRandom): Player? = if (isEmpty()) null else this[random.of(0, size - 1)]
+
+    /**
+     * Tiles he covers this tick. Blert: a run never carries him round a corner (he stops on it, then runs on down the
+     * next side), and after turning back he walks three steps before he runs again.
+     */
+    private fun stride(): Int {
+        if (speed < 2 || walkAfterTurn > 0) return 1
+        return if (LOOP[Math.floorMod(li + dir, LOOP.size)] in BloatRules.CORNERS) 1 else 2
+    }
 
     private fun walkTo(from: Pair<Int, Int>, to: Pair<Int, Int>) {
         npc.routeDestination.clear()
@@ -425,9 +438,7 @@ class BloatRoom(
         const val FLIES_PROJ = "spotanim.tob_bloat_flies_large"
         const val FLY_TICKS = 1
         const val ENTRY_MAX_FLIES = 8
-        const val SHAKE_AMPLITUDE = 12
-        const val SHAKE_RATE = 25
-        const val SHAKE_RANDOM = 4
+        const val SHAKE_RANDOM = 6
         const val SHAKE_TICKS = 3
         const val FLY_START_HEIGHT = 60
         const val FLY_END_HEIGHT = 40

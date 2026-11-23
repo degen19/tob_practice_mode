@@ -8,6 +8,7 @@ import org.rsmod.game.entity.Player
 import org.rsmod.game.hit.Hit
 import org.rsmod.game.loc.LocAngle
 import org.rsmod.game.loc.LocInfo
+import org.rsmod.game.loc.LocShape
 import org.rsmod.map.CoordGrid
 import kotlin.math.floor
 import kotlin.math.min
@@ -37,6 +38,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private var dead = -1
 
     private class Crab(val npc: Npc) {
+        var arrived = false
         var leakedAt = -1
     }
 
@@ -117,7 +119,6 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val spots = CRAB_SPOTS.shuffled(java.util.Random(d.random.of(Int.MAX_VALUE).toLong())).take(CRABS)
         for ((x, y) in spots) {
             val n = spawn(CRAB, CoordGrid(x, y, 0), hp(CRAB_HP, ENTRY_CRAB_HP))
-            later(1) { if (n.isSlotAssigned) n.anim("seq.elemental_spawn") }
             crabs += Crab(n)
         }
     }
@@ -138,18 +139,9 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                 }
                 continue
             }
-            if (n.hitpoints <= 0) continue
-            val r = real(n.coords)
-            val gapX = maxOf(X - (r.x + n.size - 1), r.x - (X + SIZE - 1), 0)
-            val gapZ = maxOf(Y - (r.z + n.size - 1), r.z - (Y + SIZE - 1), 0)
-            val stuck = maxOf(gapX, gapZ) <= 2 && !frozen(n) && !canAdvance(n)
-            if (maxOf(gapX, gapZ) <= 1 || stuck) {
-                // it reached her: she drinks it
-                c.leakedAt = t
-                leaks++
-                healNpc(maiden, n.hitpoints * 2)
-                deathAnim(n)
-                n.hitpoints = 0
+            if (n.hitpoints <= 0 || c.arrived) continue
+            if (gap(n) <= 1) {
+                c.arrived = true
                 continue
             }
             if (frozen(n)) continue
@@ -158,12 +150,27 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         }
     }
 
-    /** Whether a crab still has an open step toward her (it stops against her platform otherwise). */
-    private fun canAdvance(n: Npc): Boolean {
+    /**
+     * A crab that stood beside her through the tick's hits melts into her (Blert: she heals the tick after it arrives,
+     * and a hit landing on it that tick kills it first, so she gets nothing).
+     */
+    override fun late() {
+        for (c in crabs) {
+            val n = c.npc
+            if (!c.arrived || c.leakedAt >= 0 || !n.isSlotAssigned || n.hitpoints <= 0) continue
+            c.leakedAt = t - 1
+            leaks++
+            healNpc(maiden, n.hitpoints * 2)
+            deathAnim(n)
+            n.hitpoints = 0
+        }
+    }
+
+    private fun gap(n: Npc): Int {
         val r = real(n.coords)
-        val sx = sign(X - r.x)
-        val sz = sign(Y - r.z)
-        return listOf(sx to sz, sx to 0, 0 to sz).filter { (x, z) -> x != 0 || z != 0 }.any { (x, z) -> !blocked(CoordGrid(r.x + x, r.z + z, 0)) }
+        val gapX = maxOf(X - (r.x + n.size - 1), r.x - (X + SIZE - 1), 0)
+        val gapZ = maxOf(Y - (r.z + n.size - 1), r.z - (Y + SIZE - 1), 0)
+        return maxOf(gapX, gapZ)
     }
 
     /** A crab's death (and its melt into her when it reaches her): the Nylocas Matomenos death animation. */
@@ -281,7 +288,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             }
             val r = real(n.coords)
             if (s.last != null && s.last != r && !trails.containsKey(s.last!!)) {
-                trails[s.last!!] = loc(TRAIL, s.last!!) to t + TRAIL_TICKS
+                trails[s.last!!] = loc(TRAIL, s.last!!, shape = LocShape.CentrepieceStraight) to t + TRAIL_TICKS
             }
             s.last = r
             if (n.routeDestination.isEmpty() && !frozen(n)) {

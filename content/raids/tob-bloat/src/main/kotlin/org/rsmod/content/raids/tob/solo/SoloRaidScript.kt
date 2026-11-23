@@ -30,6 +30,7 @@ import org.rsmod.api.script.onOpNpc2
 import org.rsmod.api.script.onOpNpc3
 import org.rsmod.game.cheat.Cheat
 import org.rsmod.game.entity.Player
+import org.rsmod.game.movement.MoveSpeed
 import org.rsmod.game.loc.LocShape
 import org.rsmod.map.CoordGrid
 import org.rsmod.map.util.Bounds
@@ -65,7 +66,11 @@ constructor(
         raids.travel = { p, r, a -> travel(p, r, a) }
         if (System.getenv("TOB_NODEATH") != null) org.rsmod.api.player.PracticeSettings.noDeaths = true
         onEvent<GameLifecycle.StartCycle> { tickRooms() }
-        onEvent<GameLifecycle.LateCycle> { for (room in raids.byOwner.values.toList()) runCatching { room.late() }.onFailure { e -> logger.error(e) { "tob room late tick" } } }
+        onEvent<GameLifecycle.LateCycle> {
+            for (room in raids.byOwner.values.toList()) runCatching { room.late() }.onFailure { e -> logger.error(e) { "tob room late tick" } }
+            SoloBarrier.settle()
+        }
+        SoloBarrier.collision = d.collision
         // ToB practice is at the game's own experience rates: no boosted XP
         onPlayerLogin {
             player.xpRate = 1.0
@@ -361,9 +366,52 @@ object SoloBarrier {
                 room.start()
                 delay(1)
             }
-            forcedWalk(dest, crossTiles = tiles)
+            cross(player, dest, tiles)
         }
     }
+
+    /** Players walking through a barrier, and the tile they're walking to. */
+    private val crossing = HashMap<Player, Pair<CoordGrid, Int>>()
+
+    /**
+     * Walks [player] through the barrier to [dest] (unchecked, the client's own walk). The script lets go as the last
+     * step starts, so you're free to click on the tick you arrive; [settle] ends the walk once you're there.
+     */
+    private suspend fun ProtectedAccess.cross(player: Player, dest: CoordGrid, tiles: Int) {
+        player.forcedRoute = true
+        player.resetPendingFaceSquare()
+        player.routeRequest = null
+        player.routeDestination.clear()
+        player.routeDestination.add(dest)
+        player.moveSpeed = MoveSpeed.Walk
+        player.tempMoveSpeed = MoveSpeed.Walk
+        crossing[player] = dest to tiles + CROSS_GRACE
+        if (tiles > 1) delay(tiles - 1)
+    }
+
+    /** After the tick's movement: a crossing that's arrived (or run out of time) hands movement back. */
+    fun settle() {
+        val it = crossing.iterator()
+        while (it.hasNext()) {
+            val (player, entry) = it.next()
+            val (dest, left) = entry
+            if (player.isSlotAssigned && player.coords != dest && left > 1) {
+                crossing[player] = dest to left - 1
+                continue
+            }
+            player.forcedRoute = false
+            player.routeDestination.clear()
+            player.tempMoveSpeed = null
+            player.resetPendingFaceSquare()
+            if (player.isSlotAssigned && player.coords != dest) org.rsmod.game.entity.util.PathingEntityCommon.telejump(player, collision ?: return, dest)
+            it.remove()
+        }
+    }
+
+    /** Set by [SoloRaidScript] at startup. */
+    var collision: org.rsmod.routefinder.collision.CollisionFlagMap? = null
+
+    private const val CROSS_GRACE = 2
 }
 
 /** Names of locs by id, for the room's handlers. */
