@@ -196,6 +196,9 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     /** A tick of the room ([t] is this tick). */
     protected abstract fun step()
 
+    /** After the tick's npc and player processing (hits have landed). */
+    open fun late() {}
+
     /** A hit landing on one of this room's NPCs: the damage it does (null: not ours, leave it). */
     open fun land(npc: Npc, hit: Hit): Int? = null
 

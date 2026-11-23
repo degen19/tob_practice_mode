@@ -64,6 +64,7 @@ constructor(
         raids.travel = { p, r -> travel(p, r) }
         if (System.getenv("TOB_NODEATH") != null) org.rsmod.api.player.PracticeSettings.noDeaths = true
         onEvent<GameLifecycle.StartCycle> { tickRooms() }
+        onEvent<GameLifecycle.LateCycle> { for (room in raids.byOwner.values.toList()) runCatching { room.late() }.onFailure { e -> logger.error(e) { "tob room late tick" } } }
         // ToB practice is at the game's own experience rates: no boosted XP
         onPlayerLogin {
             player.xpRate = 1.0

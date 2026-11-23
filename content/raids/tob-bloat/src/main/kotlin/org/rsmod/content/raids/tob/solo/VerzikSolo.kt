@@ -71,6 +71,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private var redsAt = -1
     private var redsAttacks = 0
     private val redBorn = HashMap<Npc, Int>()
+    private val redHeals = ArrayList<Pair<Int, Int>>()
+    private var p2Killed = false
     private var summoning = -1
     private var athanatos: Npc? = null
     private var athanatosNext = 0
@@ -114,6 +116,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         athanatos = null
         crawlers.clear()
         redCrabs.clear()
+        redHeals.clear()
+        p2Killed = false
         redBorn.clear()
         webs.clear()
         for (p in pillars) {
@@ -345,7 +349,9 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     /* ---- P2 */
 
     private fun p2(v: Npc) {
-        if (v.hitpoints <= 1) {
+        if (v.hitpoints <= 1 || p2Killed) {
+            p2Killed = false
+            redHeals.clear()
             phase = 23
             phaseAt = t
             v.hitpoints = 0
@@ -508,10 +514,23 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private fun alivePlayers(): Int = if (inside() != null) 1 else 0
 
     /**
-     * The reds don't walk into her: they wander until the back end of their cycle, then vanish and send what they
-     * have left to her as a heal (Blert: a cycle every 44 ticks, gone 42 ticks on unless killed first; one in a
+     * The reds don't walk into her: they wander until the back end of their cycle, then pop (their death animation)
+     * and send what they have left to her as a heal (Blert: a cycle every 44 ticks, gone 42 ticks on unless killed first; one in a
      * solo, one each side with two or more alive).
      */
+    /**
+     * A popped red's heal reaches her on the tick after its animation (R41), after the players' hits that tick: if
+     * those took her down, the heal still shows but she dies.
+     */
+    override fun late() {
+        if (redHeals.none { it.first <= t }) return
+        val v = verzik ?: return redHeals.clear()
+        if (phase != 2 || dead >= 0) return redHeals.clear()
+        if (v.hitpoints <= 1) p2Killed = true
+        for ((_, heal) in redHeals.filter { it.first <= t }) healNpc(v, heal)
+        redHeals.removeAll { it.first <= t }
+    }
+
     private fun redsTick(v: Npc) {
         val it = redCrabs.iterator()
         while (it.hasNext()) {
@@ -523,10 +542,13 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             }
             if (r.hitpoints <= 0) continue
             val age = t - (redBorn[r] ?: t)
-            if (age >= RED_LIFE) {
+            if (age >= RED_POP_AT) {
                 projTiles(RED_HEAL_PROJ, center(r), center(v), speed = RED_HEAL_SPEED, startHeight = 40, endHeight = 100)
-                healNpc(v, r.hitpoints)
-                despawn(r)
+                redHeals += (t + 1) to r.hitpoints
+                r.routeDestination.clear()
+                r.anim(RED_POP_SEQ)
+                r.hitpoints = 0
+                later(RED_LIFE - RED_POP_AT) { if (r.isSlotAssigned) despawn(r) }
                 redBorn.remove(r)
                 it.remove()
                 continue
@@ -936,6 +958,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val REDS_ATTACKS = 8
         const val RED_LIFE = 42
         const val RED_SPAWN_SEQ = "seq.elemental_spawn"
+        const val RED_POP_SEQ = "seq.elemental_death"
+        const val RED_POP_AT = 40
         const val RED_HEAL_PROJ = "spotanim.verzik_phase2_bloodproj"
         const val RED_HEAL_SPEED = 4
         const val SUMMON_TICKS = 12
