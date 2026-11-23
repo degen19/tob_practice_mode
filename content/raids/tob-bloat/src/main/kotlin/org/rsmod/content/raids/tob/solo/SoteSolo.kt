@@ -23,10 +23,10 @@ import org.rsmod.map.CoordGrid
  * - At 66.6% and 33.3% the maze: she goes still, and 3 ticks later you're taken to the Shadow Realm - you're the chosen
  *   one in a solo. The path is lit under you; walk it (or not - nothing hurts you there but the realm itself, 1-3
  *   every 7 ticks) and leave by the portal at the top. Above, only the tile you stand on below glows.
- * - Normal mode: back in the room you come in below the maze and run it as if you weren't chosen: the path isn't
- *   shown (players screenshot it below) and a tile off it hurts 6.67% of your hitpoints + 15 each tick. She wakes
- *   (Defence back to full, attacking at once) on the first instance tick 1 at least two ticks after you reach the
- *   top (Blert's solos; the tick from a real clip's instance timer).
+ * - Normal mode solo: someone has to run the maze above for it to clear, so the portal puts you back at its start
+ *   and you run it as if you weren't chosen: the path isn't shown (players screenshot it below) and a tile off it
+ *   hurts 6.67% of your hitpoints + 15 each tick. She wakes (Defence back to full, attacking at once) at the start of
+ *   the next 4-tick cycle once you're off the top: off on a 4, she's attackable on the 1 after.
  * - Entry mode: the portal puts you back where the maze caught you and that's it - she wakes on the next 1.
  * - The maze procs on the landing of the hit that brings her to the threshold; you're held still until the
  *   teleport 3 ticks later. Every 11th orb (melees don't count, mazes don't reset it) is the death ball.
@@ -306,7 +306,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         val y = here.z - OVER_Y
         if (crossed < 0 && x in 0 until W && y in 0 until H && !m[x][y]) hurt(p, p.hitpoints / 15 + OFF_PATH)
         if (crossed >= 0) {
-            // she wakes on the first instance tick 1 at least two ticks after you reach the top (Entry: the next 1)
+            // she wakes at the start of the next 4-tick cycle (instance tick 1) once you're off the top
             if (now - crossed >= (if (entryMode) WAKE_ENTRY else WAKE) && instanceTick == WAKE_TICK) endMaze(quiet = false)
             return
         }
@@ -427,7 +427,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         val RETURN = CoordGrid(3274, 4307, 0)
         const val TELEPORT = 3
         const val REALM_EVERY = 7
-        const val WAKE = 2
+        const val WAKE = 0
         const val WAKE_TICK = 1
         const val WAKE_CYCLE = 4
         const val OFF_PATH = 15
