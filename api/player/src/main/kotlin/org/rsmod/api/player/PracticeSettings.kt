@@ -10,4 +10,6 @@ public object PracticeSettings {
     @Volatile public var noDeaths: Boolean = false
     @Volatile public var infiniteHp: Boolean = false
     @Volatile public var infiniteSupplies: Boolean = false
+    @Volatile public var infinitePrayer: Boolean = false
+    @Volatile public var alwaysMaxHit: Boolean = false
 }

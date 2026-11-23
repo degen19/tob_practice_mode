@@ -1,6 +1,7 @@
 package org.rsmod.api.player.cheat
 
 import org.rsmod.api.attr.AttributeKey
+import org.rsmod.api.player.PracticeSettings
 import org.rsmod.game.entity.Player
 
 public val ADMIN_GOD_MODE_ATTR: AttributeKey<Boolean> = AttributeKey()
@@ -18,7 +19,7 @@ public var Player.adminGodMode: Boolean
     }
 
 public var Player.adminMaxHit: Boolean
-    get() = attr[ADMIN_MAX_HIT_ATTR] == true
+    get() = PracticeSettings.alwaysMaxHit || attr[ADMIN_MAX_HIT_ATTR] == true
     set(value) {
         if (value) {
             attr[ADMIN_MAX_HIT_ATTR] = true

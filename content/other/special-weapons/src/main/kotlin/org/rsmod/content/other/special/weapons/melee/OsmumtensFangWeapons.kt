@@ -1,6 +1,7 @@
 package org.rsmod.content.other.special.weapons.melee
 
 import org.rsmod.api.combat.commons.CombatAttack
+import org.rsmod.api.player.cheat.adminMaxHit
 import org.rsmod.api.player.protect.ProtectedAccess
 import org.rsmod.api.weapons.MeleeWeapon
 import org.rsmod.api.weapons.WeaponAttackManager
@@ -55,7 +56,7 @@ class OsmumtensFangWeapons : WeaponMap {
                     val max =
                         manager.calculateMeleeMaxHit(this, target, attack.type, attack.style, 1.0)
                     val trim = max * 15 / 100
-                    random.of(trim, max - trim)
+                    if (player.adminMaxHit) max - trim else random.of(trim, max - trim)
                 } else {
                     0
                 }

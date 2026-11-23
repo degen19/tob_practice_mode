@@ -3,6 +3,7 @@ package org.rsmod.content.interfaces.prayer.tab.scripts
 import jakarta.inject.Inject
 import kotlin.math.max
 import kotlin.math.min
+import org.rsmod.api.player.PracticeSettings
 import org.rsmod.api.player.bonus.WornBonuses
 import org.rsmod.api.player.disablePrayers
 import org.rsmod.api.player.output.mes
@@ -38,6 +39,8 @@ constructor(private val repo: PrayerRepository, private val bonuses: WornBonuses
             // of implicitly doing so when all prayers are disabled.
             throw IllegalStateException("Prayer drain timer should have been manually cleared.")
         }
+
+        if (PracticeSettings.infinitePrayer) return
 
         if (prayerLvl == 0) {
             triggerPrayerDepletion()
