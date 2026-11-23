@@ -23,6 +23,7 @@ import org.rsmod.api.repo.region.RegionTemplate
 import org.rsmod.api.script.onCommand
 import org.rsmod.api.script.onEvent
 import org.rsmod.api.script.onOpLoc1
+import org.rsmod.api.script.onOpLoc2
 import org.rsmod.api.script.onPlayerLogin
 import org.rsmod.api.script.onOpNpc1
 import org.rsmod.api.script.onOpNpc2
@@ -87,6 +88,8 @@ constructor(
             cheat { tob() }
         }
         for (loc in ROOM_LOCS) onOpLoc1(loc) { roomLoc(loc, it.loc.coords, 1) }
+        onOpLoc1(PASSAGE) { passage(it.loc.coords) }
+        onOpLoc2(PASSAGE) { passage(it.loc.coords) }
         onOpNpc1("npc.verzik_initial") { (raids.forPlayer(player) as? VerzikSolo)?.begin(this) }
         onOpNpc2("npc.verzik_initial") { (raids.forPlayer(player) as? VerzikSolo)?.begin(this) }
         onOpNpc3("npc.verzik_initial") { (raids.forPlayer(player) as? VerzikSolo)?.begin(this) }
@@ -98,6 +101,7 @@ constructor(
             "stop" -> {
                 val room = raids.byOwner[player.username] ?: return player.mes("You're not in the Theatre.")
                 close(room)
+                TobHud.close(player, d.eventBus)
                 protectedAccess.launch(player) { telejump(EXIT, TeleportType.Exempt) }
                 player.npcViewDistance = null
                 player.mes("You leave the Theatre.")
@@ -119,8 +123,11 @@ constructor(
         }
     }
 
-    /** Takes [player] to the corridor outside [room]'s barrier (a fresh copy of the room). */
-    fun travel(player: Player, room: TobRoom) {
+    /**
+     * Takes [player] to the corridor outside [room]'s barrier (a fresh copy of the room). From inside a script
+     * ([access]) the jump is made there; otherwise it's launched.
+     */
+    fun travel(player: Player, room: TobRoom, access: ProtectedAccess? = null) {
         raids.byOwner[player.username]?.let { close(it) }
         val area =
             if (room.allLevels) {
@@ -169,12 +176,16 @@ constructor(
                 TobRoom.VERZIK -> VerzikSolo(player, session, d, origin, copyBase)
             }
         raids.byOwner[player.username] = solo
+        solo.anchor = raids.lineTicks.remove(player.username) ?: solo.builtAt
+        logger.info { "tob $room: instance cycle from clock ${solo.anchor} (built ${solo.builtAt})" }
         solo.build()
         if (System.getenv("TOB_MAPDUMP") != null) dumpMap(solo)
         val (chestAt, angle) = solo.chest
         d.locRepo.add(solo.at(chestAt), CHEST, Int.MAX_VALUE, angle, LocShape.CentrepieceStraight)
         player.npcViewDistance = NPC_VIEW
-        protectedAccess.launch(player) { telejump(solo.at(solo.entry), TeleportType.Exempt) }
+        TobHud.open(player, d.eventBus)
+        val dest = solo.at(solo.entry)
+        if (access != null) access.telejump(dest, TeleportType.Exempt) else protectedAccess.launch(player) { telejump(dest, TeleportType.Exempt) }
         player.mes("${room.label}. Pass the barrier when you're ready; the supply chest is beside you.")
         logger.info { "tob solo: ${player.username} -> $room (instance ${session.id})" }
     }
@@ -203,7 +214,14 @@ constructor(
                 }
                 if (room.owner in auto && room.t % 5 == 0) logger.info { "tobtest ${room.id} t${room.t} ${room.debug()} | player ${room.real(room.owner.coords)} hp ${room.owner.hitpoints}" }
                 val p = room.player() ?: continue
-                if (room.cleared && room.walkOn && !room.inArena(room.real(p.coords)) && !p.isDelayed) {
+                if (room.cleared && room.id.onLine(room.real(p.coords)) && raids.lineTicks.putIfAbsent(p.username, d.mapClock.cycle - 1) == null) {
+                    logger.info { "tob ${room.id}: ${p.username} on the exit line at ${room.real(p.coords)}, clock ${d.mapClock.cycle - 1}" }
+                }
+                val out = room.cleared && room.walkOn && !room.inArena(room.real(p.coords)) && !p.isDelayed
+                if (!out) room.outSince = -1 else if (room.outSince < 0) room.outSince = room.t
+                // players walk to the Formidable passage; if they haven't found it a while after leaving, take them on
+                val viaPassage = room.owner !in auto && room.hasPassage() && room.t - room.outSince < PASSAGE_GRACE
+                if (out && !viaPassage) {
                     val next = room.id.next
                     if (next == null) {
                         room.leftAfterClear()
@@ -233,6 +251,13 @@ constructor(
             return
         }
         if (room.cleared) {
+            val approach = if (System.getenv("TOB_PASSAGE") != null) room.passageApproach() else null
+            if (approach != null) {
+                if (p.isAccessProtected) return
+                org.rsmod.game.entity.util.PathingEntityCommon.telejump(p, d.collision, room.at(approach.first))
+                protectedAccess.launch(p) { passage(room.at(approach.second)) }
+                return
+            }
             org.rsmod.game.entity.util.PathingEntityCommon.telejump(p, d.collision, room.at(room.entry))
             return
         }
@@ -242,6 +267,25 @@ constructor(
         val drain = System.getenv("TOB_DRAIN")?.toIntOrNull() ?: 0
         if (drain > 0 && room.t % 5 == 0 && target.hitpoints > 2) target.hitpoints = (target.hitpoints - target.baseHitpointsLvl * drain / 100).coerceAtLeast(1)
         if (p.interaction == null && target.isSlotAssigned && target.hitpoints > 0) bots.attack(p, target)
+    }
+
+    /**
+     * The Formidable passage past a cleared room: you walk through it onto the room's exit line, the screen goes dark
+     * red around the turning portal, and you come out at the next room under its name.
+     */
+    private suspend fun ProtectedAccess.passage(at: CoordGrid) {
+        val room = raids.forPlayer(player) ?: return
+        if (!room.cleared) return
+        val next = room.id.next ?: return room.leftAfterClear()
+        val dx = Integer.signum(at.x - player.coords.x)
+        val dz = Integer.signum(at.z - player.coords.z)
+        val through = CoordGrid(at.x + dx, at.z + dz, at.level)
+        if ((dx == 0) != (dz == 0) && room.id.onLine(room.real(through))) forcedWalk(through, crossTiles = PASSAGE_CROSS)
+        TobHud.portal(player)
+        delay(PASSAGE_FADE_TICKS)
+        travel(player, next, this)
+        delay(1)
+        TobHud.arrive(player, next.label)
     }
 
     private suspend fun ProtectedAccess.roomLoc(loc: String, at: CoordGrid, op: Int) {
@@ -271,6 +315,10 @@ constructor(
                 dev.openrune.util.Wearpos.Legs.slot to "obj.torva_legs",
             )
         val EXIT = CoordGrid(3676, 3219, 0)
+        const val PASSAGE = "loc.tob_dungeon_walkway_exit_clickbox"
+        const val PASSAGE_CROSS = 2
+        const val PASSAGE_FADE_TICKS = 2
+        const val PASSAGE_GRACE = 100
         val ROOM_LOCS =
             listOf(
                 "loc.tob_dungeon_xarpus_arena_door_exit",

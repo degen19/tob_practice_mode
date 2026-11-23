@@ -325,7 +325,9 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         }
     }
 
-    override fun autoTarget(): Npc? = crabs.firstOrNull { it.npc.isSlotAssigned && it.npc.hitpoints > 0 && it.leakedAt < 0 }?.npc ?: maiden
+    override fun autoTarget(): Npc? =
+        if (System.getenv("TOB_LEAK") != null) maiden
+        else crabs.firstOrNull { it.npc.isSlotAssigned && it.npc.hitpoints > 0 && it.leakedAt < 0 }?.npc ?: maiden
 
     override val autoStart: CoordGrid
         get() = CoordGrid(3174, 4446, 0)

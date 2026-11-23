@@ -23,9 +23,10 @@ import org.rsmod.map.CoordGrid
  * - At 66.6% and 33.3% the maze: she goes still, and 3 ticks later you're taken to the Shadow Realm - you're the chosen
  *   one in a solo. The path is lit under you; walk it (or not - nothing hurts you there but the realm itself, 1-3
  *   every 7 ticks) and leave by the portal at the top. Every path tile you step on below is lit above.
- * - Back in the room you come in below the maze and must cross it to her: any tile off the path hurts you as you stand
- *   on it. She wakes (Defence back to full, attacking at once) on the first tick of the 4-tick instance cycle at
- *   least two ticks after you reach the top - from Blert recordings of real solos, which fit this every time.
+ * - Back in the room you come in below the maze and cross it to her; off-path tiles only hurt players who weren't
+ *   chosen, so in a solo nothing on it hurts you. She wakes (Defence back to full, attacking at once) on the first
+ *   instance tick 1 at least two ticks after you reach the top (Blert's solos; the tick from a real clip's instance
+ *   timer).
  * - The maze procs on the landing of the hit that brings her to the threshold; you're held still until the
  *   teleport 3 ticks later. Every 11th orb (melees don't count, mazes don't reset it) is the death ball.
  */
@@ -50,6 +51,9 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     private var under = false
     private var crossed = -1
     private val lit = ArrayList<LocInfo>()
+
+    /** The maze floor in the room (by column, row): plain between mazes, dark while one is on. */
+    private val floor = HashMap<Pair<Int, Int>, LocInfo>()
     private val litAbove = HashSet<Pair<Int, Int>>()
 
     override fun build() {
@@ -59,6 +63,8 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         mazes = 0
         dead = -1
         endMaze(quiet = true)
+        floor.clear()
+        paintFloor(PLAIN)
         sote = spawn(IDLE, CoordGrid(X, Y, 0), hp(HP, entryHp(2800)))
         // nobody walks under Sotetseg
         blockPlayers(CoordGrid(X, Y, 0), SIZE, true)
@@ -105,7 +111,6 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         get() = d.mapClock.cycle
 
     override fun step() {
-        showCycle()
         if (dead >= 0) {
             if (t - dead == DEATH_TICKS) {
                 cleared = true
@@ -236,6 +241,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         transmog(sote, IDLE)
         sote.facePlayer(owner)
         maze = roll()
+        paintFloor(DARK)
         // everyone is held where they stand until the teleport
         inside()?.let {
             it.anim("seq.human_teleport_other_impact")
@@ -286,25 +292,22 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             if (since > TELEPORT && (since - TELEPORT) % REALM_EVERY == 0) hurt(p, rand(1, 3))
             val x = here.x - UNDER_X
             val y = here.z - UNDER_Y
-            if (x in 0 until W && y in 0 until H && m[x][y] && litAbove.add(x to y)) lit += loc(LIT, CoordGrid(OVER_X + x, OVER_Y + y, 0), shape = LocShape.GroundDecor)
+            if (x in 0 until W && y in 0 until H && m[x][y] && litAbove.add(x to y)) {
+                floor.remove(x to y)?.let { delLoc(it) }
+                lit += loc(LIT, CoordGrid(OVER_X + x, OVER_Y + y, 0), shape = LocShape.GroundDecor)
+            }
             return
         }
         if (here.level != 0) return
         under = false
         if (crossed >= 0) {
-            // she wakes on the first tick of the instance's 4-tick cycle at least two ticks after you reach the top
-            if (now - crossed >= WAKE && cycle == 0) endMaze(quiet = false)
+            // she wakes on the first instance tick 1 at least two ticks after you reach the top
+            if (now - crossed >= WAKE && instanceTick == WAKE_TICK) endMaze(quiet = false)
             return
-        }
-        val x = here.x - OVER_X
-        val y = here.z - OVER_Y
-        if (x in 0 until W && y in 0 until H && !m[x][y]) {
-            gfx("spotanim.devious_explosion", here)
-            hurt(p, p.hitpoints * 667 / 10000 + MAZE_HIT)
         }
         if (here.z >= OVER_Y + H) {
             crossed = now
-            if (WAKE == 0 && cycle == 0) endMaze(quiet = false)
+            if (WAKE == 0 && instanceTick == WAKE_TICK) endMaze(quiet = false)
         }
     }
 
@@ -316,16 +319,29 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         return true
     }
 
+    private fun paintFloor(type: String) {
+        for (x in 0 until W) for (y in 0 until H) {
+            floor.remove(x to y)?.let { delLoc(it) }
+            floor[x to y] = loc(type, CoordGrid(OVER_X + x, OVER_Y + y, 0), shape = LocShape.GroundDecor)
+        }
+    }
+
     private fun endMaze(quiet: Boolean) {
         for (l in lit) delLoc(l)
         lit.clear()
         litAbove.clear()
+        if (maze != null) paintFloor(PLAIN)
         maze = null
         if (quiet) return
         epoch++
         transmog(sote, COMBAT)
         sote.defenceLvl = sote.baseDefenceLvl
         nextAttack = t
+    }
+
+    override fun progress(): TobHud.Bar? {
+        val bar = super.progress() ?: return null
+        return if (maze != null) bar.copy(type = TobHud.IMMUNE) else bar
     }
 
     override fun autoTarget(): Npc? = if (maze == null) sote else null
@@ -390,9 +406,11 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         val RETURN = CoordGrid(3274, 4307, 0)
         const val TELEPORT = 3
         const val REALM_EVERY = 7
-        const val MAZE_HIT = 15
         const val WAKE = 2
+        const val WAKE_TICK = 1
         const val WAKE_CYCLE = 4
         const val LIT = "loc.tob_sotetseg_lighttile"
+        const val PLAIN = "loc.tob_sotetseg_plaintile"
+        const val DARK = "loc.tob_sotetseg_darktile"
     }
 }

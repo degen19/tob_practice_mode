@@ -25,14 +25,20 @@ import org.rsmod.game.queue.WorldQueueList
 import org.rsmod.map.CoordGrid
 import org.rsmod.routefinder.collision.CollisionFlagMap
 
-/** The rooms of the raid, in order, with the map they're copied from (real tiles). */
-enum class TobRoom(val label: String, val regions: List<Int>, val level: Int, val minX: Int, val minY: Int, val maxX: Int, val maxY: Int, val allLevels: Boolean = false) {
-    MAIDEN("The Maiden of Sugadinti", listOf(12613), 0, 3136, 4416, 3199, 4479),
-    BLOAT("Pestilent Bloat", listOf(13125), 0, 3264, 4416, 3327, 4479),
-    NYLOCAS("The Nylocas", listOf(13122), 0, 3264, 4224, 3327, 4287),
-    SOTETSEG("Sotetseg", listOf(13123, 13379), 0, 3264, 4288, 3391, 4351, allLevels = true),
-    XARPUS("Xarpus", listOf(12612), 1, 3136, 4352, 3199, 4415),
-    VERZIK("Verzik Vitur", listOf(12611), 0, 3136, 4288, 3199, 4351);
+/**
+ * The rooms of the raid, in order, with the map they're copied from (real tiles). [lineX]/[lineY] is the room's exit
+ * line, the tiles just through its Formidable passage: the next room's instance cycle starts from the tick a player
+ * stands on it (the same line the client's instance timer starts from).
+ */
+enum class TobRoom(val label: String, val regions: List<Int>, val level: Int, val minX: Int, val minY: Int, val maxX: Int, val maxY: Int, val lineX: IntRange, val lineY: IntRange, val allLevels: Boolean = false) {
+    MAIDEN("The Maiden of Sugadinti", listOf(12613), 0, 3136, 4416, 3199, 4479, 3175..3178, 4421..4421),
+    BLOAT("The Pestilent Bloat", listOf(13125), 0, 3264, 4416, 3327, 4479, 3268..3268, 4446..4449),
+    NYLOCAS("The Nylocas", listOf(13122), 0, 3264, 4224, 3327, 4287, 3304..3304, 4274..4277),
+    SOTETSEG("Sotetseg", listOf(13123, 13379), 0, 3264, 4288, 3391, 4351, 3278..3281, 4292..4292, allLevels = true),
+    XARPUS("Xarpus", listOf(12612), 1, 3136, 4352, 3199, 4415, 3169..3171, 4400..4400),
+    VERZIK("The Final Challenge", listOf(12611), 0, 3136, 4288, 3199, 4351, IntRange.EMPTY, IntRange.EMPTY);
+
+    fun onLine(real: CoordGrid): Boolean = real.x in lineX && real.z in lineY
 
     val next: TobRoom?
         get() = entries.getOrNull(ordinal + 1)
@@ -67,7 +73,7 @@ constructor(
     val mapClock: MapClock,
     val raids: SoloRaids,
     val players: PlayerList,
-    val bossBar: org.rsmod.api.bossbar.plugin.BossHpBarScript,
+    val eventBus: org.rsmod.events.EventBus,
 )
 
 /** Every live solo room, by owner. */
@@ -95,6 +101,12 @@ class SoloRaids {
     var travel: ((Player, TobRoom) -> Unit)? = null
 
     fun isLive(room: SoloRoom): Boolean = byOwner[room.owner.username] === room
+
+    /** The map clock on the tick each player last stood on a room's exit line, by username (see [TobRoom.lineX]). */
+    val lineTicks = HashMap<String, Int>()
+
+    /** Ticks of every room cleared so far this raid, by username (the "Total" in a wave's message). */
+    val raidTicks = HashMap<String, Int>()
 
     fun forPlayer(player: Player): SoloRoom? = byOwner[player.username]?.takeIf { it.contains(player.coords) }
 

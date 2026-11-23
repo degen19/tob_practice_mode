@@ -88,12 +88,44 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     fun tick() {
         if (t < 0) {
             idle()
+            hud()
             return
         }
         snapshot()
         step()
+        if (cleared && !announced) announce()
         t++
-        bossBar()
+        hud()
+    }
+
+    private var announced = false
+
+    /** The tick the player first stood outside the arena after the room was cleared (-1 while inside). */
+    var outSince = -1
+
+    /** Whether this room's copy has a Formidable passage out (players walk to it once the room is clear). */
+    fun hasPassage(): Boolean = passages.isNotEmpty()
+
+    /** A tile in front of one of the room's passages and the passage's own tile (real tiles), for walking it. */
+    fun passageApproach(): Pair<CoordGrid, CoordGrid>? {
+        for ((at, _) in passages) {
+            for ((dx, dz) in STEPS) {
+                if (id.onLine(CoordGrid(at.x + dx, at.z + dz, at.level))) return CoordGrid(at.x - dx, at.z - dz, at.level) to at
+            }
+        }
+        return null
+    }
+
+    private val passages by lazy { findLocs(SoloRaidScript.PASSAGE).also { ps -> logger.info { "tob ${id}: passages ${ps.map { it.first }}" } } }
+
+    /** The game's wave message: this room's time and the raid's running total. */
+    private fun announce() {
+        announced = true
+        val total = (if (id == TobRoom.MAIDEN) 0 else d.raids.raidTicks[owner.username] ?: 0) + t
+        d.raids.raidTicks[owner.username] = total
+        val mode = if (entryMode) "Entry" else "Normal"
+        owner.mes("Wave '${id.label}' ($mode Mode) complete! Duration: <col=ff0000>${raidTime(t)}</col> Total: <col=ff0000>${raidTime(total)}</col>")
+        owner.mes("The vampyres are impressed by your prowess. <col=ff0000>Check the chest</col> to see what they've sent you.")
     }
 
     /* ---- the recording: every tick of the room in Blert's shape (stage events), to set beside real raids */
@@ -150,44 +182,31 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     }
 
     /**
-     * Where the instance is in its 4-tick cycle: 0 on the cycle's first tick (when Nylocas waves come, Sotetseg
-     * wakes from a maze and Xarpus screeches), then 1, 2, 3. It runs on the world clock, so it carries on from room
-     * to room as the raid's one instance does.
+     * The map clock on the tick the player stood on the last room's exit line (just through its Formidable passage):
+     * the room's 4-tick instance cycle counts from there. Coming in any other way, it counts from arrival.
      */
-    val cycle: Int
-        get() = Math.floorMod(d.mapClock.cycle, INSTANCE_CYCLE)
+    var anchor: Int = builtAt
 
-    /** The instance timer over the player's head, 1 to 4 (1 on the cycle's first tick), in the rooms that use it. */
-    protected fun showCycle() {
-        inside()?.say("${cycle + 1}")
-    }
+    /**
+     * Where the instance is in its 4-tick cycle, numbered as the client's instance timer shows it (3 on the tick you
+     * stand on the line, 0 the tick after). Nylocas waves come on 0; Sotetseg wakes and Xarpus's exhumeds rise on 1.
+     */
+    val instanceTick: Int
+        get() = Math.floorMod(d.mapClock.cycle - anchor - 1, INSTANCE_CYCLE)
 
-    /** The room's boss for the big health bar at the top of the screen (null: no bar). */
+    /** The room's boss, whose hitpoints the HUD's bar shows while the fight is on (null: no bar). */
     protected open fun barBoss(): Npc? = null
 
-    private var barNpc: Npc? = null
-    private var barHp = -1
-    private var barMax = -1
+    /** What the HUD's bar shows this tick (null: no bar - the room hasn't started, or it's clear). */
+    protected open fun progress(): TobHud.Bar? {
+        if (t < 0 || cleared) return null
+        val boss = barBoss()?.takeIf { it.isSlotAssigned } ?: return null
+        return TobHud.bar(TobHud.FIGHT, boss.hitpoints, boss.baseHitpointsLvl)
+    }
 
-    /** The big boss health bar: opened once the room has started, kept in step with the boss's hitpoints. */
-    private fun bossBar() {
+    private fun hud() {
         val p = player() ?: return
-        val boss = barBoss()?.takeIf { it.isSlotAssigned && !cleared }
-        if (boss == null) {
-            barNpc?.let { d.bossBar.onClose(p, it) }
-            barNpc = null
-            return
-        }
-        if (boss !== barNpc) {
-            d.bossBar.onOpen(p, boss)
-            barNpc = boss
-            barHp = -1
-        }
-        if (boss.hitpoints != barHp || boss.baseHitpointsLvl != barMax) {
-            barHp = boss.hitpoints
-            barMax = boss.baseHitpointsLvl
-            d.bossBar.onUpdate(p, boss, boss.hitpoints.coerceAtLeast(0), boss.baseHitpointsLvl)
-        }
+        TobHud.update(p, progress())
     }
 
     /** A tick before the room has started. */
@@ -237,9 +256,6 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
 
     fun cleanup() {
         saveRecording()
-        val p = player()
-        barNpc?.let { if (p != null) d.bossBar.onClose(p, it, instant = true) }
-        barNpc = null
         for (n in npcs) if (n.isSlotAssigned) d.npcRepo.del(n, Int.MAX_VALUE)
         npcs.clear()
         for (l in locs) d.locRepo.del(l, Int.MAX_VALUE)
@@ -393,11 +409,11 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
         npc.showHitmark(mark)
     }
 
-    /** Heals [npc] by [amount] (capped at its max), with the heal hitsplat, and updates the boss bar. */
+    /** Heals [npc] by [amount] (capped at its max), with the heal hitsplat, and updates the HUD's bar. */
     fun healNpc(npc: Npc, amount: Int) {
         if (amount <= 0 || !npc.isSlotAssigned) return
         npc.heal(amount, showHitsplat = true)
-        player()?.let { d.bossBar.onUpdate(it, npc) }
+        hud()
     }
 
     /**
@@ -486,9 +502,16 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
         const val MAX_RECORDING = 40_000_000
 
         const val INSTANCE_CYCLE = 4
+        val STEPS = listOf(1 to 0, -1 to 0, 0 to 1, 0 to -1)
 
         /** Zones from the player's zone to the build area's south-west corner (a 104-tile scene). */
         const val BUILD_RADIUS = 6
+
+        /** Ticks as the game prints raid times: m:ss.cc. */
+        fun raidTime(ticks: Int): String {
+            val cs = ticks * 60
+            return "%d:%02d.%02d".format(cs / 6000, cs / 100 % 60, cs % 100)
+        }
 
         /** Entry mode bosses: about this share of their five-player Normal hitpoints (solo; an estimate). */
         const val ENTRY_HP_PERCENT = 20

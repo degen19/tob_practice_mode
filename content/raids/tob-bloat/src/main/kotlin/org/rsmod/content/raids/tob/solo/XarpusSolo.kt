@@ -16,8 +16,9 @@ import org.rsmod.map.CoordGrid
  * Xarpus, solo (3750 hitpoints plus 20 for every exhumed heal).
  *
  * - The exhumeds: he sits in his pool (the feeding form) and can't be hurt. Exhumeds come up one at a time, every 12
- *   ticks from tick 8, and last 11; from their third tick each one sends him an orb of energy every tick nobody stands
- *   on it (+20 hitpoints). Seven of them, then on tick 100 he rises - the fighting form.
+ *   ticks from the first instance tick 1 at or after tick 8 (Blert: 8 to 11, by when you came in), and last 11; from
+ *   their third tick each one sends him an orb of energy every tick nobody stands on it (+20 hitpoints). Seven of
+ *   them, then 92 ticks after the first he rises - the fighting form.
  * - Phase 2: every 4 ticks he spits poison at your tile; it lands 3 ticks later and leaves a pool (hurting you if
  *   you're still on it), then bounces on to two other random tiles. Stand under him on the tick he spits and he
  *   tramples you (two hits of up to 8) instead of spitting. Standing in a pool poisons you harder the longer you stay.
@@ -36,6 +37,7 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private var phase = 0
     private var hp = BASE_HP
     private var exhumeds = 0
+    private var firstExhumed = -1
     private var screechAt = -1
     private var gaze = -1
     private var gazeAt = 0
@@ -53,6 +55,7 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         phase = 0
         hp = hp(BASE_HP, entryHp(3400))
         exhumeds = 0
+        firstExhumed = -1
         screechAt = -1
         gaze = -1
         dead = -1
@@ -88,7 +91,6 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     }
 
     override fun step() {
-        showCycle()
         if (dead >= 0) {
             when (t - dead) {
                 DEATH_B_AT -> {
@@ -135,7 +137,11 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                 }
             }
         }
-        if (exhumeds < EXHUMEDS && t >= FIRST_EXHUMED && (t - FIRST_EXHUMED) % EXHUMED_EVERY == 0) {
+        if (firstExhumed < 0 && t >= FIRST_EXHUMED && instanceTick == CYCLE_TICK) {
+            firstExhumed = t
+            logger.info { "xarpus: first exhumed at t$t, clock ${d.mapClock.cycle}" }
+        }
+        if (firstExhumed >= 0 && exhumeds < EXHUMEDS && (t - firstExhumed) % EXHUMED_EVERY == 0) {
             exhumeds++
             val tile = exhumedTile()
             // a ground decoration (you stand on it), rising, looping, then sinking
@@ -143,7 +149,7 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             d.worldRepo.locAnim(l, "seq.tob_xarpus_exhumed_start")
             exhumed = Exhumed(l, tile, t)
         }
-        if (t >= RISE) rise()
+        if (firstExhumed >= 0 && t - firstExhumed >= RISE_AFTER) rise()
     }
 
     private fun exhumedTile(): CoordGrid {
@@ -182,7 +188,7 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         }
         val p = inside()
         // the screech, on his next cycle at or under 33%
-        if (phase == 2 && xarpus.hitpoints <= hp * SCREECH_PCT / 100 && cycle == 0) {
+        if (phase == 2 && xarpus.hitpoints <= hp * SCREECH_PCT / 100 && instanceTick == CYCLE_TICK) {
             phase = 3
             screechAt = t
             xarpus.anim("seq.tob_xarpus_fly_up")
@@ -323,6 +329,11 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
 
     override fun barBoss(): Npc? = xarpus
 
+    override fun progress(): TobHud.Bar? {
+        val bar = super.progress() ?: return null
+        return if (phase == 0) bar.copy(type = TobHud.IMMUNE) else bar
+    }
+
     override fun debug(): String = "xarpus ${xarpus.hitpoints}/$hp phase $phase exhumeds $exhumeds pools ${pools.size} gaze $gaze"
 
     private companion object {
@@ -338,7 +349,8 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val EXHUMED_EVERY = 12
         const val EXHUMED_LIFE = 11
         const val HEAL_FROM = 3
-        const val RISE = 100
+        const val RISE_AFTER = 92
+        const val CYCLE_TICK = 1
         const val CYCLE = 4
         const val FIRST_SPIT = 7
         const val SPIT_EVERY = 4

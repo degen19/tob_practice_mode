@@ -138,7 +138,6 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         "npc.tob_nylocas_" + (if (big) "big_" else "") + (if (fighting) "fighting_" else "incoming_") + styleName(s)
 
     override fun step() {
-        showCycle()
         if (allDown) return
         val p = inside()
         waves()
@@ -155,12 +154,13 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             if (bossAt < 0 && nylos.isEmpty()) bossAt = t + BOSS_DELAY
             return
         }
-        if (t < nextWaveAt || cycle != 0) return
+        if (t < nextWaveAt || instanceTick != WAVE_TICK) return
         val cap = if (wave + 1 >= CAP_WAVE) CAP_LATE else CAP_EARLY
         if (roomCount() >= cap) return
         val w = WAVES[wave]
         wave++
         for (s in w.spawns) spawnNylo(s)
+        logger.info { "nylocas: wave $wave at t$t, clock ${d.mapClock.cycle}, instance tick $instanceTick" }
         lastWaveAt = t
         nextWaveAt = t + w.stall.coerceAtLeast(CYCLE)
     }
@@ -442,6 +442,13 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
 
     override fun barBoss(): Npc? = boss
 
+    /** The bar shows the pillars until Vasilias drops in, then him. */
+    override fun progress(): TobHud.Bar? {
+        if (t < 0 || cleared) return null
+        if (boss != null) return super.progress()
+        return TobHud.bar(TobHud.FIGHT, pillars.sumOf { it.hp.coerceAtLeast(0) }, pillars.size * PILLAR_HP)
+    }
+
     override fun debug(): String = nylos.take(4).joinToString(" ") { "${real(it.npc.coords).x - OX},${real(it.npc.coords).z - OY}${it.style}" } + " wave $wave nylos ${nylos.size} (${nylos.count { it.aggro }} aggro) pillars ${pillars.map { it.hp }} boss ${boss?.hitpoints} $bossStyle"
 
     private companion object {
@@ -449,6 +456,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val OY = 4224
         const val FIRST_WAVE = 4
         const val CYCLE = 4
+        const val WAVE_TICK = 0
         const val CAP_WAVE = 20
         const val CAP_EARLY = 12
         const val CAP_LATE = 24
