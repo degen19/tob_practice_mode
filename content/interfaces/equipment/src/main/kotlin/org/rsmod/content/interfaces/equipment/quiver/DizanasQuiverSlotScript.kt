@@ -1,42 +1,56 @@
 package org.rsmod.content.interfaces.equipment.quiver
 
-import com.github.michaelbull.logging.InlineLogger
+import dev.openrune.definition.type.widget.IfEvent
 import dev.openrune.types.aconverted.interf.IfButtonOp
 import org.rsmod.api.player.protect.ProtectedAccess
 import org.rsmod.api.player.ui.ifSetEvents
 import org.rsmod.api.player.worn.DizanasQuiver
+import org.rsmod.api.script.onIfModalButton
+import org.rsmod.api.script.onIfOpen
 import org.rsmod.api.script.onIfOverlayButton
 import org.rsmod.api.script.onPlayerLogin
-import dev.openrune.definition.type.widget.IfEvent
+import org.rsmod.game.entity.Player
 import org.rsmod.plugin.scripts.PluginScript
 import org.rsmod.plugin.scripts.ScriptContext
 
 /**
- * Dizana's quiver's extra ammunition slot: Fill, Quiver-Remove and Swap. The slot is on the worn equipment side tab
- * (`wornitems`) - the one players click - and on the equipment stats screen (`equipment`).
+ * Dizana's quiver's extra ammunition slot. The client (`dizanas_quiver_draw_worn_ammo`) puts the ops on the
+ * `extra_quiver_ammo` component: Quiver-Remove (op 1), Swap (op 2) and Examine (op 10) when it holds ammunition,
+ * Fill (op 2) when it's empty.
  */
 class DizanasQuiverSlotScript : PluginScript() {
-    private val logger = InlineLogger()
-
     override fun ScriptContext.startup() {
-        for (slot in SLOTS) onIfOverlayButton(slot) { click(it.op) }
+        onIfOverlayButton(WORN) { click(it.op) }
+        onIfModalButton(STATS) { click(it.op) }
         onPlayerLogin {
             if (DizanasQuiver.storedCount(player) <= 0) DizanasQuiver.store(player, -1, 0)
-            player.ifSetEvents("component.wornitems:extra_quiver_slot", 0..0, IfEvent.Op1, IfEvent.Op2, IfEvent.Op3, IfEvent.Op10)
+            player.enable(WORN)
+        }
+        onIfOpen("interface.equipment") { player.enable(STATS) }
+    }
+
+    private fun Player.enable(component: String) {
+        ifSetEvents(component, -1..-1, IfEvent.Op1, IfEvent.Op2, IfEvent.Op10)
+        ifSetEvents(component, 0..0, IfEvent.Op1, IfEvent.Op2, IfEvent.Op10)
+    }
+
+    private fun ProtectedAccess.click(op: IfButtonOp) {
+        val held = DizanasQuiver.storedCount(player) > 0
+        when (op) {
+            IfButtonOp.Op1 -> if (held && !DizanasQuiver.empty(player)) mes("You don't have enough inventory space to do that.")
+            IfButtonOp.Op2 -> if (held) DizanasQuiver.swap(player) else DizanasQuiver.fill(player)?.let { mes(it) }
+            IfButtonOp.Op10 -> if (held) examine()
+            else -> Unit
         }
     }
 
-    /** Op 1: Fill when the slot is empty, else Quiver-Remove. Op 2 (or 3): Swap with the worn ammunition. */
-    private fun ProtectedAccess.click(op: IfButtonOp) {
-        logger.debug { "quiver slot ${player.username} op $op" }
-        when {
-            op == IfButtonOp.Op2 || op == IfButtonOp.Op3 -> DizanasQuiver.swap(player)
-            DizanasQuiver.storedCount(player) <= 0 -> DizanasQuiver.fill(player)?.let { mes(it) }
-            !DizanasQuiver.empty(player) -> mes("You don't have enough inventory space to do that.")
-        }
+    private fun ProtectedAccess.examine() {
+        val obj = dev.openrune.ServerCacheManager.getItem(DizanasQuiver.storedObj(player)) ?: return
+        mes(obj.examine.ifBlank { obj.name })
     }
 
     private companion object {
-        val SLOTS = listOf("component.wornitems:extra_quiver_slot", "component.equipment:extra_quiver_slot")
+        const val WORN = "component.wornitems:extra_quiver_ammo"
+        const val STATS = "component.equipment:extra_quiver_ammo"
     }
 }

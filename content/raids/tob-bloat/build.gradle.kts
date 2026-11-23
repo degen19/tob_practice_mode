@@ -30,6 +30,7 @@ dependencies {
     implementation(projects.api.combat.combatManager)
     implementation(projects.api.combat.combatWeapon)
     implementation(projects.api.spellsRunes)
+    implementation(projects.engine.utilsBits)
 }
 
 dependencies {

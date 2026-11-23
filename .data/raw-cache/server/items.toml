@@ -53435,3 +53435,35 @@ weaponCategory="ExtendingChainMace"
 "param.bas_walk_b"="seq.tfa_human_obligator_walk_b"
 "param.bas_running"="seq.tfa_human_obligator_run_f"
 "param.defend_anim"="seq.tfa_human_obligator_def"
+
+[[item]]
+id = "obj.zoryas_tome"
+inherit = "obj.zoryas_tome"
+weaponCategory="PoweredStaff"
+[item.params]
+"param.uncharged_variant"="obj.zoryas_tome_uncharged"
+"param.attack_range"=7
+"param.attack_anim_stance1"="seq.tfa_human_zorya_tome_attack"
+"param.attack_anim_stance2"="seq.tfa_human_zorya_tome_attack"
+"param.attack_anim_stance4"="seq.tfa_human_zorya_tome_attack"
+"param.bas_readyanim"="seq.tfa_human_zorya_tome_ready"
+"param.bas_walk_f"="seq.tfa_human_zorya_tome_walk_f"
+"param.bas_walk_b"="seq.tfa_human_zorya_tome_walk_b"
+"param.bas_running"="seq.tfa_human_zorya_tome_run"
+"param.defend_anim"="seq.tfa_human_zorya_tome_defend"
+
+[[item]]
+id = "obj.zoryas_tome_uncharged"
+inherit = "obj.zoryas_tome_uncharged"
+weaponCategory="PoweredStaff"
+[item.params]
+"param.charged_variant"="obj.zoryas_tome"
+"param.attack_range"=7
+"param.attack_anim_stance1"="seq.tfa_human_zorya_tome_attack"
+"param.attack_anim_stance2"="seq.tfa_human_zorya_tome_attack"
+"param.attack_anim_stance4"="seq.tfa_human_zorya_tome_attack"
+"param.bas_readyanim"="seq.tfa_human_zorya_tome_ready"
+"param.bas_walk_f"="seq.tfa_human_zorya_tome_walk_f"
+"param.bas_walk_b"="seq.tfa_human_zorya_tome_walk_b"
+"param.bas_running"="seq.tfa_human_zorya_tome_run"
+"param.defend_anim"="seq.tfa_human_zorya_tome_defend"

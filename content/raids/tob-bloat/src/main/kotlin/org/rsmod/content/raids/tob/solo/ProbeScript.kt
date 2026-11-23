@@ -28,6 +28,7 @@ constructor(
     private val types: AttackTypes,
     private val styles: AttackStyles,
     private val mapClock: MapClock,
+    private val specials: org.rsmod.api.specials.SpecialAttackRegistry,
 ) : PluginScript() {
     private val logger = InlineLogger()
 
@@ -61,6 +62,13 @@ constructor(
             logger.info { "probe combat tab $row (category ${r.id}): ${r.button}" }
         }
         auditCombatTabs()
+        for (tab in listOf(SupplyCatalog.Tab.Gear, SupplyCatalog.Tab.Ammo)) {
+            for (item in SupplyCatalog.items(tab)) {
+                if (item.wearpos1 != WEAPON_SLOT) continue
+                val spec = specials[InvObj(item)]
+                logger.info { "probe spec ${item.name}: ${spec?.javaClass?.simpleName ?: "none"}" }
+            }
+        }
         for (tab in SupplyCatalog.Tab.entries) {
             val picks = SupplyCatalog.items(tab).map { "${it.name}=${dev.openrune.rscm.RSCM.getReverseMapping(dev.openrune.rscm.RSCMType.OBJ, it.id)}" }
             logger.info { "probe chest ${tab.label}: $picks" }

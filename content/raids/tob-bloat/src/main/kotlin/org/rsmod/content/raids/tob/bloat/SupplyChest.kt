@@ -25,6 +25,8 @@ import org.rsmod.api.script.onOpLoc1
 import org.rsmod.content.raids.tob.bloat.SupplyCatalog.Tab
 import org.rsmod.game.inv.InvObj
 import org.rsmod.game.inv.Inventory
+import org.rsmod.utils.bits.getBits
+import org.rsmod.utils.bits.withBits
 import org.rsmod.api.spells.autocast.MagicSpellbookManager
 import org.rsmod.game.entity.Player
 import org.rsmod.game.stat.PlayerSkillXPTable
@@ -108,6 +110,17 @@ class SupplyChest @Inject constructor(private val spellbooks: MagicSpellbookMana
         if (count <= 0) return
         val added = player.invAdd(player.inv, item.id, count, strict = false).completed()
         if (added <= 0) player.mes("You don't have enough inventory space.")
+        fillCharges(player.inv)
+    }
+
+    /** Powered staves come out of the chest fully charged, as the sim plays them. */
+    private fun fillCharges(inv: Inventory) {
+        for (slot in inv.indices) {
+            val obj = inv[slot] ?: continue
+            val (internal, full) = CHARGES[RSCM.getReverseMapping(RSCMType.OBJ, obj.id)] ?: continue
+            val varobj = ServerCacheManager.getVarObj(internal.asRSCM(RSCMType.VAROBJ)) ?: continue
+            if (obj.vars.getBits(varobj.bits) == 0) inv[slot] = obj.copy(vars = obj.vars.withBits(varobj.bits, full))
+        }
     }
 
     /**
@@ -189,3 +202,11 @@ class SupplyChest @Inject constructor(private val spellbooks: MagicSpellbookMana
             )
     }
 }
+
+private val CHARGES =
+    mapOf(
+        "obj.sanguinesti_staff" to ("varobj.tumeken_charges" to 20_000),
+        "obj.tumekens_shadow" to ("varobj.tumeken_charges" to 20_000),
+        "obj.eye_of_ayak" to ("varobj.charges_65535" to 50_000),
+        "obj.zoryas_tome" to ("varobj.charges_65535" to 20_000),
+    )

@@ -22,8 +22,8 @@ import org.rsmod.map.util.Bounds
  * (5 ticks) pierce: a straight line of 3 tiles out from the wielder towards the target, hitting the target and, in
  * multi-combat, up to two more npcs that line passes through - each npc once.
  *
- * Charged, every npc the thrust hits gets the best of 2 damage rolls, plus one more roll for each of its stab and
- * slash defence that's higher than its crush defence; and a bonus by how far the line runs into it: 20% through 2 of
+ * Charged, every npc the thrust hits is rolled for accuracy once and then takes the best of 2 damage rolls, plus one
+ * more for each of its stab and slash defence that's higher than its crush defence; and a bonus by how far the line runs into it: 20% through 2 of
  * its tiles, 40% through 3 (the wiki marks this as needing confirmation; e.g. a 2x2 crab in front of Maiden takes
  * +20% and Maiden, pierced one tile deep, takes the normal hit). Uncharged, the thrust still pierces, one roll each.
  */
@@ -59,11 +59,8 @@ class ObligatorWeapons @Inject constructor(private val worldRepo: WorldRepositor
             for ((npc, depth) in hits) {
                 val bonus = if (charged) 1.0 + 0.2 * (depth.coerceIn(1, 3) - 1) else 1.0
                 val rolls = if (charged) 2 + extraRolls(npc) else 1
-                var best = 0
-                repeat(rolls) {
-                    val roll = manager.rollMeleeDamage(this, npc, attack, accuracyMultiplier = 1.0, maxHitMultiplier = bonus)
-                    if (roll > best) best = roll
-                }
+                val hit = manager.rollMeleeAccuracy(this, npc, attack.type, attack.style, attack.type, multiplier = 1.0)
+                val best = if (!hit) 0 else (1..rolls).maxOf { manager.rollMeleeMaxHit(this, npc, attack.type, attack.style, bonus) }
                 manager.giveCombatXp(this, npc, attack, best)
                 manager.queueMeleeHit(this, npc, best)
             }

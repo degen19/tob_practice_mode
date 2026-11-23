@@ -58,6 +58,8 @@ object PoweredStaffTypes {
     private const val FIRE_RUNE = "obj.firerune"
     private const val EARTH_RUNE = "obj.earthrune"
     private const val BLOOD_RUNE = "obj.bloodrune"
+    private const val ASTRAL_RUNE = "obj.astralrune"
+    private const val NATURE_RUNE = "obj.naturerune"
     private const val COINS = "obj.coins"
     private const val ZULRAH_SCALE = "obj.snakeboss_scale"
 
@@ -238,6 +240,25 @@ object PoweredStaffTypes {
                 noChargesMessage =
                     "The Eye of Ayak has no charges! " +
                         "You need to charge it with demon tears or death and chaos runes.",
+            ),
+            PoweredStaffType(
+                name = "Zorya's tome",
+                spell =
+                    StaffSpell(
+                        anim = "seq.tfa_human_zorya_tome_attack",
+                        castSpot = "spotanim.vfx_zorya_tome_standard_spotanim",
+                        projectile = "spotanim.vfx_zorya_tome_proj",
+                        impact = "spotanim.vfx_zorya_tome_impact",
+                    ),
+                maxHit = { max(0, it / 3 - 10) },
+                charged = listOf("obj.zoryas_tome"),
+                uncharged = listOf("obj.zoryas_tome_uncharged"),
+                varobj = CHARGES_16_BIT,
+                maxCharges = 20_000,
+                costs = listOf(StaffMaterial(ASTRAL_RUNE, 3), StaffMaterial(NATURE_RUNE, 2)),
+                chargeOp = true,
+                attackDelay = 3,
+                noChargesMessage = "Zorya's tome has no charges! You need to charge it with astral and nature runes.",
             ),
             PoweredStaffType(
                 name = "Dawnbringer",
