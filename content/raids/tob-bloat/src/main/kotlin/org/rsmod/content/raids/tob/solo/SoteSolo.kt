@@ -377,7 +377,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val MELEE_SEQ = "seq.tob_sotetseg_attack_melee"
         const val DEATH_SEQ = "seq.tob_sotetseg_death"
         const val DEATH_TICKS = 5
-        const val DEATH_SEQ_TICKS = 2
+        const val DEATH_SEQ_TICKS = 3
         const val W = 14
         const val H = 15
         const val TURNS = 8

@@ -223,7 +223,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val v = verzik ?: return
         if (dead >= 0) {
             when (t - dead) {
-                DEATH_B_AT -> v.anim("seq.verzik_phase3_death_b")
+                DEATH_B_AT -> transmog(v, DEATH_BAT)
                 DEATH_B_AT + DEATH_B_TICKS -> despawn(v)
                 DEATH_TICKS -> {
                     openThrone()
@@ -967,9 +967,10 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val CRAWLER_LIFE = 25
         const val CRAWLER_BOOM = 46
         const val CRAWLER_BOOM_FAR = 8
-        const val DEATH_B_AT = 5
+        const val DEATH_B_AT = 2
         const val DEATH_TICKS = 10
-        const val DEATH_B_TICKS = 8
+        const val DEATH_B_TICKS = 2
+        const val DEATH_BAT = "npc.verzik_death_bat"
 
         val PILLARS = listOf(3161 to 4318, 3161 to 4312, 3161 to 4306, 3173 to 4318, 3173 to 4312, 3173 to 4306)
     }

@@ -459,7 +459,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val SMALL_LIFE = 52
         const val BIG_LIFE = 53
         const val BIG_BOOM_TICKS = 3
-        const val DETONATE_TICKS = 2
+        const val DETONATE_TICKS = 1
         const val BIG_DEATH = 6
         const val SMALL_DEATH = 2
         const val SMALL_BOOM = 18
@@ -496,7 +496,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val RANGED_GAP = 8
         const val BOSS_MAX = 70
         const val BOSS_DEATH_TICKS = 5
-        const val BOSS_DEATH_SEQ_TICKS = 2
+        const val BOSS_DEATH_SEQ_TICKS = 5
 
         val WAVES =
             listOf(
