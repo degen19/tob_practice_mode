@@ -353,7 +353,10 @@ class BloatRoom(
         }
     }
 
-    /** The stomp's screen shake: a random jolt both ways (the real one has no sway), stopped two ticks later. */
+    /**
+     * The stomp's screen shake: a random jitter both ways (no sway) through the counter's 2 and 1, about twice the size
+     * the 6 we had was (a real clip: a pixel or two each frame for two ticks; ours barely showed).
+     */
     private fun shake(p: Player) {
         org.rsmod.api.player.output.Camera.camShake(p, org.rsmod.api.player.output.CamShakeAxis.LEFT_RIGHT, SHAKE_RANDOM, 0, 0)
         org.rsmod.api.player.output.Camera.camShake(p, org.rsmod.api.player.output.CamShakeAxis.UP_DOWN, SHAKE_RANDOM, 0, 0)
@@ -445,8 +448,8 @@ class BloatRoom(
         const val FLIES_PROJ = "spotanim.tob_bloat_flies_large"
         const val FLY_TICKS = 1
         const val ENTRY_MAX_FLIES = 8
-        const val SHAKE_RANDOM = 6
-        const val SHAKE_TICKS = 3
+        const val SHAKE_RANDOM = 12
+        const val SHAKE_TICKS = 2
         const val STUN_SPOT = "spotanim.tob_bloat_stunned"
         val FLESH =
             listOf(

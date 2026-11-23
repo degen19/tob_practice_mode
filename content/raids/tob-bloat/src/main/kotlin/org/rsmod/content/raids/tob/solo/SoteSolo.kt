@@ -27,6 +27,8 @@ import org.rsmod.map.CoordGrid
  *   and you run it as if you weren't chosen: the path isn't shown (players screenshot it below) and each tick on a
  *   tile off it hurts (the sim's maze hit for your hitpoints, 16 to 22, never more than you have). She wakes (Defence back to full, attacking at once) at the start of
  *   the next 4-tick cycle once you're off the top: off on a 4, she's attackable on the 1 after.
+ *   Back on the maze after reaching the top holds her (she wakes only with nobody on it as a cycle ends). Past the
+ *   third row a red tornado follows the path from its start at walking pace and hurts 30-40 in its 3x3 each tick.
  * - Entry mode: the portal puts you back where the maze caught you and that's it - she wakes on the next 1.
  * - The maze procs on the landing of the hit that brings her to the threshold; you're held still until the
  *   teleport 3 ticks later. Every 11th orb (melees don't count, mazes don't reset it) is the death ball.
@@ -55,6 +57,11 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     /** Where the maze caught you: in Entry mode the portal below brings you back to it, and that's the maze done. */
     private var caughtAt = RETURN
     private val lit = ArrayList<LocInfo>()
+
+    /** The maze's path in walking order (column, row), and the tornado that follows it once someone is past row 3. */
+    private val path = ArrayList<Pair<Int, Int>>()
+    private var tornado: Npc? = null
+    private var tornadoStep = 0
     private var glow: Pair<Pair<Int, Int>, LocInfo>? = null
 
     /** The maze floor in the room (by column, row): plain between mazes, dark while one is on. */
@@ -265,14 +272,23 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         val m = Array(W) { BooleanArray(H) }
         var s = 0
         var x = seed[0]
+        path.clear()
         for (top in H - 1 downTo 0) {
             val row = H - 1 - top
             if (top % 2 == 1) {
                 val nx = seed[++s]
-                for (i in minOf(x, nx)..maxOf(x, nx)) m[i][row] = true
+                val step = if (nx >= x) 1 else -1
+                var i = x
+                while (true) {
+                    m[i][row] = true
+                    path += i to row
+                    if (i == nx) break
+                    i += step
+                }
                 x = nx
             } else {
                 m[x][row] = true
+                path += x to row
             }
         }
         return m
@@ -304,17 +320,48 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         glowAt(-1, -1)
         val x = here.x - OVER_X
         val y = here.z - OVER_Y
+        val onMaze = x in 0 until W && y in 0 until H
         // every tick on a wrong tile: the sim's maze hit for your hitpoints, never more than you have (so it can be tick-eaten)
-        if (crossed < 0 && x in 0 until W && y in 0 until H && !m[x][y]) hurt(p, minOf(org.rsmod.content.raids.tob.bloat.sote.SoteEngine.mazeDmg(p.hitpoints), p.hitpoints))
+        if (onMaze && !m[x][y]) hurt(p, minOf(org.rsmod.content.raids.tob.bloat.sote.SoteEngine.mazeDmg(p.hitpoints), p.hitpoints))
+        if (!entryMode) tornadoTick(p, onMaze && y >= TORNADO_ROW)
         if (crossed >= 0) {
-            // she wakes at the start of the next 4-tick cycle (instance tick 1) once you're off the top
-            if (now - crossed >= (if (entryMode) WAKE_ENTRY else WAKE) && instanceTick == WAKE_TICK) endMaze(quiet = false)
+            // she wakes at the start of the next 4-tick cycle (instance tick 1) once you're off the top, and only if
+            // nobody is on the maze as the cycle ends: someone back on it holds her
+            if (!onMaze && now - crossed >= (if (entryMode) WAKE_ENTRY else WAKE) && instanceTick == WAKE_TICK) endMaze(quiet = false)
             return
         }
         if (here.z >= OVER_Y + H) {
             crossed = now
             if (WAKE == 0 && instanceTick == WAKE_TICK) endMaze(quiet = false)
         }
+    }
+
+    /**
+     * The red tornado: while someone running the maze above is past its third row it comes down the path from the start
+     * at walking pace, starting over when it reaches the top, and hurts anyone in the 3x3 round it each tick; with
+     * nobody past the third row it goes.
+     */
+    private fun tornadoTick(p: Player, past: Boolean) {
+        if (!past) {
+            tornado?.let { despawn(it) }
+            tornado = null
+            return
+        }
+        if (path.isEmpty()) return
+        val tor = tornado
+        if (tor == null || !tor.isSlotAssigned || tornadoStep >= path.size - 1) {
+            tor?.let { despawn(it) }
+            tornadoStep = 0
+            val (sx, sy) = path[0]
+            tornado = spawn(TORNADO, CoordGrid(OVER_X + sx, OVER_Y + sy, 0), walk = true)
+        } else {
+            tornadoStep++
+            val (nx, ny) = path[tornadoStep]
+            tor.walk(at(OVER_X + nx, OVER_Y + ny))
+        }
+        val (tx, ty) = path[tornadoStep]
+        val here = real(p.coords)
+        if (kotlin.math.abs(here.x - (OVER_X + tx)) <= 1 && kotlin.math.abs(here.z - (OVER_Y + ty)) <= 1) hurt(p, rand(TORNADO_MIN, TORNADO_MAX))
     }
 
     override suspend fun opLoc(name: String, at: CoordGrid, op: Int, access: ProtectedAccess): Boolean {
@@ -348,6 +395,8 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     }
 
     private fun endMaze(quiet: Boolean) {
+        tornado?.let { despawn(it) }
+        tornado = null
         for (l in lit) delLoc(l)
         lit.clear()
         glow?.let { delLoc(it.second) }
@@ -432,6 +481,10 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val WAKE_TICK = 1
         const val WAKE_CYCLE = 4
         const val WAKE_ENTRY = 1
+        const val TORNADO = "npc.tob_sotetseg_creeper"
+        const val TORNADO_ROW = 3
+        const val TORNADO_MIN = 30
+        const val TORNADO_MAX = 40
         const val LIT = "loc.tob_sotetseg_lighttile"
         const val PLAIN = "loc.tob_sotetseg_plaintile"
         const val DARK = "loc.tob_sotetseg_darktile"
