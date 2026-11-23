@@ -7,6 +7,8 @@ import dev.openrune.types.MoveRestrict
 import dev.openrune.types.aconverted.SpotanimType
 import org.rsmod.api.instances.InstanceSession
 import org.rsmod.api.npc.heal
+import org.rsmod.api.player.clearInteractionRoute
+import org.rsmod.api.player.combatClearQueue
 import org.rsmod.api.player.hit.queueHit
 import org.rsmod.api.player.output.mes
 import org.rsmod.api.player.protect.ProtectedAccess
@@ -251,6 +253,20 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
 
     /** Whether stepping out of the arena once it's clear takes you on (false: the room has its own way out). */
     open val walkOn: Boolean = true
+
+    /** The potato's Restart room: you're put back outside the barrier and the room starts over. */
+    open fun restart(access: ProtectedAccess) = restartAt(access, entry)
+
+    protected fun restartAt(access: ProtectedAccess, tile: CoordGrid) {
+        val p = access.player
+        p.clearInteractionRoute()
+        p.resetFaceEntity()
+        p.combatClearQueue()
+        p.frozen = false
+        access.telejump(at(tile), org.rsmod.api.player.hook.TeleportType.Exempt)
+        resets++
+        reset()
+    }
 
     /** The player died in here: the room goes back to how it was. */
     open fun reset() {

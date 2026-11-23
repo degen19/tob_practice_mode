@@ -1,6 +1,7 @@
 package org.rsmod.content.raids.tob.solo
 
 import dev.openrune.ServerCacheManager
+import dev.openrune.rscm.RSCM.asRSCM
 import org.rsmod.api.instances.InstanceSession
 import org.rsmod.api.invtx.invAdd
 import org.rsmod.api.player.hook.TeleportType
@@ -785,7 +786,11 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         webBlock = 0
     }
 
-    override fun onCleanup() = unblockWebs()
+    override fun onCleanup() {
+        unblockWebs()
+        dawnOnFloor?.let { d.objRepo.del(it) }
+        dawnOnFloor = null
+    }
 
     private fun web(tile: CoordGrid) {
         if (dead >= 0 || phase != 3 || webs.any { real(it.npc.coords) == tile }) return
@@ -983,6 +988,24 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         super.reset()
     }
 
+    private var dawnOnFloor: org.rsmod.game.obj.Obj? = null
+
+    /** Restart room here starts you in the middle before P1, with the Dawnbringer taken back off everyone and left on the floor. */
+    override fun restart(access: ProtectedAccess) {
+        for (p in d.players) if (p.isSlotAssigned && contains(p.coords)) takeDawnbringer(p)
+        restartAt(access, CENTRE)
+        dawnOnFloor = d.objRepo.add(DAWNBRINGER, at(CENTRE), Int.MAX_VALUE)
+    }
+
+    private fun takeDawnbringer(p: Player) {
+        val id = DAWNBRINGER.asRSCM(dev.openrune.rscm.RSCMType.OBJ)
+        for (slot in p.inv.indices) if (p.inv[slot]?.id == id) p.inv[slot] = null
+        for (slot in p.worn.indices) if (p.worn[slot]?.id == id) {
+            p.worn[slot] = null
+            p.rebuildAppearance()
+        }
+    }
+
     override fun autoTarget(): Npc? = athanatos?.takeIf { it.isSlotAssigned && it.hitpoints > 0 } ?: redCrabs.firstOrNull { it.isSlotAssigned && it.hitpoints > 0 } ?: verzik?.takeIf { phase == 1 || phase == 2 || phase == 3 }
 
     override val autoStart: CoordGrid
@@ -1013,6 +1036,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val TORNADO_DESPAWN_SEQ = "seq.tob_shadow_projectile_despawn"
         const val TORNADO_DESPAWN_TICKS = 1
         const val DAWNBRINGER = "obj.verzik_special_weapon"
+        val CENTRE = CoordGrid(3167, 4315, 0)
         const val P1_X = 3166
         const val P1_Y = 4323
         const val P2_X = 3167

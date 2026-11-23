@@ -65,6 +65,7 @@ constructor(
     val instances: InstanceManager,
     val npcRepo: NpcRepository,
     val locRepo: LocRepository,
+    val objRepo: org.rsmod.api.repo.obj.ObjRepository,
     val worldRepo: WorldRepository,
     val collision: CollisionFlagMap,
     val random: GameRandom,

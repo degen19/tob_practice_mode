@@ -1,5 +1,5 @@
 [[item]]
 id = "obj.rotten_potato"
 inherit = "obj.rotten_potato"
-interfaceOptions = ["Settings", "Toggle deaths", "Toggle NPC HP", "Toggle supplies", "Drop"]
-examine = "Practice settings: player deaths, NPC hitpoints and supplies."
+interfaceOptions = ["Settings", "Toggle deaths", "Toggle NPC HP", "Toggle supplies", "Restart room"]
+examine = "Practice settings: player deaths, NPC hitpoints and supplies, and a room restart."
