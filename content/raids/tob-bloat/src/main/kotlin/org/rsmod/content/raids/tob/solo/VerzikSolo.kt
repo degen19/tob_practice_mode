@@ -92,6 +92,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private inner class Web(val npc: Npc, val born: Int, val holding: Boolean)
 
     private val webs = ArrayList<Web>()
+    private var webBlock = 0
 
     override fun build() {
         owner.throneVisible = true
@@ -583,6 +584,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             v.hitpoints = 0
             v.routeDestination.clear()
             v.anim("seq.verzik_phase3_death_a")
+            unblockWebs()
             tornado?.let { vanish(it) }
             tornado = null
             for (c in crawlers) despawn(c.npc)
@@ -659,6 +661,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                 v.routeDestination.clear()
                 v.walk(at(P3_X, P3_Y))
                 v.anim("seq.verzik_phase3_attack_webspin")
+                webBlock = v.size
+                blockPlayers(CoordGrid(P3_X, P3_Y, 0), v.size, true)
                 recordAttack(v, 22)
                 val here = real(p.coords)
                 val vr = real(v.coords)
@@ -713,10 +717,19 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     }
 
     private fun endSpecial(next: Int) {
+        unblockWebs()
         specialUntil = -1
         invulnerable = false
         nextAttack = t + next
     }
+
+    /** While she spins webs in the middle no one can stand under her. */
+    private fun unblockWebs() {
+        if (webBlock > 0) blockPlayers(CoordGrid(P3_X, P3_Y, 0), webBlock, false)
+        webBlock = 0
+    }
+
+    override fun onCleanup() = unblockWebs()
 
     private fun web(tile: CoordGrid) {
         if (dead >= 0 || phase != 3 || webs.any { real(it.npc.coords) == tile }) return

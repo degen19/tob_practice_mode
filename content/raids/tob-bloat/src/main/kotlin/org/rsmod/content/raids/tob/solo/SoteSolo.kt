@@ -179,7 +179,10 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         later(lands) {
             val q = inside() ?: return@later
             if (e != epoch) return@later
-            if (prays(q, prayer)) return@later
+            if (prays(q, prayer)) {
+                hurt(q, 0, source = sote)
+                return@later
+            }
             hurt(q, roll, source = sote)
             q.lockOverheads(PRAYER_OFF)
         }

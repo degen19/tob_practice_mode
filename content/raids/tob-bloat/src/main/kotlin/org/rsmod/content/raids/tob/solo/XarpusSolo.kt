@@ -174,7 +174,7 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             xarpus.anim("seq.tob_xarpus_death_a")
             for ((c, l) in pools) {
                 delLoc(l)
-                gfx("spotanim.tob_xarpus_acidpool_end_${rand(4)}", c)
+                gfx(POOL_END[rand(POOL_END.size)], c)
             }
             pools.clear()
             mes("Xarpus is dead.")
@@ -361,5 +361,12 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val DEATH_B_AT = 3
         const val DEATH_TICKS = 6
         const val DEATH_B_TICKS = 2
+        val POOL_END =
+            listOf(
+                "spotanim.tob_xarpus_acidpool_end_0",
+                "spotanim.tob_xarpus_acidpool_end_1",
+                "spotanim.tob_xarpus_acidpool_end_2",
+                "spotanim.tob_xarpus_acidpool_end_3",
+            )
     }
 }
