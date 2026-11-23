@@ -1,0 +1,18 @@
+[gamevals.dbrow]
+instance_doom_of_mokhaiotl = 63225
+
+[gamevals.varn]
+dom_charge = 59
+dom_fight_ticks = 52
+dom_attacks = 53
+dom_shield_stashed_hp = 54
+dom_charge_end = 55
+dom_charge_loop_from = 56
+dom_rotation_step = 57
+dom_step_attacks = 58
+
+[gamevals.headbar]
+standard_charge_100 = 81
+
+[gamevals.varp]
+dom_loot_claimed = 63226

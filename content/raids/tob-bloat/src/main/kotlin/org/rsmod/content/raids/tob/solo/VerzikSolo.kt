@@ -1,0 +1,930 @@
+package org.rsmod.content.raids.tob.solo
+
+import dev.openrune.ServerCacheManager
+import org.rsmod.api.instances.InstanceSession
+import org.rsmod.api.invtx.invAdd
+import org.rsmod.api.player.hook.TeleportType
+import org.rsmod.api.player.protect.ProtectedAccess
+import org.rsmod.api.player.stat.hitpoints
+import org.rsmod.api.player.stat.baseHitpointsLvl
+import org.rsmod.game.entity.Npc
+import org.rsmod.game.entity.Player
+import org.rsmod.game.entity.util.PathingEntityCommon
+import org.rsmod.game.hit.Hit
+import org.rsmod.game.hit.HitType
+import org.rsmod.game.loc.LocAngle
+import org.rsmod.game.loc.LocInfo
+import org.rsmod.game.loc.LocShape
+import org.rsmod.map.CoordGrid
+import kotlin.math.abs
+import kotlin.math.max
+
+/**
+ * Verzik Vitur, solo (P1 1500 hitpoints, P2 and P3 2437 each), every phase and the transitions between them.
+ *
+ * - P1: on her throne behind a shield - melee hits are capped at 10 a hitsplat, ranged and magic at 3; the Dawnbringer
+ *   (it comes to you as the fight starts) has a special that hits for 75-150 through it. Every 14 ticks from tick 20
+ *   she throws a blast for up to 137 (Protect from Magic halves it); a pillar between you and her takes it instead, and
+ *   collapses when it's taken enough. When her shield breaks she climbs down to the middle - the last pillars fall.
+ * - P2: every 4 ticks: an urn bomb at your tile (44, 22 on Protect from Missiles - move off it), and every 5th attack a
+ *   lightning bolt (48, 25 in insulated boots). Stand next to her or under her and she bounces you back 3 tiles and
+ *   stuns you instead. Nylocas come with a purple crab (the Athanatos) that heals her until it's killed - a poisoned
+ *   weapon kills it outright and the poison hurts her. At 35% the reds: she stops to summon a Nylocas Matomenos that
+ *   walks to her and heals her its hitpoints (hits on her heal her while she summons), then seven attacks - mostly a
+ *   blood blast that heals her half of what it does - and again.
+ * - P3: every 7 ticks a melee attack if you're beside her, else a ranged or magic one (33, half on the right prayer).
+ *   Every fifth attack is a special, in turn: nylocas, webs (she goes to the middle and shoots webs - one on your tile
+ *   holds you until you break it, and it snaps if you don't), yellows (stand on the pool or take up to 80) and the green
+ *   ball (three-quarters of your hitpoints level). At 20% she enrages: attacks every 5 ticks, and a tornado chases you -
+ *   it takes half your hitpoints and heals her three times that, coming back 16 ticks later.
+ */
+class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: CoordGrid, copyBase: CoordGrid) :
+    SoloRoom(TobRoom.VERZIK, owner, session, d, origin, copyBase) {
+    override val entry = CoordGrid(3167, 4304, 0)
+    override val chest = CoordGrid(3170, 4303, 0) to LocAngle.North
+
+    override fun inArena(c: CoordGrid): Boolean = c.x in 3150..3184 && c.z in 4297..4334
+
+    private var verzik: Npc? = null
+    private var phase = 0
+    private var nextAttack = 0
+    private var attacks = 0
+    private var phaseAt = 0
+    private var dead = -1
+    private var p2Hp = P2_HP
+
+    private inner class Pillar(val x: Int, val y: Int) {
+        var hp = PILLAR_HP
+        var npc: Npc? = null
+        var loc: LocInfo? = null
+        val up: Boolean
+            get() = npc != null
+    }
+
+    private val pillars = PILLARS.map { (x, y) -> Pillar(x, y) }
+
+    /* P2 */
+    private var zaps = 0
+    private var sincePurple = 0
+    private var reds = false
+    private var redsAt = -1
+    private var redsAttacks = 0
+    private val redBorn = HashMap<Npc, Int>()
+    private var summoning = -1
+    private var athanatos: Npc? = null
+    private var athanatosNext = 0
+
+    /* P3 */
+    private var special = 0
+    private var specialUntil = -1
+    private var invulnerable = false
+    private var enraged = false
+    private var tornado: Npc? = null
+    private var tornadoAt = -1
+    private var yellow: CoordGrid? = null
+
+    private inner class Crawler(val npc: Npc, val style: Char, val born: Int)
+
+    private val crawlers = ArrayList<Crawler>()
+    private val redCrabs = ArrayList<Npc>()
+
+    private inner class Web(val npc: Npc, val born: Int, val holding: Boolean)
+
+    private val webs = ArrayList<Web>()
+
+    override fun build() {
+        phase = 0
+        dead = -1
+        attacks = 0
+        zaps = 0
+        sincePurple = 0
+        reds = false
+        redsAt = -1
+        summoning = -1
+        special = 0
+        specialUntil = -1
+        invulnerable = false
+        enraged = false
+        tornado = null
+        tornadoAt = -1
+        yellow = null
+        athanatos = null
+        crawlers.clear()
+        redCrabs.clear()
+        redBorn.clear()
+        webs.clear()
+        for (p in pillars) {
+            p.hp = PILLAR_HP
+            p.npc = null
+            p.loc = null
+        }
+        verzik = spawn(INITIAL, CoordGrid(P1_X, P1_Y, 0), hp(P1_HP, entryHp(1200)))
+        // the pillars stand from the start, before she's woken
+        for (p in pillars) {
+            p.npc = spawn(PILLAR_NPC, CoordGrid(p.x, p.y, 0), PILLAR_HP)
+            p.loc = loc("loc.tob_dungeon_verzik_pillar", CoordGrid(p.x, p.y, 0), shape = LocShape.CentrepieceStraight)
+        }
+    }
+
+    /** She starts when you speak to her on her throne. */
+    suspend fun begin(access: ProtectedAccess) {
+        if (t >= 0) return
+        val choice = access.menu("Is your party ready to fight?", "Yes, let's go.", "No, don't start yet.")
+        access.ifClose()
+        if (choice != 0) return
+        SoloRespawn.save(owner)
+        start()
+    }
+
+    override fun onStart() {
+        logger.info { "verzik map pillars ${findLocs("loc.tob_dungeon_verzik_pillar").map { it.first }}" }
+        val v = verzik ?: return
+        v.anim("seq.verzik_throne_transform")
+        transmog(v, P1)
+        phase = 1
+        phaseAt = 0
+        nextAttack = P1_FIRST
+    }
+
+    override fun owns(npc: Npc): Boolean = super.owns(npc)
+
+    override fun floor(npc: Npc): Int? =
+        when {
+            npc === verzik && dead < 0 -> 1
+            pillars.any { it.npc === npc } -> 1
+            else -> null
+        }
+
+    override fun land(npc: Npc, hit: Hit): Int? {
+        if (pillars.any { it.npc === npc }) return 0
+        if (npc === athanatos) {
+            if (poisoned(hit)) {
+                npc.hitpoints = 0
+                verzik?.let { v ->
+                    v.hitpoints = (v.hitpoints - rand(60, 70)).coerceAtLeast(2)
+                    v.spotanim("spotanim.verzik_phase2_poisonaura")
+                }
+                return 0
+            }
+            return hit.damage
+        }
+        crawlers.firstOrNull { it.npc === npc }?.let { c ->
+            if (hit.type == HitType.Typeless) return hit.damage
+            return if (hit.type == styleType(c.style)) hit.damage else 0
+        }
+        if (npc !== verzik) return null
+        if (dead >= 0 || invulnerable || phase == 0 || phase == 12 || phase == 23) return 0
+        if (phase == 1) {
+            val dawn = hit.righthandType()?.let { it.internalName == DAWNBRINGER } == true
+            if (dawn && hit.damage >= DAWN_SPEC_MIN) return hit.damage
+            return when (hit.type) {
+                HitType.Melee -> minOf(hit.damage, P1_MELEE_CAP)
+                HitType.Typeless -> hit.damage
+                else -> minOf(hit.damage, P1_RANGED_CAP)
+            }
+        }
+        if (phase == 2 && summoning >= 0 && t - summoning < SUMMON_TICKS) {
+            // hitting her while she summons heals her
+            npc.hitpoints = minOf(p2Hp, npc.hitpoints + hit.damage)
+            return 0
+        }
+        return hit.damage
+    }
+
+    private fun poisoned(hit: Hit): Boolean {
+        val name = hit.righthandType()?.name?.lowercase() ?: return false
+        return name.contains("(p") || name.contains("toxic") || name.contains("serpentine") || name.contains("blowpipe")
+    }
+
+    private fun styleType(s: Char): HitType = when (s) {
+        'M' -> HitType.Melee
+        'R' -> HitType.Ranged
+        else -> HitType.Magic
+    }
+
+    private fun styleName(s: Char): String = when (s) {
+        'M' -> "melee"
+        'R' -> "ranged"
+        else -> "magic"
+    }
+
+    override fun step() {
+        val v = verzik ?: return
+        if (dead >= 0) {
+            when (t - dead) {
+                DEATH_B_AT -> v.anim("seq.verzik_phase3_death_b")
+                DEATH_TICKS -> {
+                    despawn(v)
+                    cleared = true
+                    mes("Verzik Vitur is defeated. The Theatre is complete - the supply chest outside takes you to any room.")
+                }
+            }
+            return
+        }
+        when (phase) {
+            1 -> p1(v)
+            12 -> p1to2(v)
+            2 -> p2(v)
+            23 -> p2to3(v)
+            3 -> p3(v)
+        }
+        crawlersTick()
+        websTick()
+    }
+
+    /* ---- P1 */
+
+    private fun p1(v: Npc) {
+        if (v.hitpoints <= 1) {
+            phase = 12
+            phaseAt = t
+            v.hitpoints = 0
+            v.anim("seq.verzik_phase1_death")
+            for (p in pillars) collapse(p)
+            owner.inv.objs.indexOfFirst { it?.let { o -> ServerCacheManager.getItem(o.id)?.internalName == DAWNBRINGER } == true }.takeIf { it >= 0 }?.let { owner.inv[it] = null }
+            mes("Verzik Vitur's shield breaks!")
+            return
+        }
+        val p = inside() ?: return
+        for (pl in pillars) if (pl.up) pl.npc?.hitpoints = pl.hp.coerceIn(1, PILLAR_HP)
+        if (t < nextAttack) return
+        nextAttack = t + P1_EVERY
+        v.anim("seq.verzik_phase1_attack_magic")
+        recordAttack(v, 12)
+        val target = real(p.coords)
+        val pillar = pillars.firstOrNull { it.up && blocks(it, center(v), target) }
+        if (pillar != null) {
+            val lands = projTiles("spotanim.verzik_phase1_projectile", center(v), CoordGrid(pillar.x + 1, pillar.y + 1, 0), delay = P1_FLIGHT * 30, speed = 0, startHeight = 120, endHeight = 60, start = 30)
+            val dmg = rand(0, P1_MAX)
+            later(lands) {
+                gfx("spotanim.verzik_phase1_impactpillar", CoordGrid(pillar.x + 1, pillar.y + 1, 0), height = 60)
+                pillar.hp -= dmg
+                pillar.npc?.let { showDamage(it, dmg, pillar.hp, PILLAR_HP) }
+                if (pillar.hp <= 0) collapse(pillar)
+            }
+            return
+        }
+        val lands = proj("spotanim.verzik_phase1_projectile", v, p, delay = 30, speed = 0, offset = (P1_FLIGHT - 1) * 30, startHeight = 120)
+        val roll = rand(0, P1_MAX)
+        later(lands) {
+            val q = inside() ?: return@later
+            q.spotanim("spotanim.verzik_phase1_impact")
+            hurt(q, if (prays(q, "magic")) roll / 2 else roll, source = v)
+        }
+    }
+
+    private fun center(n: Npc): CoordGrid = real(n.coords).let { CoordGrid(it.x + n.size / 2, it.z + n.size / 2, 0) }
+
+    /** A pillar is between her and you when the line from her to you crosses it. */
+    private fun blocks(p: Pillar, from: CoordGrid, to: CoordGrid): Boolean {
+        val n = max(abs(to.x - from.x), abs(to.z - from.z)).coerceAtLeast(1)
+        for (i in 1 until n) {
+            val x = from.x + (to.x - from.x) * i / n
+            val y = from.z + (to.z - from.z) * i / n
+            if (x in p.x..p.x + 2 && y in p.y..p.y + 2) return true
+        }
+        return false
+    }
+
+    private fun collapse(p: Pillar) {
+        val npc = p.npc ?: return
+        p.loc?.let { d.worldRepo.locAnim(it, "seq.verzik_pillar_collapse") }
+        despawn(npc)
+        p.npc = null
+        p.loc?.let { delLoc(it) }
+        p.loc = loc("loc.tob_dungeon_verzik_pillar_rubble", CoordGrid(p.x, p.y, 0), shape = LocShape.CentrepieceStraight)
+        later(PILLAR_FADE) { p.loc?.let { delLoc(it) } }
+        val q = inside() ?: return
+        val c = real(q.coords)
+        if (boxDist(c.x, c.z, p.x, p.y, p.x + 2, p.y + 2) <= 1) {
+            hurt(q, rand(PILLAR_FALL_MIN, PILLAR_FALL_MAX))
+            q.spotanim("spotanim.stunned_thieving")
+            q.routeDestination.clear()
+        }
+    }
+
+    private fun p1to2(v: Npc) {
+        val since = t - phaseAt
+        if (since == T12_AT) {
+            despawn(v)
+            verzik = spawn(T12, CoordGrid(P1_X, P1_Y, 0), null).also { it.walk(at(P1_X, P2_Y)) }
+        }
+        if (since == T12_TICKS) {
+            verzik?.let { despawn(it) }
+            val nv = spawn(P2, CoordGrid(P2_X, P2_Y, 0), hp(P2_HP, entryHp(1600)))
+            p2Hp = nv.baseHitpointsLvl
+            later(1) { if (nv.isSlotAssigned) nv.anim("seq.verzik_phase2_spawn") }
+            verzik = nv
+            phase = 2
+            phaseAt = t
+            attacks = 0
+            zaps = 0
+            sincePurple = 0
+            nextAttack = t + P2_FIRST
+        }
+    }
+
+    /* ---- P2 */
+
+    private fun p2(v: Npc) {
+        if (v.hitpoints <= 1) {
+            phase = 23
+            phaseAt = t
+            v.hitpoints = 0
+            v.anim("seq.verzik_phase2_death")
+            athanatos?.let { despawn(it) }
+            athanatos = null
+            for (r in redCrabs) despawn(r)
+            redCrabs.clear()
+            return
+        }
+        athanatosTick(v)
+        redsTick(v)
+        val p = inside() ?: return
+        if (!reds && v.hitpoints * 100 <= p2Hp * REDS_PCT) {
+            reds = true
+            summonReds(v)
+            return
+        }
+        if (summoning >= 0 && t - summoning < SUMMON_TICKS) return
+        if (t < nextAttack) return
+        nextAttack = t + P2_EVERY
+        attacks++
+        val here = real(p.coords)
+        val vr = real(v.coords)
+        val d = boxDist(here.x, here.z, vr.x, vr.z, vr.x + v.size - 1, vr.z + v.size - 1)
+        if (d <= 1) {
+            bounce(v, p, under = d == 0)
+            return
+        }
+        if (reds) {
+            redsAttacks++
+            if (redsAttacks >= REDS_ATTACKS) summonReds(v)
+            if (chance(0.75)) bloodBlast(v, p) else if (chance(0.5)) urn(v, p) else zap(v, p)
+            return
+        }
+        sincePurple++
+        if (attacks == 5 || (sincePurple >= MIN_PURPLE && zaps % 3 == 0 && zaps > 0 && chance(0.25) && athanatos == null)) {
+            purple(v, p)
+            sincePurple = 0
+            return
+        }
+        if ((attacks - if (attacks > 5) 1 else 0) % 5 == 0) zap(v, p) else urn(v, p)
+    }
+
+    private fun urn(v: Npc, p: Player) {
+        recordAttack(v, 14)
+        v.facePlayer(p)
+        v.anim("seq.verzik_phase2_attack_magic")
+        val tile = real(p.coords)
+        // Blert, real solos: a hit from it shows 6 ticks after her attack - a slow lob that bursts on the tile then
+        val lands = projTiles("spotanim.verzik_phase2_ranged", center(v), tile, delay = URN_TICKS * 30, speed = 0, startHeight = 100, endHeight = 0, angle = 40, start = 30)
+        val roll = rand(0, URN_MAX)
+        later(lands) {
+            gfx("spotanim.verzik_ranged_impact", tile)
+            val q = inside() ?: return@later
+            if (real(q.coords) == tile) hurt(q, if (prays(q, "missiles")) roll / 2 else roll, source = v)
+        }
+    }
+
+    private fun zap(v: Npc, p: Player) {
+        recordAttack(v, 15)
+        zaps++
+        v.facePlayer(p)
+        v.anim("seq.verzik_phase2_attack_magic")
+        // Blert, real solos: its hit shows 2 ticks after her attack
+        val lands = proj("spotanim.verzik_phase2_lightning", v, p, delay = 30, speed = 0, offset = 30, startHeight = 100)
+        later(lands) {
+            val q = inside() ?: return@later
+            val boots = q.worn[10]?.let { ServerCacheManager.getItem(it.id)?.name?.lowercase()?.contains("insulated") } == true
+            hurt(q, rand(0, if (boots) ZAP_BOOTS else ZAP_MAX), source = v)
+        }
+    }
+
+    private fun bounce(v: Npc, p: Player, under: Boolean) {
+        recordAttack(v, 13)
+        v.facePlayer(p)
+        v.anim("seq.verzik_phase2_attack_melee")
+        hurt(p, rand(0, if (under) STOMP_MAX else BOUNCE_MAX), source = v, delay = 1)
+        knock(v, p, BOUNCE_TILES, slide = true)
+        p.spotanim("spotanim.stunned_thieving")
+        p.delay = p.currentMapClock + STUN
+    }
+
+    /** Pushes [p] away from [v] by up to [tiles] free tiles. */
+    private fun knock(v: Npc, p: Player, tiles: Int, slide: Boolean = false) {
+        val c = center(v)
+        val here = real(p.coords)
+        val dx = sign(here.x - c.x).let { if (it == 0 && here.z == c.z) 1 else it }
+        val dy = sign(here.z - c.z)
+        var to = here
+        for (i in 1..tiles) {
+            val n = CoordGrid(to.x + dx, to.z + dy, 0)
+            if (!inArena(n) || blocked(n)) break
+            to = n
+        }
+        p.routeDestination.clear()
+        if (!slide || to == here) {
+            PathingEntityCommon.telejump(p, d.collision, at(to))
+            return
+        }
+        // thrown back: the player slides over the tiles (a forced move) rather than appearing there
+        p.anim("seq.human_stunned")
+        val face = when {
+            dx > 0 -> 1536
+            dx < 0 -> 512
+            dy > 0 -> 0
+            else -> 1024
+        }
+        PathingEntityCommon.exactMove(p, at(here), at(to), 0, 30, (face + 1024) % 2048, d.collision)
+    }
+
+    private fun purple(v: Npc, p: Player) {
+        recordAttack(v, 16)
+        v.anim("seq.verzik_phase2_attack_magic")
+        // it's thrown at the tile the player she's attacking stood on, and climbs out where it lands
+        val tile = real(p.coords)
+        val lands = projTiles("spotanim.verzik_phase2_spawn_armouredtank_proj", center(v), tile, delay = 30, speed = 15, startHeight = 100, endHeight = 0, angle = 40)
+        later(lands) {
+            if (phase != 2) return@later
+            gfx("spotanim.verzik_phase2_spawning", tile)
+            athanatos = spawn(ATHANATOS, tile, ATHANATOS_HP)
+            athanatosNext = t + ATHANATOS_EVERY
+        }
+        crawler(p)
+    }
+
+    private fun athanatosTick(v: Npc) {
+        val a = athanatos ?: return
+        if (!a.isSlotAssigned || a.hitpoints <= 0) {
+            athanatos = null
+            return
+        }
+        if (t >= athanatosNext) {
+            athanatosNext = t + ATHANATOS_EVERY
+            projTiles("spotanim.verzik_phase2_poisonglobule", real(a.coords), center(v), speed = 6, startHeight = 20, endHeight = 80)
+            v.hitpoints = minOf(p2Hp, v.hitpoints + rand(9, 10))
+        }
+    }
+
+    private fun summonReds(v: Npc) {
+        redsAttacks = 0
+        summoning = t
+        nextAttack = t + SUMMON_TICKS
+        v.anim("seq.verzik_phase2_heal")
+        // one red a cycle in a solo (west); with two or more players alive, one west and one east
+        val tiles = listOf(CoordGrid(P2_X - 4, P2_Y + 1, 0), CoordGrid(P2_X + 3 + 3, P2_Y + 1, 0))
+        for (tile in tiles.take(if (alivePlayers() >= 2) 2 else 1)) {
+            gfx("spotanim.verzik_phase2_spawning", tile)
+            val r = spawn(RED, tile, RED_HP)
+            // the spawn animation a tick on, once the client has the crab
+            later(1) { if (r.isSlotAssigned) r.anim(RED_SPAWN_SEQ) }
+            redBorn[r] = t
+            redCrabs += r
+        }
+        if (redsAt < 0) mes("Verzik Vitur summons her Nylocas!")
+        redsAt = t
+    }
+
+    /**
+     * The reds don't walk into her: they wander until the back end of their cycle (42 ticks), then pop - a
+     * despawn animation - and heal her what they have left (Blert: a cycle every 44 ticks, gone 42 ticks on
+     * unless killed first; one in a solo, one each side with two or more alive).
+     */
+    /** Players alive in the room (a solo for now; the party once grouping is in). */
+    private fun alivePlayers(): Int = if (inside() != null) 1 else 0
+
+    private fun redsTick(v: Npc) {
+        val it = redCrabs.iterator()
+        while (it.hasNext()) {
+            val r = it.next()
+            if (!r.isSlotAssigned) {
+                redBorn.remove(r)
+                it.remove()
+                continue
+            }
+            if (r.hitpoints <= 0) continue
+            val age = t - (redBorn[r] ?: t)
+            if (age >= RED_LIFE) {
+                val heal = r.hitpoints
+                r.routeDestination.clear()
+                r.anim(RED_POP_SEQ)
+                r.hitpoints = 0
+                healNpc(v, heal)
+                later(RED_POP_TICKS) { if (r.isSlotAssigned) despawn(r) }
+                continue
+            }
+            if (r.vars["varn.freeze_end_clock"] > r.currentMapClock) continue
+            // a slow random wander
+            if (age % 2 == 0) {
+                val rr = real(r.coords)
+                val to = CoordGrid(rr.x + rand(-1, 1), rr.z + rand(-1, 1), 0)
+                if (inArena(to) && !blocked(to)) r.walk(at(to))
+            }
+        }
+    }
+
+    private fun bloodBlast(v: Npc, p: Player) {
+        recordAttack(v, 17)
+        v.facePlayer(p)
+        v.anim("seq.verzik_phase2_attack_magic")
+        val lands = proj("spotanim.verzik_phase2_bloodproj", v, p, delay = 20, speed = 8, startHeight = 100)
+        val roll = rand(0, BLOOD_MAX)
+        later(lands) {
+            val q = inside() ?: return@later
+            q.spotanim("spotanim.verzik_phase2_bloodimpact")
+            val dealt = if (prays(q, "magic")) 0 else roll
+            hurt(q, dealt, source = v)
+            verzik?.let { it.hitpoints = minOf(p2Hp, it.hitpoints + roll / 2) }
+        }
+    }
+
+    private fun p2to3(v: Npc) {
+        val since = t - phaseAt
+        if (since == T23_AT) {
+            despawn(v)
+            verzik = spawn(T23, CoordGrid(P3_X, P3_Y, 0), null)
+        }
+        if (since == T23_TICKS) {
+            verzik?.let { despawn(it) }
+            val nv = spawn(P3, CoordGrid(P3_X, P3_Y, 0), hp(P3_HP, entryHp(1600)))
+            later(1) { if (nv.isSlotAssigned) nv.anim("seq.verzik_phase3_spawn") }
+            verzik = nv
+            phase = 3
+            phaseAt = t
+            attacks = 0
+            special = 0
+            nextAttack = t + P3_FIRST
+        }
+    }
+
+    /* ---- P3 */
+
+    private fun p3(v: Npc) {
+        if (v.hitpoints <= 1) {
+            dead = t
+            v.hitpoints = 0
+            v.routeDestination.clear()
+            v.anim("seq.verzik_phase3_death_a")
+            tornado?.let { despawn(it) }
+            tornado = null
+            for (c in crawlers) despawn(c.npc)
+            crawlers.clear()
+            for (w in webs) despawn(w.npc)
+            webs.clear()
+            return
+        }
+        if (!enraged && v.hitpoints * 100 <= v.baseHitpointsLvl * ENRAGE_PCT) {
+            enraged = true
+            v.say("I'm not done with you just yet!")
+            tornadoAt = t + 1
+        }
+        val p = inside() ?: return
+        tornadoTick(v, p)
+        if (specialUntil >= 0) {
+            specialTick(v, p)
+            return
+        }
+        val here = real(p.coords)
+        val vr = real(v.coords)
+        val dist = boxDist(here.x, here.z, vr.x, vr.z, vr.x + v.size - 1, vr.z + v.size - 1)
+        if (dist > 1 && v.vars["varn.freeze_end_clock"] <= v.currentMapClock) {
+            v.walk(at(vr.x + sign(here.x - (vr.x + v.size / 2)), vr.z + sign(here.z - (vr.z + v.size / 2))))
+        }
+        if (t < nextAttack) return
+        nextAttack = t + if (enraged) P3_EVERY_ENRAGED else P3_EVERY
+        attacks++
+        if (attacks % 5 == 0) {
+            // the nylocas and the green ball come with an ordinary attack; webs and yellows take its place (Blert)
+            val which = special % 4
+            startSpecial(v, p)
+            if (which == 1 || which == 2) return
+        }
+        v.facePlayer(p)
+        if (dist == 1) {
+            v.anim("seq.verzik_phase3_attack_melee")
+            recordAttack(v, 19)
+            val roll = rand(0, P3_MELEE_MAX)
+            later(1) {
+                val q = inside() ?: return@later
+                val r = real(q.coords)
+                val vv = verzik ?: return@later
+                val rv = real(vv.coords)
+                if (boxDist(r.x, r.z, rv.x, rv.z, rv.x + vv.size - 1, rv.z + vv.size - 1) != 1) return@later
+                hurt(q, roll, prayer = "melee", source = vv)
+            }
+            return
+        }
+        val magic = chance(0.5)
+        v.anim(if (magic) "seq.verzik_phase3_attack_magic" else "seq.verzik_phase3_attack_ranged")
+        recordAttack(v, if (magic) 21 else 20)
+        val lands = proj(if (magic) "spotanim.verzik_phase3_mageproj" else "spotanim.verzik_phase3_rangeproj", v, p, delay = 30, speed = 6, startHeight = 120)
+        val max = if (enraged) P3_MAX_ENRAGED else P3_MAX
+        val roll = rand(0, max)
+        val prayer = if (magic) "magic" else "missiles"
+        later(lands) {
+            val q = inside() ?: return@later
+            hurt(q, if (prays(q, prayer)) roll / 2 else roll, source = verzik)
+        }
+    }
+
+    private fun startSpecial(v: Npc, p: Player) {
+        val which = special % 4
+        special++
+        when (which) {
+            0 -> {
+                v.anim("seq.verzik_phase3_attack_summon")
+                crawler(p)
+            }
+            1 -> {
+                invulnerable = true
+                specialUntil = t + WEB_TICKS
+                v.routeDestination.clear()
+                v.walk(at(P3_X, P3_Y))
+                v.anim("seq.verzik_phase3_attack_webspin")
+                recordAttack(v, 22)
+                val here = real(p.coords)
+                val vr = real(v.coords)
+                if (boxDist(here.x, here.z, vr.x, vr.z, vr.x + v.size - 1, vr.z + v.size - 1) <= 1) knock(v, p, 3)
+            }
+            2 -> {
+                invulnerable = true
+                specialUntil = t + YELLOW_TICKS
+                v.anim("seq.verzik_phase3_attack_powerblast")
+                recordAttack(v, 23)
+                yellow = yellowTile(real(p.coords))
+                gfx("spotanim.verzik_powerblast_safezone", yellow!!)
+            }
+            else -> greenBall(v, p)
+        }
+    }
+
+    private fun yellowTile(from: CoordGrid): CoordGrid {
+        repeat(60) {
+            val c = CoordGrid(rand(3155, 3180), rand(4300, 4328), 0)
+            if (abs(c.x - from.x) + abs(c.z - from.z) >= 4 && inArena(c) && !blocked(c)) return c
+        }
+        return CoordGrid(from.x + 3, from.z, 0)
+    }
+
+    private fun specialTick(v: Npc, p: Player) {
+        val left = specialUntil - t
+        if (yellow != null) {
+            val y = yellow!!
+            // the pool stays lit as she charges
+            if (left % 4 == 0 && left > 0) gfx("spotanim.verzik_powerblast_safezone", y)
+            if (left == 0) {
+                val safe = real(p.coords) == y
+                projTiles("spotanim.verzik_powerblast_projanim_down", real(p.coords), real(p.coords), delay = 0, speed = 30, startHeight = 400, endHeight = 0, target = p)
+                if (safe) p.spotanim("spotanim.verzik_powerblast_protection") else hurt(p, rand(YELLOW_MIN, YELLOW_MAX), source = v, delay = 1)
+                yellow = null
+                endSpecial(YELLOW_AFTER)
+            }
+            return
+        }
+        // webs: three at a time every other tick, one on your tile
+        if (left > WEB_AFTER && left % 2 == 0) {
+            val here = real(p.coords)
+            for (i in 0 until 3) {
+                val tile = if (i == 0) here else CoordGrid(here.x + rand(-3, 3), here.z + rand(-3, 3), 0)
+                if (!inArena(tile) || blocked(tile)) continue
+                val lands = projTiles("spotanim.verzik_p3_web_proj", center(v), tile, delay = 10, speed = 8, startHeight = 100, endHeight = 0, angle = 30)
+                later(lands) { web(tile) }
+            }
+        }
+        if (left == 0) endSpecial(1)
+    }
+
+    private fun endSpecial(next: Int) {
+        specialUntil = -1
+        invulnerable = false
+        nextAttack = t + next
+    }
+
+    private fun web(tile: CoordGrid) {
+        if (dead >= 0 || phase != 3 || webs.any { real(it.npc.coords) == tile }) return
+        val q = inside()
+        val holding = q != null && real(q.coords) == tile
+        val n = spawn(WEB, tile, WEB_HP)
+        webs += Web(n, t, holding)
+        if (holding && q != null) {
+            q.frozen = true
+            q.routeDestination.clear()
+            mes("You're stuck in the web!")
+        }
+    }
+
+    private fun websTick() {
+        val it = webs.iterator()
+        while (it.hasNext()) {
+            val w = it.next()
+            val n = w.npc
+            val gone = !n.isSlotAssigned || n.hitpoints <= 0
+            if (gone || t - w.born >= WEB_LIFE || (w.holding && t - w.born >= WEB_SNAP)) {
+                if (w.holding) {
+                    owner.frozen = false
+                    if (!gone) {
+                        // not broken in time: it snaps
+                        inside()?.let { hurt(it, rand(WEB_SNAP_MIN, WEB_SNAP_MAX)) }
+                    }
+                }
+                if (n.isSlotAssigned) despawn(n)
+                it.remove()
+            }
+        }
+    }
+
+    private fun greenBall(v: Npc, p: Player) {
+        recordAttack(v, 24)
+        v.facePlayer(p)
+        v.anim("seq.verzik_phase3_attack_magic")
+        val lands = proj("spotanim.verzik_acidbomb_projanim", v, p, delay = 30, speed = 10, startHeight = 120)
+        later(lands) {
+            val q = inside() ?: return@later
+            q.spotanim("spotanim.verzik_acidbomb_impact")
+            hurt(q, q.baseHitpointsLvl * 3 / 4, source = verzik)
+        }
+    }
+
+    private fun tornadoTick(v: Npc, p: Player) {
+        if (!enraged) return
+        val tor = tornado
+        if (tor == null) {
+            if (tornadoAt in 0..t) {
+                tornado = spawn(TORNADO, CoordGrid(real(v.coords).x, real(v.coords).z, 0), null)
+                tornadoAt = -1
+            }
+            return
+        }
+        val tr = real(tor.coords)
+        val here = real(p.coords)
+        if (tr == here) {
+            val dmg = p.hitpoints / 2
+            hurt(p, dmg)
+            v.hitpoints = minOf(v.baseHitpointsLvl, v.hitpoints + dmg * 3)
+            v.spotanim("spotanim.verzik_p3_creeper_spot")
+            despawn(tor)
+            tornado = null
+            tornadoAt = t + TORNADO_BACK
+            return
+        }
+        tor.walk(at(tr.x + sign(here.x - tr.x), tr.z + sign(here.z - tr.z)))
+    }
+
+    /* ---- the nylocas that chase you (P2 and P3) */
+
+    private fun crawler(p: Player) {
+        val style = "MRG"[rand(3)]
+        val n = spawn("npc.verzik_nylocas_${styleName(style)}", CoordGrid(P2_X, P2_Y + 7, 0), CRAWLER_HP)
+        crawlers += Crawler(n, style, t)
+    }
+
+    private fun crawlersTick() {
+        val p = inside()
+        val it = crawlers.iterator()
+        while (it.hasNext()) {
+            val c = it.next()
+            val n = c.npc
+            if (!n.isSlotAssigned) {
+                it.remove()
+                continue
+            }
+            if (n.hitpoints <= 0) continue
+            val here = real(n.coords)
+            val age = t - c.born
+            if (p != null) {
+                val pc = real(p.coords)
+                val dist = max(abs(pc.x - here.x), abs(pc.z - here.z))
+                if (dist <= 1 || age >= CRAWLER_LIFE) {
+                    gfx("spotanim.tob_nylocas_death_${styleName(c.style)}_detonate", here)
+                    n.anim("seq.top_spider_${styleName(c.style)}_death_detonate")
+                    if (dist <= 1) hurt(p, rand(0, CRAWLER_BOOM), source = n) else if (dist <= 3) hurt(p, rand(0, CRAWLER_BOOM_FAR), source = n)
+                    n.hitpoints = 0
+                    // the burst plays out before it goes
+                    later(CRAWLER_POP_TICKS) { if (n.isSlotAssigned) despawn(n) }
+                    continue
+                }
+                if (n.vars["varn.freeze_end_clock"] <= n.currentMapClock) n.walk(at(here.x + sign(pc.x - here.x), here.z + sign(pc.z - here.z)))
+            }
+        }
+    }
+
+    /* ---- the room's doors */
+
+    override suspend fun opLoc(name: String, at: CoordGrid, op: Int, access: ProtectedAccess): Boolean {
+        if (name == "loc.tob_dungeon_verzik_entrance_door") {
+            val here = real(access.player.coords)
+            access.telejump(this.at(if (here.z < at.z) CoordGrid(at.x, at.z + 1, 0) else CoordGrid(at.x, at.z - 1, 0)), TeleportType.Exempt)
+            return true
+        }
+        return false
+    }
+
+    override fun reset() {
+        owner.frozen = false
+        super.reset()
+    }
+
+    override fun autoTarget(): Npc? = athanatos?.takeIf { it.isSlotAssigned && it.hitpoints > 0 } ?: redCrabs.firstOrNull { it.isSlotAssigned && it.hitpoints > 0 } ?: verzik?.takeIf { phase == 1 || phase == 2 || phase == 3 }
+
+    override val autoStart: CoordGrid
+        get() = CoordGrid(3166, 4321, 0)
+
+    override fun barBoss(): Npc? = verzik
+
+    override fun debug(): String = "verzik ${verzik?.hitpoints} phase $phase attacks $attacks special $special/${specialUntil} reds $reds enraged $enraged crawlers ${crawlers.size} webs ${webs.size} pillars ${pillars.count { it.up }}"
+
+    private companion object {
+        const val INITIAL = "npc.verzik_initial"
+        const val P1 = "npc.verzik_phase1"
+        const val T12 = "npc.verzik_phase1_to2_transition"
+        const val P2 = "npc.verzik_phase2"
+        const val T23 = "npc.verzik_phase2_to3_transition"
+        const val P3 = "npc.verzik_phase3"
+        const val PILLAR_NPC = "npc.verzik_pillar_npc"
+        const val ATHANATOS = "npc.tob_verzik_phase2_armourednylocas"
+        const val RED = "npc.tob_verzik_phase2_bloodnylocas"
+        const val WEB = "npc.verzik_web_npc"
+        const val TORNADO = "npc.tob_verzik_creeper"
+        const val DAWNBRINGER = "obj.verzik_special_weapon"
+        const val P1_X = 3166
+        const val P1_Y = 4323
+        const val P2_X = 3167
+        const val P2_Y = 4313
+        const val P3_X = 3165
+        const val P3_Y = 4311
+        const val P1_HP = 1500
+        const val P2_HP = 2437
+        const val P3_HP = 2437
+        const val P1_FIRST = 20
+        const val P1_EVERY = 14
+        const val P1_MAX = 137
+        const val P1_MELEE_CAP = 10
+        const val P1_RANGED_CAP = 3
+        const val DAWN_SPEC_MIN = 75
+        const val PILLAR_HP = 600
+        const val PILLAR_FALL_MIN = 30
+        const val PILLAR_FALL_MAX = 60
+        const val PILLAR_FADE = 10
+        // Transition timings from Blert recordings, counted from the tick the room sees the phase die (one after the
+        // killing hit lands): P1 sits dead 3 more ticks, her climb-down form lasts 13 and P2 attacks 3 ticks in; P2's
+        // body goes the tick after, the P2-to-P3 form lasts 4 and P3 attacks 6 ticks in
+        const val T12_AT = 3
+        const val T12_TICKS = 16
+        const val P2_FIRST = 3
+        const val P2_EVERY = 4
+        const val URN_MAX = 44
+        const val ZAP_MAX = 48
+        const val URN_TICKS = 6
+
+        /** Her P1 blast's flight, in ticks: a slow, heavy orb (an estimate - Blert has no hits on it to time). */
+        const val P1_FLIGHT = 5
+        const val CRAWLER_POP_TICKS = 4
+        const val ZAP_BOOTS = 25
+        const val BOUNCE_MAX = 45
+        const val STOMP_MAX = 82
+        const val BOUNCE_TILES = 3
+        const val STUN = 5
+        const val MIN_PURPLE = 16
+        const val ATHANATOS_HP = 50
+        const val ATHANATOS_EVERY = 4
+        const val REDS_PCT = 35
+        const val REDS_ATTACKS = 8
+        const val RED_LIFE = 42
+        const val RED_POP_TICKS = 3
+        const val RED_SPAWN_SEQ = "seq.top_spider_melee_spawn_noloop"
+        const val RED_POP_SEQ = "seq.top_spider_melee_death"
+        const val SUMMON_TICKS = 12
+        const val RED_HP = 150
+        const val BLOOD_MAX = 45
+        const val T23_AT = 1
+        const val T23_TICKS = 5
+        const val P3_FIRST = 6
+        const val P3_EVERY = 7
+        const val P3_EVERY_ENRAGED = 5
+        const val P3_MAX = 33
+        const val P3_MAX_ENRAGED = 34
+        const val P3_MELEE_MAX = 63
+        const val ENRAGE_PCT = 20
+        const val WEB_TICKS = 44
+        const val WEB_AFTER = 14
+        const val WEB_HP = 10
+        const val WEB_LIFE = 30
+        const val WEB_SNAP = 6
+        const val WEB_SNAP_MIN = 40
+        const val WEB_SNAP_MAX = 60
+        const val YELLOW_TICKS = 14
+        const val YELLOW_AFTER = 7
+        const val YELLOW_MIN = 40
+        const val YELLOW_MAX = 80
+        const val TORNADO_BACK = 16
+        const val CRAWLER_HP = 11
+        const val CRAWLER_LIFE = 25
+        const val CRAWLER_BOOM = 46
+        const val CRAWLER_BOOM_FAR = 8
+        const val DEATH_B_AT = 5
+        const val DEATH_TICKS = 10
+
+        val PILLARS = listOf(3161 to 4318, 3161 to 4312, 3161 to 4306, 3173 to 4318, 3173 to 4312, 3173 to 4306)
+    }
+}

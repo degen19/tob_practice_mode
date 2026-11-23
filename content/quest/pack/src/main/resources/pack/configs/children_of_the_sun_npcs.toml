@@ -1,0 +1,204 @@
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_alina"
+inherit = "npc.vmq1_alina"
+respawnDir = "North"
+wanderRange = 0
+defaultMode = "None"
+moveRestrict = "NoMove"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_noah"
+inherit = "npc.vmq1_noah"
+respawnDir = "East"
+wanderRange = 0
+defaultMode = "None"
+moveRestrict = "NoMove"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_guard_sergeant"
+inherit = "npc.vmq1_guard_sergeant"
+respawnDir = "South"
+wanderRange = 0
+defaultMode = "None"
+moveRestrict = "NoMove"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_guard_sergeant_roof"
+inherit = "npc.vmq1_guard_sergeant_roof"
+respawnDir = "East"
+wanderRange = 0
+defaultMode = "None"
+moveRestrict = "NoMove"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_itzla"
+inherit = "npc.vmq1_itzla"
+respawnDir = "West"
+wanderRange = 0
+defaultMode = "None"
+moveRestrict = "NoMove"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_knight_1_castle"
+inherit = "npc.vmq1_knight_1_castle"
+wanderRange = 0
+defaultMode = "None"
+moveRestrict = "NoMove"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_knight_2_castle"
+inherit = "npc.vmq1_knight_2_castle"
+wanderRange = 0
+defaultMode = "None"
+moveRestrict = "NoMove"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_guard_1"
+inherit = "npc.vmq1_guard_1"
+respawnDir = "East"
+wanderRange = 0
+defaultMode = "None"
+moveRestrict = "NoMove"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_guard_2"
+inherit = "npc.vmq1_guard_2"
+respawnDir = "East"
+wanderRange = 5
+defaultMode = "Wander"
+moveRestrict = "Normal"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_guard_3"
+inherit = "npc.vmq1_guard_3"
+respawnDir = "SouthWest"
+wanderRange = 0
+defaultMode = "None"
+moveRestrict = "NoMove"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_guard_4"
+inherit = "npc.vmq1_guard_4"
+respawnDir = "North"
+wanderRange = 0
+defaultMode = "None"
+moveRestrict = "NoMove"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_guard_5"
+inherit = "npc.vmq1_guard_5"
+respawnDir = "North"
+wanderRange = 5
+defaultMode = "Wander"
+moveRestrict = "Normal"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_guard_6"
+inherit = "npc.vmq1_guard_6"
+respawnDir = "South"
+wanderRange = 5
+defaultMode = "Wander"
+moveRestrict = "Normal"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_guard_7"
+inherit = "npc.vmq1_guard_7"
+respawnDir = "South"
+wanderRange = 5
+defaultMode = "Wander"
+moveRestrict = "Normal"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_guard_8"
+inherit = "npc.vmq1_guard_8"
+respawnDir = "NorthWest"
+wanderRange = 5
+defaultMode = "Wander"
+moveRestrict = "Normal"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_guard_9"
+inherit = "npc.vmq1_guard_9"
+respawnDir = "East"
+wanderRange = 5
+defaultMode = "Wander"
+moveRestrict = "Normal"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_guard_10"
+inherit = "npc.vmq1_guard_10"
+respawnDir = "East"
+wanderRange = 5
+defaultMode = "Wander"
+moveRestrict = "Normal"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_bag_guard_varrock"
+inherit = "npc.vmq1_bag_guard_varrock"
+respawnDir = "East"
+wanderRange = 0
+defaultMode = "None"
+moveRestrict = "NoMove"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_bandit_1_varrock"
+inherit = "npc.vmq1_bandit_1_varrock"
+respawnDir = "North"
+wanderRange = 0
+defaultMode = "None"
+moveRestrict = "NoMove"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_bandit_2_varrock"
+inherit = "npc.vmq1_bandit_2_varrock"
+respawnDir = "West"
+wanderRange = 0
+defaultMode = "None"
+moveRestrict = "NoMove"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_bandit_3_varrock"
+inherit = "npc.vmq1_bandit_3_varrock"
+respawnDir = "West"
+wanderRange = 0
+defaultMode = "None"
+moveRestrict = "NoMove"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_bandit_4_varrock"
+inherit = "npc.vmq1_bandit_4_varrock"
+respawnDir = "South"
+wanderRange = 0
+defaultMode = "None"
+moveRestrict = "NoMove"
+
+[[npc]]
+isServerOnly = true
+id = "npc.vmq1_bandit_4_cell"
+inherit = "npc.vmq1_bandit_4_cell"
+respawnDir = "West"
+wanderRange = 5
+defaultMode = "Wander"
+moveRestrict = "Normal"

@@ -1,0 +1,10 @@
+[gamevals.interface]
+tob_supplies = 1130
+
+[gamevals.inv]
+tob_supplies = 1131
+
+[gamevals.clientscript]
+tob_supplies_init = 45600
+tob_supplies_draw = 45603
+tob_supplies_tabs = 45606

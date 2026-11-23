@@ -1,0 +1,98 @@
+name: Gameval Conflict Check
+
+# The PR workflow waits for this check before validating gameval references.
+on:
+  workflow_call:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  gameval-conflicts:
+    runs-on: ubuntu-latest
+    # No environment: — do not gate fixes behind approval.
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download OSRS gameval snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/scripts/download_gameval_snapshot.py "$RUNNER_TEMP/osrs-gamevals"
+
+      - name: Fix conflicting gamevals
+        id: resolve
+        run: |
+          set +e
+          python3 tools/scripts/fix_gameval_conflicts.py --max-ids "$RUNNER_TEMP/osrs-gamevals/max-ids.toml" | tee /tmp/gameval-fix-log.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          if [ "$code" -eq 0 ]; then
+            echo "fixed=false" >> "$GITHUB_OUTPUT"
+          elif [ "$code" -eq 2 ]; then
+            echo "fixed=true" >> "$GITHUB_OUTPUT"
+          else
+            exit "$code"
+          fi
+
+      - name: Commit, push, and report conflicts
+        if: steps.resolve.outputs.fixed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_BRANCH: ${{ github.head_ref }}
+          SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          if [ "$SAME_REPO" != "true" ]; then
+            echo "::error::Conflicting gamevals on a fork PR — push fixes to the branch (or open the PR from this repo)."
+            cat /tmp/gameval-fix-log.txt
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -u -- content api .data/gamevals
+
+          if git diff --cached --quiet; then
+            echo "Nothing staged."
+            exit 0
+          fi
+
+          git commit -m "fix(gamevals): reassign IDs conflicting with OSRS reserved range"
+          git push origin "HEAD:refs/heads/$HEAD_BRANCH"
+
+          {
+            echo "## Gameval conflicts auto-fixed"
+            echo
+            echo "Reserved OSRS IDs come from the gameval snapshot for the PR revision."
+            echo "Custom gamevals must use IDs **greater than** each table's max."
+            echo
+            echo "A fix commit was pushed with these reassignments:"
+            echo
+            echo '```'
+            cat /tmp/gameval-fix-log.txt
+            echo '```'
+          } > /tmp/gameval-pr-body.md
+
+          gh pr comment "$PR_NUMBER" --body-file /tmp/gameval-pr-body.md ||
+            echo "::warning::Could not post the conflict-fix comment."
+
+          # A GITHUB_TOKEN push leaves the new PR run awaiting approval.
+          # Dispatch the checks for the fixed head without rerunning the auto-fix.
+          gh workflow run pr-checks.yml --ref "$HEAD_BRANCH" -f pull_request="$PR_NUMBER"
+
+      - name: Upload unresolved conflict report
+        if: failure() && steps.resolve.outputs.fixed == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: gameval-conflicts-${{ github.run_attempt }}
+          path: /tmp/gameval-fix-log.txt

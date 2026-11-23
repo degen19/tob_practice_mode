@@ -1,0 +1,26 @@
+[clientscript,tob_supplies_draw](component $grid, component $scrollbar)
+cc_deleteall($grid);
+def_int $slot = 0;
+def_int $count = 0;
+def_obj $obj = null;
+while ($slot < 200) {
+    $obj = inv_getobj(tob_supplies, $slot);
+    if ($obj ! null) {
+        $count = calc($slot + 1);
+        cc_create($grid, ^iftype_graphic, $slot);
+        cc_setposition(calc(4 + $slot % 10 * 46), calc(4 + $slot / 10 * 40), ^setpos_abs_left, ^setpos_abs_top);
+        cc_setsize(36, 32, ^setsize_abs, ^setsize_abs);
+        cc_setgraphicshadow(0x333333);
+        cc_setoutline(1);
+        cc_setobject_nonum($obj, 1);
+        cc_setop(1, "Take-1");
+        cc_setop(2, "Take-5");
+        cc_setop(3, "Take-10");
+        cc_setop(4, "Take-X");
+        cc_setopbase(append(append("<col=ff9040>", oc_name($obj)), "</col>"));
+    }
+    $slot = calc($slot + 1);
+}
+if_setscrollsize(0, calc(($count + 9) / 10 * 40 + 4), $grid);
+if_setscrollpos(0, 0, $grid);
+~scrollbar_vertical($scrollbar, $grid, "scrollbar_dragger_v2,3", "scrollbar_dragger_v2,0", "scrollbar_dragger_v2,1", "scrollbar_dragger_v2,2", "scrollbar_v2,0", "scrollbar_v2,1");

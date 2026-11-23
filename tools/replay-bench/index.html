@@ -1,0 +1,284 @@
+<title>ToB Replay Bench</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a control bar, then the real raid and our server side by side on the same tile scale, then their attack tapes. */
+:root {
+  --bg: #f3f1ee; --panel: #fbfaf8; --ink: #23201d; --muted: #6f675f; --line: #d9d3cc;
+  --real: #9c2f2f; --ours: #1f6f78; --player: #2f5fb3; --npc: #7b6a58; --boss: #4a3b2c; --grid: #e6e1db;
+  --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #171513; --panel: #1f1c1a; --ink: #ece7e1; --muted: #a39a90; --line: #3a3531;
+  --real: #e07a6f; --ours: #5fc0c9; --player: #8fb4ff; --npc: #b4a491; --boss: #e3d2bd; --grid: #2a2623; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #171513; --panel: #1f1c1a; --ink: #ece7e1; --muted: #a39a90; --line: #3a3531;
+  --real: #e07a6f; --ours: #5fc0c9; --player: #8fb4ff; --npc: #b4a491; --boss: #e3d2bd; --grid: #2a2623; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 14px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 32px; }
+.wrap { max-width: 1240px; margin: 0 auto; display: grid; gap: 14px; }
+h1 { font-size: 20px; font-weight: 600; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); margin: 2px 0 0; max-width: 70ch; }
+.bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+button, .file { font: 500 13px var(--sans); color: var(--ink); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+button:focus-visible, input:focus-visible, .file:focus-within { outline: 2px solid var(--ours); outline-offset: 2px; }
+.file input { display: none; }
+.tick { font: 500 13px var(--mono); font-variant-numeric: tabular-nums; min-width: 9ch; }
+input[type=range] { flex: 1 1 240px; min-width: 0; accent-color: var(--ours); }
+label.small { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; }
+label.small input { width: 5ch; font: 13px var(--mono); background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 3px 4px; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 760px) { .pair { grid-template-columns: 1fr; } }
+.view { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; min-width: 0; display: grid; gap: 8px; }
+.view h2 { font-size: 13px; margin: 0; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.view h2 .who { font-weight: 600; letter-spacing: .04em; text-transform: uppercase; font-size: 11px; }
+.real .who { color: var(--real); } .ours .who { color: var(--ours); }
+.view h2 .src { color: var(--muted); font-weight: 400; }
+canvas { width: 100%; height: auto; display: block; }
+.status { font: 12px var(--mono); color: var(--muted); min-height: 1.4em; font-variant-numeric: tabular-nums; }
+.tape { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: grid; gap: 6px; min-width: 0; }
+.tape h3 { margin: 0; font-size: 13px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; font-size: 13px; width: 100%; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; }
+.diff { color: var(--real); font-weight: 600; }
+.note { color: var(--muted); font-size: 12px; max-width: 80ch; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>ToB Replay Bench</h1>
+    <p class="sub">A real Regular solo from Blert beside a run on our server, tick for tick. Load a recording from your server's <code>.data/recordings</code> folder to compare your own run.</p>
+  </header>
+
+  <div class="bar">
+    <div class="tabs" id="tabs" role="tablist"></div>
+    <label class="file" id="fileLabel">Load our recording (.jsonl)<input type="file" id="file" accept=".jsonl,.json,.txt" multiple></label>
+  </div>
+
+  <div class="bar">
+    <button id="play">Play</button>
+    <button id="back" aria-label="Back one tick">-1</button>
+    <button id="fwd" aria-label="Forward one tick">+1</button>
+    <span class="tick" id="tickLabel">tick 0</span>
+    <input type="range" id="slider" min="0" max="100" value="0" aria-label="Tick">
+    <label class="small">speed <select id="speed"><option value="600">1x</option><option value="300">2x</option><option value="150">4x</option></select></label>
+    <label class="small">ours offset <input type="number" id="offset" value="0" step="1"></label>
+  </div>
+
+  <div class="pair">
+    <section class="view real"><h2><span class="who">Real game</span><span class="src" id="realSrc"></span></h2><canvas id="cReal" width="560" height="460"></canvas><div class="status" id="sReal"></div></section>
+    <section class="view ours"><h2><span class="who">Our server</span><span class="src" id="oursSrc"></span></h2><canvas id="cOurs" width="560" height="460"></canvas><div class="status" id="sOurs"></div></section>
+  </div>
+
+  <section class="tape">
+    <h3>Boss attacks by tick</h3>
+    <canvas id="tape" width="1200" height="96"></canvas>
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <section class="tape">
+    <h3>Timing check</h3>
+    <div class="tablewrap"><table id="metrics"></table></div>
+    <p class="note">The real side is one raid, so small differences in when things happen are expected (players move differently). Gaps between attacks and the order of specials should match. Use "ours offset" to line up the two starts.</p>
+  </section>
+</div>
+
+<script>
+const ROOMS = [[10,'Maiden'],[11,'Bloat'],[12,'Nylocas'],[13,'Sotetseg'],[14,'Xarpus'],[15,'Verzik']];
+const ATTACKS = {1:'Maiden auto',2:'Blood throw',3:'Bloat stomp',4:'Nylo boss melee',5:'Nylo boss range',6:'Nylo boss mage',7:'Sote melee',8:'Sote ball',9:'Death ball',10:'Xarpus spit',12:'Verzik P1',13:'Bounce',14:'Cabbage',15:'Zap',16:'Purple',17:'P2 mage',18:'P3 auto',19:'P3 melee',20:'P3 range',21:'P3 mage',22:'Webs',23:'Yellows',24:'Green ball',25:'Xarpus NE',26:'Xarpus SE',27:'Xarpus SW',28:'Xarpus NW'};
+const EVENTS = {110:'Bloat down',111:'Bloat up',130:'Maze',140:'Xarpus phase',150:'Verzik phase',120:'Nylo wave',123:'Nylo boss'};
+const PAL = ['#9c2f2f','#1f6f78','#b07a1f','#5b4ea8','#3f7d3a','#a8466f','#56606b','#c25b2a'];
+// footprint by npc id (bosses and their adds); anything else is 1x1
+const SIZE = {8359:5,8360:6,8361:6,8362:6,8363:6,8364:6,8365:6,8366:2,8387:5,8388:5,8338:5,8339:5,8340:5,8341:5,8369:7,8370:7,8371:3,8372:3,8373:3,8374:7,8375:7,8379:3,8345:2,8346:2,8347:2,8351:2,8352:2,8353:2,8354:4,8355:4,8356:4,8357:4,8358:4};
+const BOSS = new Set([8359,8360,8361,8362,8363,8364,8365,8387,8388,8338,8339,8340,8341,8369,8370,8371,8372,8373,8374,8375,8354,8355,8356,8357,8358]);
+
+let DATA = null, room = 10, tick = 0, timer = null;
+const ours = {}; // stage -> events (compact rows) loaded from a file
+const oursName = {};
+
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+function compact(e) {
+  const r = [e.type, e.tick, e.xCoord || 0, e.yCoord || 0];
+  if (e.type === 4) r.push(e.player.name, (e.player.hitpoints || 0) >> 16);
+  else if (e.type === 7 || e.type === 8 || e.type === 9) r.push(e.npc.id, e.npc.roomId || 0, (e.npc.hitpoints || 0) >> 16, (e.npc.hitpoints || 0) & 0xffff);
+  else if (e.type === 10) r.push(e.npc.id, e.npcAttack.attack);
+  return r;
+}
+
+function index(rows) {
+  const byTick = new Map(); let max = 0;
+  for (const r of rows || []) { if (!byTick.has(r[1])) byTick.set(r[1], []); byTick.get(r[1]).push(r); if (r[1] > max) max = r[1]; }
+  return { byTick, max, rows: rows || [] };
+}
+
+function sides() {
+  const real = index(DATA.real[room]);
+  const o = ours[room] || DATA.ours[room];
+  return { real, ours: index(o) };
+}
+
+function bounds(s) {
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const side of [s.real, s.ours]) for (const r of side.rows) {
+    if (r[0] !== 4 && r[0] !== 8) continue;
+    const x = r[2], y = r[3]; if (!x) continue;
+    if (room === 13 && x > 3330) continue; // the Shadow Realm is drawn as a note, not on the map
+    const sz = r[0] === 8 ? (SIZE[r[4]] || 1) : 1;
+    x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + sz - 1); y1 = Math.max(y1, y + sz - 1);
+  }
+  if (x0 > x1) return { x0: 0, y0: 0, x1: 20, y1: 20 };
+  return { x0: x0 - 1, y0: y0 - 1, x1: x1 + 1, y1: y1 + 1 };
+}
+
+function stateAt(side, t) {
+  // the newest row for each entity at or before t (npcs by roomId, players by name), only from the last 1 tick
+  const ps = new Map(), ns = new Map();
+  for (const tt of [t]) for (const r of side.byTick.get(tt) || []) {
+    if (r[0] === 4) ps.set(r[4], r); else if (r[0] === 8 || r[0] === 7) ns.set(r[5], r);
+  }
+  return { ps, ns };
+}
+
+function draw(canvas, side, t, b, accent, statusEl) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const tiles = Math.max(b.x1 - b.x0 + 1, b.y1 - b.y0 + 1);
+  const cell = Math.floor(Math.min(W / (b.x1 - b.x0 + 1), H / (b.y1 - b.y0 + 1)));
+  const ox = Math.floor((W - cell * (b.x1 - b.x0 + 1)) / 2), oy = Math.floor((H - cell * (b.y1 - b.y0 + 1)) / 2);
+  const px = (x) => ox + (x - b.x0) * cell, py = (y) => oy + (b.y1 - y) * cell; // north up
+  ctx.fillStyle = css('--panel'); ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1;
+  for (let x = b.x0; x <= b.x1 + 1; x++) { ctx.beginPath(); ctx.moveTo(px(x) + .5, oy); ctx.lineTo(px(x) + .5, oy + cell * (b.y1 - b.y0 + 1)); ctx.stroke(); }
+  for (let y = b.y0 - 1; y <= b.y1; y++) { ctx.beginPath(); ctx.moveTo(ox, py(y) + .5); ctx.lineTo(ox + cell * (b.x1 - b.x0 + 1), py(y) + .5); ctx.stroke(); }
+  const { ps, ns } = stateAt(side, t);
+  const notes = [];
+  for (const r of ns.values()) {
+    const [, , x, y, id, , hp, max] = r; const sz = SIZE[id] || 1;
+    if (room === 13 && x > 3330) continue;
+    const boss = BOSS.has(id);
+    ctx.fillStyle = boss ? css('--boss') : css('--npc'); ctx.globalAlpha = boss ? .85 : .7;
+    ctx.fillRect(px(x) + 1, py(y + sz - 1) + 1, sz * cell - 2, sz * cell - 2); ctx.globalAlpha = 1;
+    if (max > 0) { ctx.fillStyle = accent; ctx.fillRect(px(x) + 1, py(y + sz - 1) - 4, (sz * cell - 2) * Math.max(0, hp) / max, 3); }
+    if (boss) notes.push(`npc ${id} ${Math.max(0, hp)}/${max} @${x},${y}`);
+  }
+  let pi = 0;
+  for (const r of ps.values()) {
+    const [, , x, y, name, hp] = r;
+    if (room === 13 && x > 3330) { notes.push(`${name} in the Shadow Realm @${x},${y} hp ${hp}`); continue; }
+    ctx.fillStyle = css('--player'); ctx.beginPath(); ctx.arc(px(x) + cell / 2, py(y) + cell / 2, Math.max(3, cell * .38), 0, 7); ctx.fill();
+    notes.push(`${name} @${x},${y} hp ${hp}`); pi++;
+  }
+  // this tick's attacks
+  for (const r of side.byTick.get(t) || []) if (r[0] === 10) notes.push(`attack: ${ATTACKS[r[5]] || 'attack ' + r[5]}`); else if (EVENTS[r[0]]) notes.push(`event: ${EVENTS[r[0]]}`);
+  statusEl.textContent = notes.length ? notes.join(' | ') : (side.rows.length ? 'nothing on this tick' : 'no data for this room yet');
+}
+
+function render() {
+  const s = sides(); const b = bounds(s);
+  const off = parseInt(document.getElementById('offset').value || '0', 10) || 0;
+  draw(document.getElementById('cReal'), s.real, tick, b, css('--real'), document.getElementById('sReal'));
+  draw(document.getElementById('cOurs'), s.ours, tick + off, b, css('--ours'), document.getElementById('sOurs'));
+  document.getElementById('tickLabel').textContent = `tick ${tick}`;
+  document.getElementById('slider').value = tick;
+  drawTape(s, off);
+}
+
+function attacks(side) { return side.rows.filter(r => r[0] === 10).map(r => [r[1], r[5]]); }
+function events(side) { return side.rows.filter(r => EVENTS[r[0]]).map(r => [r[1], r[0]]); }
+
+function drawTape(s, off) {
+  const c = document.getElementById('tape'); const ctx = c.getContext('2d');
+  const W = c.width, H = c.height; ctx.fillStyle = css('--panel'); ctx.fillRect(0, 0, W, H);
+  const max = Math.max(s.real.max, s.ours.max - off, 1);
+  const x = (t) => 70 + (W - 80) * t / max;
+  const kinds = [...new Set([...attacks(s.real), ...attacks(s.ours)].map(a => a[1]))].sort((a, b) => a - b);
+  const col = (k) => PAL[kinds.indexOf(k) % PAL.length];
+  ctx.font = '12px ' + css('--mono'); ctx.fillStyle = css('--muted');
+  ctx.fillText('real', 8, 30); ctx.fillText('ours', 8, 70);
+  for (const [row, side, o] of [[18, s.real, 0], [58, s.ours, off]]) {
+    for (const [t, k] of attacks(side)) { ctx.fillStyle = col(k); ctx.fillRect(x(t - o) - 1, row, 3, 18); }
+    for (const [t] of events(side)) { ctx.fillStyle = css('--ink'); ctx.fillRect(x(t - o) - 1, row - 6, 3, 30); }
+  }
+  ctx.strokeStyle = css('--ink'); ctx.beginPath(); ctx.moveTo(x(tick) + .5, 6); ctx.lineTo(x(tick) + .5, H - 6); ctx.stroke();
+  document.getElementById('legend').innerHTML = kinds.map(k => `<span><i style="background:${col(k)}"></i>${ATTACKS[k] || k}</span>`).join('') + '<span><i style="background:var(--ink)"></i>phase, maze, down</span>';
+}
+
+function mode(arr) { const m = new Map(); for (const v of arr) m.set(v, (m.get(v) || 0) + 1); let best = null, n = 0; for (const [v, c] of m) if (c > n) { best = v; n = c; } return best; }
+
+function metrics() {
+  const s = sides();
+  const rows = [];
+  const per = (side) => {
+    const a = attacks(side); const ticks = a.map(x => x[0]);
+    const gaps = ticks.slice(1).map((t, i) => t - ticks[i]);
+    const ev = events(side);
+    return { first: ticks[0], gap: mode(gaps), count: a.length, events: ev.map(e => `${EVENTS[e[1]]} ${e[0]}`).slice(0, 6).join(', ') };
+  };
+  const r = per(s.real), o = per(s.ours);
+  const line = (label, a, b, num = true) => {
+    const differ = a !== undefined && b !== undefined && a !== b;
+    rows.push(`<tr><th>${label}</th><td class="${num ? 'num' : ''}">${a ?? "-"}</td><td class="${num ? 'num' : ''} ${differ ? 'diff' : ''}">${b ?? "-"}</td></tr>`);
+  };
+  line('First boss attack (tick)', r.first, o.first);
+  line('Most common gap between attacks', r.gap, o.gap);
+  line('Attacks recorded', r.count, o.count);
+  line('Phases, mazes, downs', r.events || '-', o.events || '-', false);
+  document.getElementById('metrics').innerHTML = `<tr><th></th><th>Real game</th><th>Our server</th></tr>` + rows.join('');
+}
+
+function setRoom(stage) {
+  room = stage; tick = 0; stop();
+  for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-pressed', String(+b.dataset.stage === stage));
+  const s = sides();
+  document.getElementById('slider').max = Math.max(s.real.max, s.ours.max, 1);
+  document.getElementById('realSrc').textContent = DATA.realName;
+  document.getElementById('oursSrc').textContent = oursName[room] || (DATA.ours[room] ? 'self-test bot run (sample)' : 'load a recording');
+  metrics(); render();
+}
+
+function stop() { if (timer) clearInterval(timer); timer = null; document.getElementById('play').textContent = 'Play'; }
+function play() {
+  if (timer) return stop();
+  document.getElementById('play').textContent = 'Pause';
+  timer = setInterval(() => { const max = +document.getElementById('slider').max; if (tick >= max) return stop(); tick++; render(); }, +document.getElementById('speed').value);
+}
+
+async function loadFiles(files) {
+  for (const f of files) {
+    const text = await f.text();
+    const rows = []; let stage = null;
+    for (const line of text.split(/\n/)) {
+      const l = line.trim(); if (!l) continue;
+      let parsed; try { parsed = JSON.parse(l); } catch { continue; }
+      for (const e of Array.isArray(parsed) ? parsed : [parsed]) { stage = stage ?? e.stage; if (e.stage === stage) rows.push(compact(e)); }
+    }
+    if (stage != null && rows.length) { ours[stage] = rows; oursName[stage] = f.name; }
+  }
+  const first = Object.keys(ours).map(Number)[0];
+  setRoom(first ?? room);
+}
+
+document.getElementById('tabs').innerHTML = ROOMS.map(([s, n]) => `<button role="tab" data-stage="${s}" aria-pressed="false">${n}</button>`).join('');
+document.getElementById('tabs').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setRoom(+b.dataset.stage); });
+document.getElementById('play').addEventListener('click', play);
+document.getElementById('back').addEventListener('click', () => { stop(); tick = Math.max(0, tick - 1); render(); });
+document.getElementById('fwd').addEventListener('click', () => { stop(); tick++; render(); });
+document.getElementById('slider').addEventListener('input', (e) => { stop(); tick = +e.target.value; render(); });
+document.getElementById('offset').addEventListener('input', () => { metrics(); render(); });
+document.getElementById('speed').addEventListener('change', () => { if (timer) { stop(); play(); } });
+document.getElementById('file').addEventListener('change', (e) => loadFiles(e.target.files));
+document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('drop', (e) => { e.preventDefault(); if (e.dataTransfer?.files?.length) loadFiles(e.dataTransfer.files); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', render);
+
+fetch('data.json').then(r => r.json()).then(d => { DATA = d; setRoom(13); }).catch(() => { document.getElementById('sReal').textContent = 'The replay data did not load. Reload the page to try again.'; });
+</script>

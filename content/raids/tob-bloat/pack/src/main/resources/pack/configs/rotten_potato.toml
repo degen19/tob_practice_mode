@@ -1,0 +1,5 @@
+[[item]]
+id = "obj.rotten_potato"
+inherit = "obj.rotten_potato"
+interfaceOptions = ["Settings", "Toggle deaths", "Toggle NPC HP", "Toggle supplies", "Drop"]
+examine = "Practice settings: player deaths, NPC hitpoints and supplies."

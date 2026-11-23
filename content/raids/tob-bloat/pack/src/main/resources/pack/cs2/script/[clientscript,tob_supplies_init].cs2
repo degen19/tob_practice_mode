@@ -1,0 +1,3 @@
+[clientscript,tob_supplies_init](component $border, component $grid, component $scrollbar)
+~stoneborder($border, "Supplies", 0);
+if_setoninvtransmit("tob_supplies_draw($grid, $scrollbar){tob_supplies}", $grid);

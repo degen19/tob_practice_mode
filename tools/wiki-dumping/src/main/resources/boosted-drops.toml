@@ -1,0 +1,61 @@
+
+[[boosted]]
+objs = ["obj.abyssal_whip", "obj.abyssal_dagger"]
+npcs = ["npc.slayer_abyssal*", "npc.kourend_abyssal", "npc.wild_cave_abyssal"]
+
+[[boosted]]
+objs = ["obj.blowpipe_fang", "obj.magic_fang", "obj.serpentine_visage", "obj.uncut_onyx"]
+npcs = ["npc.snakeboss_boss_*"]
+
+[[boosted]]
+objs = ["obj.kraken_tentacle", "obj.tots"]
+npcs = ["npc.slayer_kraken_boss*"]
+
+[[boosted]]
+objs = ["obj.tots_uncharged"]
+npcs = ["npc.slayer_kraken", "npc.slayer_kraken_sub"]
+
+[[boosted]]
+objs = ["obj.dragon_chainbody", "obj.dragon_2h_sword", "obj.dragon_pickaxe"]
+npcs = ["npc.kalphite_queen", "npc.kalphite_flyingqueen"]
+
+[[boosted]]
+objs = ["obj.dragon_axe", "obj.berzerker_ring"]
+npcs = ["npc.dagcave_melee_boss"]
+
+[[boosted]]
+objs = ["obj.dragon_boots"]
+npcs = ["npc.godwars_spiritual_*"]
+rolls = ["main"]
+
+[[boosted]]
+objs = [
+    "obj.bandos_chestplate",
+    "obj.bandos_skirt",
+    "obj.bandos_boots",
+    "obj.godwars_godsword_hilt_bandos",
+]
+npcs = ["npc.godwars_bandos_avatar"]
+
+[[boosted]]
+objs = ["obj.necklace_of_fangs"]
+npcs = ["npc.slayer_turoth_*", "npc.superior_turoth"]
+
+[[boosted]]
+objs = ["obj.air_diamond"]
+npcs = ["npc.slayer_killerwatt", "npc.slayer_killerwatt_ball"]
+
+[[boosted]]
+objs = ["obj.water_sapphire"]
+npcs = ["npc.royal_sea_snake_baby"]
+
+[[boosted]]
+objs = ["obj.earth_emerald"]
+npcs = ["npc.molanisk"]
+
+[[boosted]]
+objs = ["obj.fire_ruby"]
+npcs = ["npc.slayer_infernal_mage_*"]
+
+[[boosted]]
+objs = ["obj.aranea_boots"]

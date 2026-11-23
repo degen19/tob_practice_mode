@@ -1,0 +1,76 @@
+[[interface]]
+name = "interface.tob_supplies"
+width = 512
+height = 334
+on_load = ["clientscript.tob_supplies_init", "component.tob_supplies:border", "component.tob_supplies:grid", "component.tob_supplies:scrollbar"]
+
+[[component]]
+name = "border"
+type = "layer"
+width = 512
+height = 334
+no_click_through = true
+
+[[component]]
+name = "content"
+type = "layer"
+x = 10
+y = 36
+width = 492
+height = 28
+
+[[component]]
+name = "tab0"
+type = "layer"
+parent = "content"
+x = 8
+y = 4
+width = 80
+height = 20
+options = ["View"]
+
+[[component]]
+name = "tab1"
+type = "layer"
+parent = "content"
+x = 92
+y = 4
+width = 80
+height = 20
+options = ["View"]
+
+[[component]]
+name = "tab2"
+type = "layer"
+parent = "content"
+x = 176
+y = 4
+width = 80
+height = 20
+options = ["View"]
+
+[[component]]
+name = "tab3"
+type = "layer"
+parent = "content"
+x = 260
+y = 4
+width = 80
+height = 20
+options = ["View"]
+
+[[component]]
+name = "grid"
+type = "layer"
+x = 10
+y = 68
+width = 474
+height = 256
+
+[[component]]
+name = "scrollbar"
+type = "layer"
+x = 486
+y = 68
+width = 16
+height = 256

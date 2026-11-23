@@ -1,0 +1,46 @@
+package org.rsmod.api.combat.weapon
+
+import jakarta.inject.Inject
+import kotlin.math.max
+import org.rsmod.api.combat.commons.styles.AttackStyle
+import org.rsmod.api.combat.weapon.styles.AttackStyles
+import org.rsmod.api.config.constants
+import org.rsmod.api.config.refs.params
+import org.rsmod.api.player.worn.EquipmentChecks
+import org.rsmod.api.player.worn.MoonSet
+import org.rsmod.game.entity.Player
+import org.rsmod.game.type.getInvObj
+
+public class WeaponSpeeds @Inject constructor(private val styles: AttackStyles) {
+    public fun base(player: Player): Int {
+        val weapon = player.righthand ?: return constants.combat_default_attackrate
+        return getInvObj(weapon).param(params.attackrate)
+    }
+
+    public fun actual(player: Player, style: AttackStyle?): Int {
+        // the Obligator's Smash (its third style) is 3 ticks; its Thrusts are the weapon's 5
+        if (EquipmentChecks.isObligator(player.righthand) && player.vars["varp.com_mode"] == 2) return 3
+        val baseSpeed = base(player)
+        return if (style == AttackStyle.RapidRanged) {
+            max(1, baseSpeed - 1)
+        } else {
+            baseSpeed
+        }
+    }
+
+    /**
+     * The Eclipse atlatl is a tick slower against players unless the full Eclipse set is worn.
+     */
+    public fun actualVsPlayer(player: Player): Int {
+        val speed = actual(player)
+        val slowed =
+            EquipmentChecks.isEclipseAtlatl(player.righthand) &&
+                !MoonSet.Eclipse.wearsSetEffect(player)
+        return if (slowed) speed + 1 else speed
+    }
+
+    // Avoids needing the [AttackStyle] dependency when calling `actual` unless explicitly required.
+    public fun actual(player: Player): Int = actual(player, player.currentAttackStyle())
+
+    private fun Player.currentAttackStyle(): AttackStyle? = styles.get(this)
+}

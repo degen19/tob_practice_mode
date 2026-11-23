@@ -1,0 +1,6 @@
+[[inventory]]
+id = "inv.tob_supplies"
+size = 200
+scope = "Temp"
+stack = "Always"
+protect = false
