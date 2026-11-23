@@ -209,6 +209,7 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     private fun hud() {
         val p = player() ?: return
         TobHud.update(p, progress())
+        if (id in TIMED_ROOMS) p.say("${instanceTick + 1}")
     }
 
     /** A tick before the room has started. */
@@ -524,6 +525,9 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
         const val MAX_RECORDING = 40_000_000
 
         const val INSTANCE_CYCLE = 4
+
+        /** Rooms whose instance tick (1 to 4) shows over the player's head, so they can go in on the one they want. */
+        val TIMED_ROOMS = setOf(TobRoom.NYLOCAS, TobRoom.XARPUS, TobRoom.SOTETSEG)
         val STEPS = listOf(1 to 0, -1 to 0, 0 to 1, 0 to -1)
 
         /** Zones from the player's zone to the build area's south-west corner (a 104-tile scene). */
