@@ -8,6 +8,7 @@ import dev.openrune.types.aconverted.SpotanimType
 import org.rsmod.annotations.InternalApi
 import org.rsmod.api.config.Constants
 import org.rsmod.api.instances.InstanceSession
+import org.rsmod.api.player.clearInteractionRoute
 import org.rsmod.api.player.hit.modifier.PlayerHitModifier
 import org.rsmod.api.player.hit.queueHit
 import org.rsmod.api.player.output.mes
@@ -284,7 +285,8 @@ class BloatRoom(
                 if (local(p.coords) !in tiles) continue
                 p.queueHit(npc, 1, HitType.Typeless, random.of(BloatRules.HAND_MIN, BloatRules.HAND_MAX), hitModifier)
                 p.delay = p.currentMapClock + BloatRules.HAND_STUN
-                p.routeDestination.clear()
+                // a delay only blocks new clicks: an attack on him would keep walking them after him
+                p.clearInteractionRoute()
                 p.spotanim(STUN_SPOT)
                 p.anim("seq.tob_bloat_stunned_short")
             }
