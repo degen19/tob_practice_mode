@@ -326,7 +326,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     private fun free(c: CoordGrid, size: Int): Boolean =
         pillars.none { p -> p.up && c.x + size - 1 >= p.x && c.x <= p.x + 2 && c.z + size - 1 >= p.y && c.z <= p.y + 2 }
 
-    private fun frozen(n: Npc): Boolean = n.vars["varn.freeze_end_clock"] > n.currentMapClock
+    private fun frozen(n: Npc): Boolean = n.vars["varn.freeze_end_clock"] > d.mapClock.cycle
 
     /* ---- pillars */
 

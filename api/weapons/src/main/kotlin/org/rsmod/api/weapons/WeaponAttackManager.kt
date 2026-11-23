@@ -337,12 +337,13 @@ public class WeaponAttackManager @Inject constructor(private val manager: Player
         source: ProtectedAccess,
         target: PathingEntity,
         attack: CombatAttack.Staff,
+        multiplier: Double = 1.0,
     ): Boolean =
         manager.rollStaffAccuracy(
             source = source.player,
             target = target,
             attackStyle = attack.style,
-            multiplier = 1.0,
+            multiplier = multiplier,
         )
 
     /** @see [PlayerAttackManager.rollStaffMaxHit] */
@@ -350,12 +351,13 @@ public class WeaponAttackManager @Inject constructor(private val manager: Player
         source: ProtectedAccess,
         target: PathingEntity,
         baseMaxHit: Int,
+        multiplier: Double = 1.0,
     ): Int =
         manager.rollStaffMaxHit(
             source = source.player,
             target = target,
             baseMaxHit = baseMaxHit,
-            multiplier = 1.0,
+            multiplier = multiplier,
         )
 
     /** @see [PlayerAttackManager.calculateStaffMaxHit] */

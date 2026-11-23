@@ -572,7 +572,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                 it.remove()
                 continue
             }
-            if (r.vars["varn.freeze_end_clock"] > r.currentMapClock) continue
+            if (r.vars["varn.freeze_end_clock"] > d.mapClock.cycle) continue
             wander(r, age)
         }
     }
@@ -665,7 +665,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val vr = real(v.coords)
         val dist = boxDist(here.x, here.z, vr.x, vr.z, vr.x + v.size - 1, vr.z + v.size - 1)
         // Blert: she steps toward you from her south-west tile, not her middle (173 of 190 chase steps; the rest blocked)
-        if (dist > 1 && v.vars["varn.freeze_end_clock"] <= v.currentMapClock) stepToward(v, here.x, here.z)
+        if (dist > 1 && v.vars["varn.freeze_end_clock"] <= d.mapClock.cycle) stepToward(v, here.x, here.z)
         if (t < nextAttack) return
         nextAttack = t + if (enraged) P3_EVERY_ENRAGED else P3_EVERY
         attacks++
@@ -910,7 +910,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             val age = t - c.born
             if (c.lockAt < 0) {
                 val pc = p?.let { real(it.coords) }
-                if (pc != null && age >= CRAWLER_FIRST_STEP && !besideCrab(here, pc) && n.vars["varn.freeze_end_clock"] <= n.currentMapClock) {
+                if (pc != null && age >= CRAWLER_FIRST_STEP && !besideCrab(here, pc) && n.vars["varn.freeze_end_clock"] <= d.mapClock.cycle) {
                     val next = crabStep(here, pc)
                     if (next != here) {
                         n.walk(at(next))

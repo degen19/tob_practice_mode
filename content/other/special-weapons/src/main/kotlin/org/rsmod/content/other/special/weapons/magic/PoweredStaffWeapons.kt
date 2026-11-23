@@ -78,7 +78,10 @@ constructor(private val charges: CombatChargeManager, private val objCharges: Ob
                 chargesLeft = chargeResult.chargesLeft
             }
 
-            type.attackDelay?.let { manager.setNextAttackDelay(this, it) }
+            val buffed = type.flow && ZoryasFlow.take(player)
+            val boost = if (buffed) 1 else 0
+            if (buffed) manager.setNextAttackDelay(this, ZoryasFlow.BUFFED_DELAY)
+            else type.attackDelay?.let { manager.setNextAttackDelay(this, it) }
 
             val spell = type.spell
             anim(spell.anim)
@@ -87,12 +90,14 @@ constructor(private val charges: CombatChargeManager, private val objCharges: Ob
             val proj = manager.spawnProjectile(this, target, spell.projectile, spell.projanim)
             val (serverDelay, clientDelay) = proj.durations
 
-            val splash = !type.alwaysHits && manager.rollStaffSplash(this, target, attack)
+            val accuracy = 1.0 + ZoryasFlow.ACCURACY_PER_BOOST * boost
+            val splash = !type.alwaysHits && !manager.rollStaffAccuracy(this, target, attack, accuracy)
             if (splash) {
                 manager.playSplashFx(this, target, clientDelay, spell.castSound, SOUND_RADIUS)
                 manager.queueSplashHit(this, target, clientDelay, serverDelay)
             } else {
-                var damage = manager.rollStaffMaxHit(this, target, type.maxHit(player.magicLvl))
+                val boostDamage = 1.0 + ZoryasFlow.DAMAGE_PER_BOOST * boost
+                var damage = manager.rollStaffMaxHit(this, target, type.maxHit(player.magicLvl), boostDamage)
                 val leech = type.lifeLeech && random.randomBoolean(LEECH_ODDS)
                 if (leech) {
                     damage += LEECH_BONUS_DAMAGE
@@ -103,7 +108,7 @@ constructor(private val charges: CombatChargeManager, private val objCharges: Ob
                     clientDelay = clientDelay,
                     castSound = spell.castSound,
                     soundRadius = SOUND_RADIUS,
-                    hitSpot = if (leech) spell.leechImpact else spell.impact,
+                    hitSpot = if (leech) spell.leechImpact else if (buffed) FLOW_IMPACT else spell.impact,
                     hitSpotHeight = if (leech) spell.leechHeight else spell.impactHeight,
                     hitSound = spell.hitSound,
                 )
@@ -170,6 +175,7 @@ constructor(private val charges: CombatChargeManager, private val objCharges: Ob
 
     private companion object {
         const val SOUND_RADIUS = 10
+        const val FLOW_IMPACT = "spotanim.vfx_zorya_tome_special_follow_up_impact"
         const val LEECH_ODDS = 5
         const val LEECH_BONUS_DAMAGE = 8
         const val VENOM_ODDS = 4

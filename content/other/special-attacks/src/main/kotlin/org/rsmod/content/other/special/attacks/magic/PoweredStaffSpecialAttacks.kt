@@ -15,6 +15,7 @@ import org.rsmod.api.specials.SpecialAttackManager
 import org.rsmod.api.specials.SpecialAttackMap
 import org.rsmod.api.specials.SpecialAttackRepository
 import org.rsmod.api.specials.combat.MagicSpecialAttack
+import org.rsmod.content.other.special.weapons.magic.ZoryasFlow
 import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.PathingEntity
 import org.rsmod.game.entity.Player
@@ -30,6 +31,7 @@ constructor(
         registerMagic("obj.wild_cave_accursed_charged", Condemn(manager, objCharges))
         registerMagic("obj.wild_cave_accursed_charged_recol", Condemn(manager, objCharges))
         registerMagic("obj.verzik_special_weapon", Pulsate(manager))
+        registerMagic("obj.zoryas_tome", ZoryasFlowSpecial(manager, charges))
     }
 
     private abstract class MagicSpecial : MagicSpecialAttack {
@@ -174,7 +176,52 @@ constructor(
         }
     }
 
+    /**
+     * Zorya's flow (50%): the tome's attack at +150% accuracy and +60% damage, 3 ticks; a stored buffed attack stacks on
+     * top of it (+300% / +120%) and is used up. If it hits, three more buffed attacks are stored.
+     */
+    private class ZoryasFlowSpecial(
+        private val manager: SpecialAttackManager,
+        private val charges: CombatChargeManager,
+    ) : MagicSpecial() {
+        override fun ProtectedAccess.special(
+            target: PathingEntity,
+            attack: CombatAttack.Staff,
+        ): Boolean {
+            if (charges.attemptDetractWeapon(player, TOME_CHARGES).isFailure()) {
+                manager.stopCombat(this)
+                return false
+            }
+            manager.setNextAttackDelay(this, TOME_DELAY)
+            val boosts = 1 + if (ZoryasFlow.take(player)) 1 else 0
+            anim("seq.tfa_human_zorya_tome_special_attack")
+            spotanim("spotanim.vfx_zorya_tome_spec_spotanim")
+            val proj = manager.spawnProjectile(this, target, "spotanim.vfx_zorya_tome_special_proj", "projanim.powered_staff")
+            val (serverDelay, clientDelay) = proj.durations
+            val accurate =
+                manager.rollStaffAccuracy(this, target, attack.style, multiplier = 1.0 + ZoryasFlow.ACCURACY_PER_BOOST * boosts)
+            val damage =
+                if (accurate) {
+                    val base = max(0, player.magicLvl / 3 - TOME_BASE_OFFSET)
+                    manager.rollStaffMaxHit(this, target, base, multiplier = 1.0 + ZoryasFlow.DAMAGE_PER_BOOST * boosts)
+                } else {
+                    0
+                }
+            if (accurate) {
+                target.spotanim("spotanim.vfx_zorya_tome_special_impact", delay = clientDelay)
+                ZoryasFlow.add(player)
+            }
+            manager.giveCombatXp(this, target, attack, damage)
+            manager.queueMagicHit(this, target, damage, clientDelay, serverDelay)
+            manager.continueCombat(this, target)
+            return true
+        }
+    }
+
     private companion object {
+        const val TOME_CHARGES = "varobj.charges_65535"
+        const val TOME_DELAY = 3
+        const val TOME_BASE_OFFSET = 10
         const val AYAK_CHARGES = "varobj.charges_65535"
         const val ETHER_VAROBJ = "varobj.tumeken_charges"
         const val ACTIVATION_ETHER = 1_000

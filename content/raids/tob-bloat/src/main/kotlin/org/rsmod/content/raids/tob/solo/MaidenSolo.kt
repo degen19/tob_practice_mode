@@ -166,6 +166,9 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         }
     }
 
+    /** A crab beside her is melting into her from the tick after it arrives: hits already on the way still land. */
+    override fun attackable(npc: Npc): Boolean = crabs.none { it.npc === npc && it.arrived }
+
     private fun gap(n: Npc): Int {
         val r = real(n.coords)
         val gapX = maxOf(X - (r.x + n.size - 1), r.x - (X + SIZE - 1), 0)
@@ -178,7 +181,8 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         n.anim(CRAB_DEATH)
     }
 
-    private fun frozen(n: Npc): Boolean = n.vars["varn.freeze_end_clock"] > n.currentMapClock
+    // the room's clock, not the npc's: a crab spawned mid-tick has no clock of its own until the next npc pass
+    private fun frozen(n: Npc): Boolean = n.vars["varn.freeze_end_clock"] > d.mapClock.cycle
 
     /* ---- her attacks */
 
@@ -195,7 +199,8 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val dist = boxDist(real(p.coords).x, real(p.coords).z, X, Y, X + SIZE - 1, Y + SIZE - 1)
         // Blert, real solos: the hit shows 4 ticks after her attack next to her, a tick later every ~3 tiles further
         val hitDelay = AUTO_DELAY + (dist - 1).coerceAtLeast(0) / 3
-        proj(SHADOW_PROJ, maiden, p, delay = PROJ_START, speed = 0, offset = hitDelay * 30 - PROJ_START)
+        // her shadow slides across the floor upright: no climb or drop, no arc
+        proj(SHADOW_PROJ, maiden, p, delay = PROJ_START, speed = 0, startHeight = 0, endHeight = 0, angle = 0, offset = hitDelay * 30 - PROJ_START)
         val lands = hitDelay - 1
         val max = floor(BASE_MAX + PER_LEAK * leaks).toInt()
         val roll = rand(0, max)

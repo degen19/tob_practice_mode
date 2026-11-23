@@ -122,6 +122,11 @@ constructor(
             val effect = {
                 effects.apply(spell, caster, target, damage, sceptre, guaranteedFreeze)
             }
+            // an npc is held from the cast, not the landing (Blert: a Maiden crab never takes another step after it)
+            if (spell.element == Element.Ice && target is Npc) {
+                effect()
+                return
+            }
             val targetStillValid = target.validityCheck()
             worldQueues.add(serverDelay) {
                 if (targetStillValid() && caster.isSlotAssigned) {

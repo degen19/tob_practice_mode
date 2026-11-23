@@ -221,6 +221,9 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     /** A hit landing on one of this room's NPCs: the damage it does (null: not ours, leave it). */
     open fun land(npc: Npc, hit: Hit): Int? = null
 
+    /** Whether one of this room's NPCs can be attacked right now. */
+    open fun attackable(npc: Npc): Boolean = true
+
     /** Whether hits on one of this room's NPCs heal it right now instead of hurting it. */
     open fun healedByHits(npc: Npc): Boolean = false
 

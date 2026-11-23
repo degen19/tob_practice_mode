@@ -43,6 +43,7 @@ class SoloRaidModule : PluginModule() {
         addSetBinding<org.rsmod.api.npc.hit.NpcHitLandHook>(SoloLand::class.java)
         addSetBinding<org.rsmod.api.npc.hit.NpcHitpointsFloorHook>(SoloFloor::class.java)
         addSetBinding<org.rsmod.api.death.PlayerDeathOverrideHook>(SoloDeath::class.java)
+        addSetBinding<org.rsmod.api.death.NpcAttackValidateHook>(SoloAttackable::class.java)
     }
 }
 
@@ -51,6 +52,8 @@ class SoloRaidModule : PluginModule() {
  * (with a supply chest beside you), Pass starts the room, and once its boss is dead you walk on out to the next room.
  * The supply chest also takes you to any room. `::tob stop` leaves.
  */
+private var Player.pvpTutorial by org.rsmod.api.player.vars.intVarp("varp.pvptut_active_tutorial")
+
 class SoloRaidScript
 @Inject
 constructor(
@@ -75,6 +78,9 @@ constructor(
         onPlayerLogin {
             player.xpRate = 1.0
             player.globalXpRate = 1.0
+            // the client's var reset leaves this at 0, a real dbrow, and inside any instance its spellbook then counts
+            // only the PvP tutorial's fake runes: no spell lights up in the Theatre
+            player.pvpTutorial = -1
         }
         System.getenv("TOB_SELFTEST")?.let { list ->
             val rooms = ArrayDeque(list.split(',').mapNotNull { TobRoom.parse(it.trim()) })

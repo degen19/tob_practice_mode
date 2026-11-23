@@ -40,6 +40,7 @@ class PoweredStaffType(
     val venom: Boolean = false,
     val unchargedChargeOp: Int = 3,
     val customCharging: Boolean = false,
+    val flow: Boolean = false,
 ) {
     val chargeable: Boolean
         get() = varobj != null
@@ -259,6 +260,7 @@ object PoweredStaffTypes {
                 chargeOp = true,
                 attackDelay = 3,
                 noChargesMessage = "Zorya's tome has no charges! You need to charge it with astral and nature runes.",
+                flow = true,
             ),
             PoweredStaffType(
                 name = "Dawnbringer",

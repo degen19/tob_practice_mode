@@ -120,6 +120,13 @@ class SoloLand @Inject constructor(private val raids: SoloRaids) : NpcHitLandHoo
     override fun heals(npc: Npc, hit: Hit): Boolean = raids.forNpc(npc)?.healedByHits(npc) == true
 }
 
+/** A room's NPC that can't be attacked right now isn't a target: no swing, no message. */
+class SoloAttackable @Inject constructor(private val raids: SoloRaids) : org.rsmod.api.death.NpcAttackValidateHook {
+    override fun validate(player: Player, npc: Npc): org.rsmod.api.death.NpcAttackValidateResult =
+        if (raids.forNpc(npc)?.attackable(npc) == false) org.rsmod.api.death.NpcAttackValidateResult.Deny("")
+        else org.rsmod.api.death.NpcAttackValidateResult.Pass
+}
+
 /** A room's bosses never die off a hit: the room plays their phases and deaths itself. */
 class SoloFloor @Inject constructor(private val raids: SoloRaids) : NpcHitpointsFloorHook {
     override fun floor(npc: Npc, hit: Hit): Int = raids.forNpc(npc)?.floor(npc) ?: 0

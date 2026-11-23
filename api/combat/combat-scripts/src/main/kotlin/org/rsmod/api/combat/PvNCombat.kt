@@ -350,7 +350,7 @@ constructor(
         for (hook in attackValidateHooks) {
             when (val result = hook.validate(player, npc)) {
                 is NpcAttackValidateResult.Deny -> {
-                    mes(result.message)
+                    if (result.message.isNotEmpty()) mes(result.message)
                     return false
                 }
                 NpcAttackValidateResult.BypassSingleWayPvnRestriction,

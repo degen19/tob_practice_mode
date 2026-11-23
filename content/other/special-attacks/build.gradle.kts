@@ -12,4 +12,5 @@ dependencies {
     implementation(projects.api.npc)
     implementation(projects.api.repo)
     implementation(projects.api.specials)
+    implementation(projects.content.other.specialWeapons)
 }
