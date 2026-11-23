@@ -431,8 +431,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         zaps++
         v.facePlayer(p)
         v.anim("seq.verzik_phase2_attack_magic")
-        // Blert, real solos: its hit shows 2 ticks after her attack
-        val lands = proj("spotanim.verzik_phase2_lightning", v, p, delay = 30, speed = 0, offset = 30, startHeight = 100)
+        // a slow spark: in a real clip it took 5 ticks to cross about 7 tiles, and the hit shows as it arrives
+        val lands = proj("spotanim.verzik_phase2_lightning", v, p, delay = 30, speed = ZAP_SPEED, startHeight = 100)
         later(lands) {
             val q = inside() ?: return@later
             val boots = q.worn[10]?.let { ServerCacheManager.getItem(it.id)?.name?.lowercase()?.contains("insulated") } == true
@@ -500,6 +500,11 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val a = athanatos ?: return
         if (!a.isSlotAssigned || a.hitpoints <= 0) {
             athanatos = null
+            return
+        }
+        // through her shield it idles; it goes again at the start of her next cycle, her first attack after the summon
+        if (summoning >= 0 && t - summoning < SUMMON_TICKS) {
+            athanatosNext = summoning + SUMMON_TICKS
             return
         }
         if (t >= athanatosNext) {
@@ -1067,6 +1072,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val P2_EVERY = 4
         const val URN_MAX = 44
         const val ZAP_MAX = 48
+        const val ZAP_SPEED = 17
         const val URN_TICKS = 6
 
         /** Her P1 blast's flight, in ticks: a slow, heavy orb (an estimate - Blert has no hits on it to time). */
