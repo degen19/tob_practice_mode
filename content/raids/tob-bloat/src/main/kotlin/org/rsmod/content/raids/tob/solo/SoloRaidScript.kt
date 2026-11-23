@@ -356,7 +356,11 @@ object SoloBarrier {
                     else -> return
                 }
             val tiles = maxOf(kotlin.math.abs(dest.x - p.x), kotlin.math.abs(dest.z - p.z))
-            if (!inside && room.t < 0) room.start()
+            if (!inside && room.t < 0) {
+                // the room starts on the tick "Yes" is handled; you step onto the barrier on its first tick
+                room.start()
+                delay(1)
+            }
             forcedWalk(dest, crossTiles = tiles)
         }
     }
