@@ -28,7 +28,8 @@ public class CharacterAccountApplier @Inject constructor() :
         player.trustedDevices = d.trustedDevices.toMutableList()
         player.twoFactorAuth = d.twoFactorAuth
         player.lastKnownDevice = d.trustedDevices.maxByOrNull { it.verifiedAt }?.deviceId
-        player.members = c.members
+        // the client only counts members runes (and lights those spells) for a member
+        player.members = true
         player.username = d.accountName
         player.displayName = c.displayName ?: ""
         player.previousDisplayName = c.previousDisplayName ?: ""
