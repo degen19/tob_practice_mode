@@ -22,8 +22,8 @@ import kotlin.math.abs
  *   within 2). Only their own style hurts them; a wrong-style hit nulls one, and after that nothing you do hurts it -
  *   every hit shows its shield and a blue 0.
  * - A flicker changes style halfway down its lane (5 ticks in), and again 2 ticks later to its last style.
- * - A big one killed splits into two small ones of random styles. Every nylocas explodes 52 ticks after it spawns
- *   (a big one 53), hurting anyone next to it; a big one that explodes doesn't split.
+ * - A big one splits into two small ones of random styles when it dies, killed or gone off. Every nylocas explodes
+ *   52 ticks after it spawns (a big one 53), hurting anyone next to it.
  * - A pillar that falls hurts you for up to 50, and the nylocas that were on it come for you. When all four are down
  *   the game wipes the room; for practice the waves carry on and Vasilias still comes.
  * - Vasilias drops in 16 ticks after the last nylocas goes, melee first; every 10 ticks he changes to another style.
@@ -246,8 +246,10 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
                 val max = if (n.big) BIG_BOOM else SMALL_BOOM
                 p?.let { q -> if (boxDist(real(q.coords).x, real(q.coords).z, here.x, here.z, here.x + n.size - 1, here.z + n.size - 1) <= 1) hurt(q, rand(0, max), source = npc) }
             }
-            // only a kill splits a big one; one that goes off on its timer just goes
-            if (t - n.exploding >= (if (n.big) BIG_BOOM_TICKS else DETONATE_TICKS)) despawn(npc)
+            if (t - n.exploding >= (if (n.big) BIG_BOOM_TICKS else DETONATE_TICKS)) {
+                despawn(npc)
+                if (n.big) split(here)
+            }
             return
         }
         // flickers: halfway down the lane, then 2 ticks later

@@ -86,6 +86,7 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     open fun start() {
         if (t >= 0) return
         t = 0
+        org.rsmod.api.player.SurgeCooldown.resume(owner)
         onStart()
     }
 
@@ -137,7 +138,8 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
 
     /**
      * A room done: every stat below its base (hitpoints and prayer too) goes back up to it, boosts are left alone, special
-     * attack goes to 100% with its regen starting over, and run energy to full.
+     * attack goes to 100% with its regen starting over, run energy to full, and a surge potion's cooldown waits for
+     * the next room.
      */
     private fun refresh(p: Player) {
         for (type in ServerCacheManager.getStats().values) {
@@ -147,6 +149,7 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
         p.specialEnergy = org.rsmod.api.config.constants.sa_max_energy
         p.softTimer("timer.spec_regen", org.rsmod.api.config.constants.spec_regen_interval)
         p.runEnergy = org.rsmod.api.config.constants.run_max_energy
+        org.rsmod.api.player.SurgeCooldown.pause(p)
     }
 
     /* ---- the recording: every tick of the room in Blert's shape (stage events), to set beside real raids */

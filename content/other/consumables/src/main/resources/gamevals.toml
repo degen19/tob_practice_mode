@@ -1,3 +1,6 @@
+[gamevals.timer]
+surge_potion_cooldown=64920
+
 [gamevals.dbtable]
 food=65510
 potion=65509

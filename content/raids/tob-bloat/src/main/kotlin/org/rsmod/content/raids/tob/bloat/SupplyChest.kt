@@ -21,6 +21,7 @@ import org.rsmod.api.player.stopInvTransmit
 import org.rsmod.api.player.ui.ifSetEvents
 import org.rsmod.api.script.onIfClose
 import org.rsmod.api.script.onIfModalButton
+import org.rsmod.api.script.onIfModalDrag
 import org.rsmod.api.script.onOpLoc1
 import org.rsmod.content.raids.tob.bloat.SupplyCatalog.Tab
 import org.rsmod.game.inv.InvObj
@@ -49,6 +50,14 @@ class SupplyChest @Inject constructor(private val spellbooks: MagicSpellbookMana
         onOpLoc1(CHEST) { open() }
         for (tab in Tab.entries) onIfModalButton("component.tob_supplies:tab${tab.ordinal}") { showTab(tab) }
         onIfModalButton("component.tob_supplies:grid") { take(it.comsub, it.op) }
+        onIfModalButton(SIDE_ITEMS) {
+            if (it.op == IfButtonOp.Op1) giveBack(it.comsub) else if (it.op == IfButtonOp.Op10 && player.inv[it.comsub] != null) objExamine(player.inv, it.comsub)
+        }
+        onIfModalDrag(SIDE_ITEMS) { drag ->
+            val from = drag.selectedSlot ?: return@onIfModalDrag
+            val into = drag.targetSlot ?: return@onIfModalDrag
+            invMoveToSlot(inv, inv, from, into)
+        }
         onIfClose(SUPPLY_IF) {
             tabs.remove(player)
             player.supplyInv.fillNulls()
@@ -82,8 +91,12 @@ class SupplyChest @Inject constructor(private val spellbooks: MagicSpellbookMana
     /** The supplies window: a tab of items, each with Take-1 / Take-5 / Take-10 / Take-X. */
     private fun ProtectedAccess.openSupplies(tab: Tab) {
         player.supplyInv.fillNulls()
-        ifOpenMainModal(SUPPLY_IF)
+        ifOpenMainSidePair(SUPPLY_IF, SIDE_IF)
         ifSetEvents("component.tob_supplies:grid", 0 until SUPPLY_SLOTS, IfEvent.Op1, IfEvent.Op2, IfEvent.Op3, IfEvent.Op4)
+        // your inventory beside it: a click hands an item back, a drag moves it as in the inventory
+        val side = SIDE_ITEMS.asRSCM(RSCMType.COMPONENT)
+        runClientScript(INTERFACE_INV_INIT, side, INV_ID, INV_COLUMNS, INV_ROWS, DRAG_SWAP, -1, "Return", "", "", "", "")
+        ifSetEvents(SIDE_ITEMS, 0 until player.inv.size, IfEvent.Op1, IfEvent.Op10, IfEvent.Depth1, IfEvent.DragTarget)
         invTransmit(player.supplyInv)
         showTab(tab)
     }
@@ -111,6 +124,12 @@ class SupplyChest @Inject constructor(private val spellbooks: MagicSpellbookMana
         val added = player.invAdd(player.inv, item.id, count, strict = false).completed()
         if (added <= 0) player.mes("You don't have enough inventory space.")
         fillCharges(player.inv)
+    }
+
+    /** Hands an inventory item (the whole stack) back to the chest. */
+    private fun ProtectedAccess.giveBack(slot: Int) {
+        player.inv[slot] ?: return
+        player.inv[slot] = null
     }
 
     /** Powered staves come out of the chest fully charged, as the sim plays them. */
@@ -180,6 +199,13 @@ class SupplyChest @Inject constructor(private val spellbooks: MagicSpellbookMana
         const val CHEST = "loc.tob_midway_chest_closed"
         const val MAX_SPECIAL = 1000
         const val SUPPLY_IF = "interface.tob_supplies"
+        const val SIDE_IF = "interface.tob_supplies_side"
+        const val SIDE_ITEMS = "component.tob_supplies_side:items"
+        const val INTERFACE_INV_INIT = 149
+        const val INV_ID = 93
+        const val INV_COLUMNS = 4
+        const val INV_ROWS = 7
+        const val DRAG_SWAP = 1
         const val SUPPLY_INV = "inv.tob_supplies"
         const val SUPPLY_SLOTS = 200
         val OPTIONS =

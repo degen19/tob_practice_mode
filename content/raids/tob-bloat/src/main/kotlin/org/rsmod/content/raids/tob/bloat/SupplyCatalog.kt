@@ -150,6 +150,8 @@ object SupplyCatalog {
             "obj.4doserangerspotion",
             "obj.4dose1magic",
             "obj.4dosestamina",
+            "obj.4dosesurge",
+            "obj.saturated_heart",
             "obj.antivenom+4",
             "obj.4doseprayerrestore",
             "obj.shark",

@@ -15,8 +15,8 @@ import org.rsmod.plugin.scripts.ScriptContext
 
 /**
  * The rotten potato: the practice switches ([PracticeSettings]) on its right-click. Settings lists them all (deaths,
- * NPC hitpoints, supplies, infinite prayer, always max hit, infinite special attack) and flips the one you pick; Toggle deaths, Toggle NPC HP
- * and Toggle supplies flip theirs straight away (any time, mid-fight too). Restart room puts you back outside the
+ * NPC hitpoints, supplies, infinite prayer, always max hit, infinite special attack) and stays open while you flip
+ * them; Toggle deaths, Toggle NPC HP and Toggle supplies flip theirs straight away (any time, mid-fight too). Restart room puts you back outside the
  * barrier with the room as it was (Verzik: in the middle before P1, the Dawnbringer on the floor).
  */
 class RottenPotatoScript @Inject constructor(private val solo: SoloRaids) : PluginScript() {
@@ -32,37 +32,37 @@ class RottenPotatoScript @Inject constructor(private val solo: SoloRaids) : Plug
         }
     }
 
+    /** The settings list stays open as you flip things, showing each one's new state; Done closes it. */
     private suspend fun ProtectedAccess.settings() {
         val s = PracticeSettings
-        val choice =
-            menu(
-                "Practice settings",
-                "Player deaths: ${if (s.noDeaths) "off" else "on"}",
-                "NPC hitpoints: ${if (s.infiniteHp) "infinite" else "normal"}",
-                "Supplies: ${if (s.infiniteSupplies) "infinite" else "normal"}",
-                "Infinite prayer: ${if (s.infinitePrayer) "on" else "off"}",
-                "Always max hit: ${if (s.alwaysMaxHit) "on" else "off"}",
-                "Infinite special attack: ${if (s.infiniteSpec) "on" else "off"}",
-            )
-        ifClose()
-        when (choice) {
-            0 -> toggleDeaths()
-            1 -> toggleNpcHp()
-            2 -> toggleSupplies()
-            3 -> {
-                s.infinitePrayer = !s.infinitePrayer
-                mes("Infinite prayer: ${if (s.infinitePrayer) "on - prayer points don't drain" else "off"}.")
-            }
-            4 -> {
-                s.alwaysMaxHit = !s.alwaysMaxHit
-                mes("Always max hit: ${if (s.alwaysMaxHit) "on - every attack hits, for its max" else "off"}.")
-            }
-            5 -> {
-                s.infiniteSpec = !s.infiniteSpec
-                mes("Infinite special attack: ${if (s.infiniteSpec) "on - specials don't use energy" else "off"}.")
+        while (true) {
+            val choice =
+                menu(
+                    "Practice settings",
+                    "Player deaths: ${onOff(!s.noDeaths)}",
+                    "NPC hitpoints: ${if (s.infiniteHp) "<col=00ff00>infinite</col>" else "normal"}",
+                    "Supplies: ${if (s.infiniteSupplies) "<col=00ff00>infinite</col>" else "normal"}",
+                    "Infinite prayer: ${onOff(s.infinitePrayer)}",
+                    "Always max hit: ${onOff(s.alwaysMaxHit)}",
+                    "Infinite special attack: ${onOff(s.infiniteSpec)}",
+                    "Done",
+                )
+            when (choice) {
+                0 -> s.noDeaths = !s.noDeaths
+                1 -> s.infiniteHp = !s.infiniteHp
+                2 -> s.infiniteSupplies = !s.infiniteSupplies
+                3 -> s.infinitePrayer = !s.infinitePrayer
+                4 -> s.alwaysMaxHit = !s.alwaysMaxHit
+                5 -> s.infiniteSpec = !s.infiniteSpec
+                else -> {
+                    ifClose()
+                    return
+                }
             }
         }
     }
+
+    private fun onOff(on: Boolean): String = if (on) "<col=00ff00>on</col>" else "<col=ff0000>off</col>"
 
     private fun ProtectedAccess.toggleDeaths() {
         PracticeSettings.noDeaths = !PracticeSettings.noDeaths

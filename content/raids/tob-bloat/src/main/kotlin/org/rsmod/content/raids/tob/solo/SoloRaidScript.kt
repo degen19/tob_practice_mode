@@ -112,6 +112,7 @@ constructor(
             "stop" -> {
                 val room = raids.byOwner[player.username] ?: return player.mes("You're not in the Theatre.")
                 close(room)
+                org.rsmod.api.player.SurgeCooldown.clear(player)
                 TobHud.close(player, d.eventBus)
                 protectedAccess.launch(player) { telejump(EXIT, TeleportType.Exempt) }
                 player.npcViewDistance = null
@@ -139,6 +140,8 @@ constructor(
      * ([access]) the jump is made there; otherwise it's launched.
      */
     fun travel(player: Player, room: TobRoom, access: ProtectedAccess? = null) {
+        // into the raid at its start: no surge cooldown carried in
+        if (room == TobRoom.MAIDEN) org.rsmod.api.player.SurgeCooldown.clear(player)
         raids.byOwner[player.username]?.let { close(it) }
         val area =
             if (room.allLevels) {

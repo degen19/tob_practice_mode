@@ -1,5 +1,6 @@
 [gamevals.interface]
 tob_supplies = 1130
+tob_supplies_side = 1132
 
 [gamevals.inv]
 tob_supplies = 1131
