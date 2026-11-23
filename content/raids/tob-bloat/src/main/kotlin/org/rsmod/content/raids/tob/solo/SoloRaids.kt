@@ -116,6 +116,8 @@ class SoloRaids {
 /** Hits on a solo room's NPCs go through the room first (shields, immunities, halving). */
 class SoloLand @Inject constructor(private val raids: SoloRaids) : NpcHitLandHook {
     override fun land(npc: Npc, hit: Hit): Int = raids.forNpc(npc)?.land(npc, hit) ?: hit.damage
+
+    override fun shielded(npc: Npc, hit: Hit): Boolean = raids.forNpc(npc)?.shielded(npc) == true
 }
 
 /** A room's bosses never die off a hit: the room plays their phases and deaths itself. */

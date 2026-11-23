@@ -33,6 +33,10 @@ constructor(
     private val impactHooks: Set<NpcHitImpactHook>,
 ) : NpcHitProcessor {
     override fun StandardNpcAccess.process(landing: Hit) {
+        if (landHooks.any { it.shielded(npc, landing) }) {
+            showShielded(landing)
+            return
+        }
         var hit = landing
         for (hook in landHooks) {
             val damage = hook.land(npc, hit).coerceAtLeast(0)
@@ -126,6 +130,18 @@ constructor(
         }
 
         npc.publishHitEvent(hit)
+    }
+
+    private fun StandardNpcAccess.showShielded(hit: Hit) {
+        val shield = hitmark_groups.shield_damage
+        val mark =
+            hit.hitmark.copy(
+                self = shield.lit.asRSCM(RSCMType.HITMARK),
+                source = shield.lit.asRSCM(RSCMType.HITMARK),
+                public = if (hit.hitmark.isPrivate) null else shield.tint?.asRSCM(RSCMType.HITMARK),
+            )
+        playDefendSound(hit)
+        npc.showHitmark(mark)
     }
 
     private val Npc.hitpointsLocked: Boolean

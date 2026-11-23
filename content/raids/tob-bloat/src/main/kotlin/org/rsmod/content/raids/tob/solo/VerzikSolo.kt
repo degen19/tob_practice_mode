@@ -203,15 +203,13 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                 else -> minOf(hit.damage, P1_RANGED_CAP)
             }
         }
-        if (phase == 2 && summoning >= 0 && t - summoning < SUMMON_TICKS) {
-            // hitting her while she summons heals her (Blert: hits landing in the first ticks of it put the damage back on)
-            healNpc(npc, hit.damage)
-            return 0
-        }
         return hit.damage
     }
 
-    private fun poisoned(hit: Hit): Boolean {
+    /** Her shield while she summons the reds (R0-R10): hits show as shield hitsplats and take nothing. */
+    override fun shielded(npc: Npc): Boolean = npc === verzik && phase == 2 && summoning >= 0 && t - 1 - summoning < SHIELD_TICKS
+
+        private fun poisoned(hit: Hit): Boolean {
         val name = hit.righthandType()?.name?.lowercase() ?: return false
         return name.contains("(p") || name.contains("toxic") || name.contains("serpentine") || name.contains("blowpipe")
     }
@@ -1071,6 +1069,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val RED_HEAL_PROJ = "spotanim.verzik_phase2_bloodproj"
         const val RED_HEAL_SPEED = 4
         const val SUMMON_TICKS = 12
+        const val SHIELD_TICKS = 11
         const val RED_HP = 150
         /** Not recorded; scaled from the Maiden crabs (75 a solo on Normal, 16 on Entry). */
         const val ENTRY_RED_HP = 32
