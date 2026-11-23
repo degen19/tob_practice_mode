@@ -103,8 +103,12 @@ class BloatRoom(
     val down: Int?
         get() = if (mode == Mode.Down) DOWN_TICKS - 1 - (t - downAt) else null
 
+    /**
+     * Whether a hit landing now does full damage: attacks made on the counter's 32 to 1 do, and a melee hit lands the
+     * tick after its swing, so a scythe on 1 lands on 0 (as the stomp lands) at full.
+     */
     val fullDamage: Boolean
-        get() = down?.let { it in 1..32 } ?: false
+        get() = down?.let { it in 0..31 } ?: false
 
     val sw: Pair<Int, Int>
         get() = LOOP[li]

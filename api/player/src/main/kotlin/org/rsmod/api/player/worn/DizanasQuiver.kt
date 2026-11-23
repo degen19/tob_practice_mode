@@ -26,7 +26,8 @@ public object DizanasQuiver {
     private const val AMOUNT = "varp.dizanas_quiver_temp_ammo_amount"
     private const val EMPTY = -1
 
-    private val STORABLE = listOf("category.arrows", "category.crossbow_bolt", "category.ascension_bolt")
+    private val STORABLE =
+        listOf("category.arrows", "category.dragon_arrow", "category.arrows_training", "category.crossbow_bolt", "category.ascension_bolt")
 
     private val QUIVERS =
         listOf(
