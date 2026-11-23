@@ -86,7 +86,9 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private var tornadoAt = -1
     private var yellow: CoordGrid? = null
 
-    private inner class Crawler(val npc: Npc, val style: Char, val born: Int)
+    private inner class Crawler(val npc: Npc, val style: Char, val born: Int) {
+        var lockAt = -1
+    }
 
     private val crawlers = ArrayList<Crawler>()
     private val redCrabs = ArrayList<Npc>()
@@ -468,8 +470,11 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         v.anim("seq.verzik_phase2_attack_magic")
         // it's thrown at the tile the player she's attacking stood on, and climbs out where it lands
         val tile = real(p.coords)
-        val lands = projTiles("spotanim.verzik_phase2_spawn_armouredtank_proj", center(v), tile, delay = 30, speed = 15, startHeight = 100, endHeight = 0, angle = 40)
-        later(lands) {
+        val from = center(v)
+        val dist = max(1, max(abs(from.x - tile.x), abs(from.z - tile.z)))
+        // Blert: it always climbs out 6 ticks after the throw (with the crabs that come out at the throw)
+        projTiles("spotanim.verzik_phase2_spawn_armouredtank_proj", from, tile, delay = 30, speed = (ATHANATOS_FLIGHT * 30 - 31) / dist, startHeight = 100, endHeight = 0, angle = 40)
+        later(ATHANATOS_FLIGHT) {
             if (phase != 2) return@later
             gfx("spotanim.verzik_phase2_spawning", tile)
             athanatos = spawn(ATHANATOS, tile, ATHANATOS_HP)
@@ -836,6 +841,11 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         crawlers += Crawler(n, style, t)
     }
 
+    /**
+     * Blert's solo crabs, every one: they stand for 3 ticks, then step at you a tile a tick (diagonally when that
+     * doesn't put them on your tile). From 5 ticks old, the first tick they end up right beside you (not diagonally)
+     * they stop for good and pop 2 ticks later, gone 3 ticks after that, wherever you've gone.
+     */
     private fun crawlersTick() {
         val p = inside()
         val it = crawlers.iterator()
@@ -847,23 +857,65 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                 continue
             }
             if (n.hitpoints <= 0) continue
-            val here = real(n.coords)
+            var here = real(n.coords)
             val age = t - c.born
-            if (p != null) {
-                val pc = real(p.coords)
-                val dist = max(abs(pc.x - here.x), abs(pc.z - here.z))
-                if (dist <= 1 || age >= CRAWLER_LIFE) {
-                    gfx("spotanim.tob_nylocas_death_${styleName(c.style)}_detonate", here)
-                    n.anim("seq.top_spider_${styleName(c.style)}_death_detonate")
-                    if (dist <= 1) hurt(p, rand(0, CRAWLER_BOOM), source = n) else if (dist <= 3) hurt(p, rand(0, CRAWLER_BOOM_FAR), source = n)
-                    n.hitpoints = 0
-                    // the burst plays out before it goes
-                    later(CRAWLER_POP_TICKS) { if (n.isSlotAssigned) despawn(n) }
-                    continue
+            if (c.lockAt < 0) {
+                val pc = p?.let { real(it.coords) }
+                if (pc != null && age >= CRAWLER_FIRST_STEP && !besideCrab(here, pc) && n.vars["varn.freeze_end_clock"] <= n.currentMapClock) {
+                    val next = crabStep(here, pc)
+                    if (next != here) {
+                        n.walk(at(next))
+                        here = next
+                    }
                 }
-                if (n.vars["varn.freeze_end_clock"] <= n.currentMapClock) n.walk(at(here.x + sign(pc.x - here.x), here.z + sign(pc.z - here.z)))
+                if ((pc != null && age >= CRAWLER_LOCK_AGE && besideCrab(here, pc)) || age >= CRAWLER_LIFE) c.lockAt = t
+            }
+            if (c.lockAt >= 0 && t - c.lockAt == CRAWLER_POP) {
+                gfx("spotanim.tob_nylocas_death_${styleName(c.style)}_detonate", here)
+                n.anim("seq.top_spider_${styleName(c.style)}_death_detonate")
+                val dmg = p?.let { q -> crabDamage(here, real(q.coords))?.let { hurt(q, it, source = n) } }
+                logger.info { "verzik crab popped at age $age (stopped at ${c.lockAt - c.born}) at $here, player ${p?.let { real(it.coords) }}, damage $dmg" }
+                n.hitpoints = 0
+                later(CRAWLER_POP_TICKS) { if (n.isSlotAssigned) despawn(n) }
             }
         }
+    }
+
+    /** One step toward [target] for a 2x2 crab at [sw]: diagonal, else along x, else along z - never onto the target. */
+    private fun crabStep(sw: CoordGrid, target: CoordGrid): CoordGrid {
+        val dx = sign(target.x - sw.x)
+        val dz = sign(target.z - sw.z)
+        for ((mx, mz) in listOf(dx to dz, dx to 0, 0 to dz)) {
+            if (mx == 0 && mz == 0) continue
+            val next = CoordGrid(sw.x + mx, sw.z + mz, sw.level)
+            if (crabGap(next, target) > 0) return next
+        }
+        return sw
+    }
+
+    /** Tiles between [target] and the 2x2 crab at [sw] (0: under it, 1: beside it). */
+    private fun crabGap(sw: CoordGrid, target: CoordGrid): Int {
+        val gx = if (target.x < sw.x) sw.x - target.x else if (target.x > sw.x + 1) target.x - sw.x - 1 else 0
+        val gz = if (target.z < sw.z) sw.z - target.z else if (target.z > sw.z + 1) target.z - sw.z - 1 else 0
+        return max(gx, gz)
+    }
+
+    private fun besideCrab(sw: CoordGrid, target: CoordGrid): Boolean {
+        val inX = target.x in sw.x..sw.x + 1
+        val inZ = target.z in sw.z..sw.z + 1
+        return (inX && (target.z == sw.z - 1 || target.z == sw.z + 2)) || (inZ && (target.x == sw.x - 1 || target.x == sw.x + 2))
+    }
+
+    /**
+     * A pop's damage by ring around the 2x2 crab: under it, then each ring out, to three tiles away. The south-east
+     * corner tile of each ring (and of the crab) counts as the next ring out.
+     */
+    private fun crabDamage(sw: CoordGrid, target: CoordGrid): Int? {
+        val dx = target.x - sw.x
+        val dz = target.z - sw.z
+        var ring = crabGap(sw, target)
+        if (dx >= 1 && dz <= 0 && dx - 1 == -dz) ring++
+        return CRAWLER_RING_DAMAGE.getOrNull(ring)
     }
 
     /* ---- the room's doors */
@@ -945,7 +997,11 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
 
         /** Her P1 blast's flight, in ticks: a slow, heavy orb (an estimate - Blert has no hits on it to time). */
         const val P1_FLIGHT = 5
-        const val CRAWLER_POP_TICKS = 4
+        const val CRAWLER_POP_TICKS = 3
+        const val CRAWLER_FIRST_STEP = 3
+        const val CRAWLER_LOCK_AGE = 5
+        const val CRAWLER_POP = 2
+        val CRAWLER_RING_DAMAGE = listOf(46, 31, 17, 7)
         const val ZAP_BOOTS = 25
         const val BOUNCE_MAX = 45
         const val STOMP_MAX = 82
@@ -953,6 +1009,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val STUN = 5
         const val MIN_PURPLE = 16
         const val ATHANATOS_HP = 50
+        const val ATHANATOS_FLIGHT = 6
         const val ATHANATOS_EVERY = 4
         const val REDS_PCT = 35
         const val REDS_ATTACKS = 8
@@ -988,8 +1045,6 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val TORNADO_BACK = 16
         const val CRAWLER_HP = 11
         const val CRAWLER_LIFE = 25
-        const val CRAWLER_BOOM = 46
-        const val CRAWLER_BOOM_FAR = 8
         const val DEATH_B_AT = 2
         const val DEATH_TICKS = 10
         const val DEATH_B_TICKS = 2

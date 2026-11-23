@@ -27,7 +27,7 @@ class BloatSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Co
 
     override fun build() {
         dead = -1
-        val hp = hp(BloatRules.hitpoints(1), entryHp(1280))
+        val hp = hp(BloatRules.hitpoints(1), entryHp(1600))
         bloat = spawn(NPC, CoordGrid(BASE_X + 8, BASE_Y + 8, 0), hp)
         val region = checkNotNull(d.instances.regionOf(session))
         room = BloatRoom(session, bloat, at(BASE_X, BASE_Y), d.random, d.worldRepo, d.playerHits, d.collision, hp, region.southWest, region.northEast)

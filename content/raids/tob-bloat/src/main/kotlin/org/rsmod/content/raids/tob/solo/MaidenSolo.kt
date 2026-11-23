@@ -62,7 +62,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         splats.clear()
         spawns.clear()
         trails.clear()
-        maiden = spawn(PHASES[0], CoordGrid(X, Y, 0), hp(HP, entryHp(2000)))
+        maiden = spawn(PHASES[0], CoordGrid(X, Y, 0), hp(HP, entryHp(2500)))
     }
 
     override fun floor(npc: Npc): Int? = if (npc === maiden && dead < 0) 1 else null
@@ -116,7 +116,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private fun spawnCrabs() {
         val spots = CRAB_SPOTS.shuffled(java.util.Random(d.random.of(Int.MAX_VALUE).toLong())).take(CRABS)
         for ((x, y) in spots) {
-            val n = spawn(CRAB, CoordGrid(x, y, 0), hp(CRAB_HP))
+            val n = spawn(CRAB, CoordGrid(x, y, 0), hp(CRAB_HP, ENTRY_CRAB_HP))
             later(1) { if (n.isSlotAssigned) n.anim("seq.elemental_spawn") }
             crabs += Crab(n)
         }
@@ -356,6 +356,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val TRAIL_TICKS = 42
         const val CRAB = "npc.maiden_elemental"
         const val CRAB_HP = 75
+        const val ENTRY_CRAB_HP = 16
         const val CRABS = 2
         const val LEAK_DESPAWN = 2
         const val BLOOD_SPAWN = "npc.maiden_blood_slug"

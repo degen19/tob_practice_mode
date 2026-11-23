@@ -459,9 +459,9 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
 
     /**
      * A boss's Entry mode hitpoints from its five-player base value. Blert's Entry raids: a solo's bosses have 20%
-     * (Xarpus 680, Verzik 240 / 320 / 320), a four's 80% (Xarpus 2720, Verzik 960 / 1280 / 1280). Two and three
-     * aren't recorded; they're taken as 40% and 60%. The four's Nylocas Vasilias (1440) and Sotetseg (2240) put
-     * their five-player bases at 1800 and 2800.
+     * (Maiden 500, Bloat 320, Xarpus 680, Verzik 240 / 320 / 320), a four's 80% (Xarpus 2720, Verzik 960 / 1280 /
+     * 1280). Two and three aren't recorded; they're taken as 40% and 60%. The four's Nylocas Vasilias (1440) and
+     * Sotetseg (2240) put their five-player bases at 1800 and 2800.
      */
     fun entryHp(base: Int, partySize: Int = 1): Int = base * partySize.coerceIn(1, 5) / 5
 
