@@ -72,7 +72,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private val redBorn = HashMap<Npc, Int>()
     private val redHome = HashMap<Npc, CoordGrid>()
     private val redGoal = HashMap<Npc, CoordGrid>()
-    private val redHeals = ArrayList<Pair<Int, Int>>()
+    private val redHeals = ArrayList<Pair<Int, Npc>>()
     private var p2Killed = false
     private var summoning = -1
     private var athanatos: Npc? = null
@@ -529,16 +529,21 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
      * The reds pop (their death animation) 40 ticks after the summon and send what they have left to her as a heal, gone 42
      * ticks on (Blert); the next summon, her shield, comes 4 ticks after the pop.
      *
-     * A popped red's heal reaches her on the tick after its animation (R41, what it had left), after the players' hits
-     * that tick: if those took her down, the heal still shows but she dies.
+     * A popped red heals her on R41 for what it has left after that tick's hits: you can still hit it on R40 and a
+     * scythe swung then lands on R41 ahead of the heal. If the hits took her down, the heal still shows but she dies.
      */
     override fun late() {
-        if (redHeals.none { it.first <= t }) return
+        val now = t - 1
+        if (redHeals.none { it.first <= now }) return
         val v = verzik ?: return redHeals.clear()
         if (phase != 2 || dead >= 0) return redHeals.clear()
         if (v.hitpoints <= 1) p2Killed = true
-        for ((_, heal) in redHeals.filter { it.first <= t }) healNpc(v, heal)
-        redHeals.removeAll { it.first <= t }
+        for ((_, r) in redHeals.filter { it.first <= now }) {
+            if (!r.isSlotAssigned || r.hitpoints <= 0) continue
+            healNpc(v, r.hitpoints)
+            r.hitpoints = 0
+        }
+        redHeals.removeAll { it.first <= now }
     }
 
     private fun redsTick(v: Npc) {
@@ -556,10 +561,9 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             val age = t - (redBorn[r] ?: t)
             if (age >= RED_POP_AT) {
                 projTiles(RED_HEAL_PROJ, center(r), center(v), speed = RED_HEAL_SPEED, startHeight = 40, endHeight = 100)
-                redHeals += (t + 1) to r.hitpoints
+                redHeals += (t + 1) to r
                 r.routeDestination.clear()
                 r.anim(RED_POP_SEQ)
-                r.hitpoints = 0
                 later(RED_LIFE - RED_POP_AT) { if (r.isSlotAssigned) despawn(r) }
                 redBorn.remove(r)
                 it.remove()
