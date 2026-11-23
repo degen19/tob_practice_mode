@@ -10,8 +10,6 @@ import org.rsmod.api.script.onPlayerSoftTimer
 import org.rsmod.api.script.onEvent
 import org.rsmod.api.player.events.interact.HeldEquipEvents
 import dev.openrune.util.Wearpos
-import dev.openrune.rscm.RSCM.asRSCM
-import dev.openrune.rscm.RSCMType
 import org.rsmod.game.entity.Player
 import org.rsmod.game.inv.isAnyType
 import org.rsmod.plugin.scripts.PluginScript
@@ -31,26 +29,16 @@ public class SpecialEnergyScript() : PluginScript() {
         onEvent<HeldEquipEvents.WearposChange> { if (wearpos == Wearpos.Ring) player.ringChanged() }
     }
 
-    /** The regen timer's own interval says whether a Lightbearer was on (half the usual). */
-    @OptIn(org.rsmod.annotations.InternalApi::class)
-    private fun Player.ringChanged() {
-        val key = "timer.spec_regen".asRSCM(RSCMType.TIMER).toShort()
-        val was = softTimerMap[key]?.let { softTimerMap.extractInterval(it) } == LIGHTBEARER_REGEN_INTERVAL
-        val now = ring.isLightbearer()
-        if (now && !was) lightbearerOn() else if (!now && was) lightbearerOff()
-    }
-
     /**
-     * Putting a Lightbearer on starts the regen over only if it was less than halfway to its next 10%; past halfway the
-     * restore comes at once. Taking it off always starts it over (the wiki).
+     * Ring swaps leave the regen alone while 25 ticks or fewer are left on it. With more left (only possible without a
+     * Lightbearer), putting one on brings it down to the Lightbearer's 25. Taking one off changes nothing until its
+     * restore comes; the timer then runs at the usual 50.
      */
-    private fun Player.lightbearerOn() {
-        val elapsed = constants.spec_regen_interval - softTimerMap.remainingCycles("timer.spec_regen", currentMapClock)
-        softTimer("timer.spec_regen", if (elapsed < LIGHTBEARER_REGEN_INTERVAL) LIGHTBEARER_REGEN_INTERVAL else 1)
-    }
-
-    private fun Player.lightbearerOff() {
-        softTimer("timer.spec_regen", constants.spec_regen_interval)
+    private fun Player.ringChanged() {
+        if (!ring.isLightbearer()) return
+        if (softTimerMap.remainingCycles("timer.spec_regen", currentMapClock) > LIGHTBEARER_REGEN_INTERVAL) {
+            softTimer("timer.spec_regen", LIGHTBEARER_REGEN_INTERVAL)
+        }
     }
 
     private fun Player.initRegenTimer() {
