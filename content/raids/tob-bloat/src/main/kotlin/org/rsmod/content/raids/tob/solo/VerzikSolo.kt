@@ -529,8 +529,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
      * The reds pop (their death animation) 40 ticks after the summon and send what they have left to her as a heal, gone 42
      * ticks on (Blert); the next summon, her shield, comes 4 ticks after the pop.
      *
-     * A popped red's heal lands on its pop tick (Blert: 40 ticks after the summon, what it had left), after the players'
-     * hits that tick: if those took her down, the heal still shows but she dies.
+     * A popped red's heal reaches her on the tick after its animation (R41, what it had left), after the players' hits
+     * that tick: if those took her down, the heal still shows but she dies.
      */
     override fun late() {
         if (redHeals.none { it.first <= t }) return
@@ -556,7 +556,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             val age = t - (redBorn[r] ?: t)
             if (age >= RED_POP_AT) {
                 projTiles(RED_HEAL_PROJ, center(r), center(v), speed = RED_HEAL_SPEED, startHeight = 40, endHeight = 100)
-                redHeals += t to r.hitpoints
+                redHeals += (t + 1) to r.hitpoints
                 r.routeDestination.clear()
                 r.anim(RED_POP_SEQ)
                 r.hitpoints = 0
@@ -600,9 +600,10 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         later(lands) {
             val q = inside() ?: return@later
             q.spotanim("spotanim.verzik_phase2_bloodimpact")
-            val dealt = if (prays(q, "magic")) 0 else roll
-            hurt(q, dealt, source = v)
-            verzik?.let { healNpc(it, dealt / 2) }
+            val praying = prays(q, "magic")
+            hurt(q, if (praying) 0 else roll, source = v)
+            val heal = rand(0, BLOOD_HEAL_MAX) / 2
+            verzik?.let { healNpc(it, if (praying) heal / 2 else heal) }
         }
     }
 
@@ -1070,6 +1071,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         /** Not recorded; scaled from the Maiden crabs (75 a solo on Normal, 16 on Entry). */
         const val ENTRY_RED_HP = 32
         const val BLOOD_MAX = 45
+        /** Her heal rolls 0-47 and she takes half of it, halved again through Protect from Magic. */
+        const val BLOOD_HEAL_MAX = 47
         const val T23_AT = 1
         const val T23_TICKS = 5
         const val P3_FIRST = 6
