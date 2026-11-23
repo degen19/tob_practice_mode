@@ -143,7 +143,7 @@ class SupplyChest @Inject constructor(private val spellbooks: MagicSpellbookMana
         ifClose()
         val room = rooms.getOrNull(pick) ?: return
         val travel = solo.travel ?: return
-        travel(player, room)
+        travel(player, room, this)
     }
 
     private fun ProtectedAccess.book(book: Spellbook) {

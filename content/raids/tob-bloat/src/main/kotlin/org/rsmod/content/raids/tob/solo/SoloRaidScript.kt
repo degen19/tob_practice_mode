@@ -62,7 +62,7 @@ constructor(
     private val logger = InlineLogger()
 
     override fun ScriptContext.startup() {
-        raids.travel = { p, r -> travel(p, r) }
+        raids.travel = { p, r, a -> travel(p, r, a) }
         if (System.getenv("TOB_NODEATH") != null) org.rsmod.api.player.PracticeSettings.noDeaths = true
         onEvent<GameLifecycle.StartCycle> { tickRooms() }
         onEvent<GameLifecycle.LateCycle> { for (room in raids.byOwner.values.toList()) runCatching { room.late() }.onFailure { e -> logger.error(e) { "tob room late tick" } } }

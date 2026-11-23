@@ -42,6 +42,7 @@ object SupplyCatalog {
             "obj.wrathrune",
             "obj.sunfirerune",
             "obj.aetherrune",
+            "obj.divine_rune_pouch",
         )
 
     private val GEAR =

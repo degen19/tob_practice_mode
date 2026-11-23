@@ -315,7 +315,7 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             "loc.tob_dungeon_xarpus_arena_door_exit" -> {
                 if (!cleared) return false
                 access.mes("You head on to ${TobRoom.VERZIK.label}.")
-                d.raids.travel?.invoke(access.player, TobRoom.VERZIK)
+                d.raids.travel?.invoke(access.player, TobRoom.VERZIK, access)
                 return true
             }
         }

@@ -99,6 +99,21 @@ constructor(
                 item = registration.item,
                 option = registration.option,
             )
+            registerEmptyOption(
+                potion = registration.potion,
+                item = registration.item,
+            )
+        }
+    }
+
+    private fun ScriptContext.registerEmptyOption(potion: PotionRow, item: ItemServerType) {
+        val index = item.interfaceOptions.indexOfFirst { it.equals(EMPTY_OPTION, ignoreCase = true) }
+        val vial = potion.empty
+        when (index + 1) {
+            1 -> onOpHeld1(item) { emptyPotion(it.inventory, it.slot, it.type, vial) }
+            2 -> onOpHeld2(item) { emptyPotion(it.inventory, it.slot, it.type, vial) }
+            3 -> onOpHeld3(item) { emptyPotion(it.inventory, it.slot, it.type, vial) }
+            4 -> onOpHeld4(item) { emptyPotion(it.inventory, it.slot, it.type, vial) }
         }
     }
 
@@ -375,6 +390,8 @@ constructor(
             "seq.human_eat"
 
         const val FEROX_ENCLAVE: String = "area.ferox_enclave"
+
+        const val EMPTY_OPTION = "Empty"
 
         val CONSUME_OPTIONS: Set<String> =
             setOf(

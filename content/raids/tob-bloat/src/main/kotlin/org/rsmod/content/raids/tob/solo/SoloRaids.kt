@@ -92,13 +92,13 @@ class SoloRaids {
         val entry = toggleEntry(player)
         player.mes(if (entry) "The Theatre is now on Entry mode: weaker bosses, unlimited deaths." else "The Theatre is now on Normal mode.")
         val room = byOwner[player.username] ?: return
-        travel?.invoke(player, room.id)
+        travel?.invoke(player, room.id, null)
     }
 
     fun toggleEntry(player: Player): Boolean = if (!entryMode.add(player.username)) { entryMode.remove(player.username); false } else true
 
-    /** Set by [SoloRaidScript]: take a player to a room (closing the one they're in). */
-    var travel: ((Player, TobRoom) -> Unit)? = null
+    /** Set by [SoloRaidScript]: take a player to a room (closing the one they're in); pass the script's access from inside one. */
+    var travel: ((Player, TobRoom, ProtectedAccess?) -> Unit)? = null
 
     fun isLive(room: SoloRoom): Boolean = byOwner[room.owner.username] === room
 
