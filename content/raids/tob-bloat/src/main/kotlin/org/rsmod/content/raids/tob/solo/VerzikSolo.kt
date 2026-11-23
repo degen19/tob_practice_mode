@@ -7,6 +7,7 @@ import org.rsmod.api.player.hook.TeleportType
 import org.rsmod.api.player.protect.ProtectedAccess
 import org.rsmod.api.player.stat.hitpoints
 import org.rsmod.api.player.stat.baseHitpointsLvl
+import org.rsmod.api.player.vars.boolVarBit
 import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
 import org.rsmod.game.entity.util.PathingEntityCommon
@@ -93,6 +94,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private val webs = ArrayList<Web>()
 
     override fun build() {
+        owner.throneVisible = true
         phase = 0
         dead = -1
         attacks = 0
@@ -126,6 +128,16 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         }
     }
 
+    /** Her throne turns into the way to the treasure room once she's gone. */
+    private fun openThrone() {
+        val throne = findLocs(THRONE).firstOrNull()?.second ?: return logger.warn { "verzik: no throne in the room" }
+        owner.throneVisible = false
+        val at = throne.coords.translate(1, 0)
+        val turning = d.locRepo.add(at, THRONE_TRANSFORMING, Int.MAX_VALUE, throne.angle, throne.shape)
+        d.worldRepo.locAnim(turning, "seq.verzik_throne_transform")
+        later(THRONE_TRANSFORM_TICKS) { d.locRepo.add(at, THRONE_DOOR, Int.MAX_VALUE, throne.angle, throne.shape) }
+    }
+
     /** She starts when you speak to her on her throne. */
     suspend fun begin(access: ProtectedAccess) {
         if (t >= 0) return
@@ -137,9 +149,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     }
 
     override fun onStart() {
-        logger.info { "verzik map pillars ${findLocs("loc.tob_dungeon_verzik_pillar").map { it.first }}" }
         val v = verzik ?: return
-        v.anim("seq.verzik_throne_transform")
         transmog(v, P1)
         phase = 1
         phaseAt = 0
@@ -213,8 +223,9 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         if (dead >= 0) {
             when (t - dead) {
                 DEATH_B_AT -> v.anim("seq.verzik_phase3_death_b")
+                DEATH_B_AT + DEATH_B_TICKS -> despawn(v)
                 DEATH_TICKS -> {
-                    despawn(v)
+                    openThrone()
                     cleared = true
                     mes("Verzik Vitur is defeated. The Theatre is complete - the supply chest outside takes you to any room.")
                 }
@@ -288,12 +299,18 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
 
     private fun collapse(p: Pillar) {
         val npc = p.npc ?: return
-        p.loc?.let { d.worldRepo.locAnim(it, "seq.verzik_pillar_collapse") }
         despawn(npc)
         p.npc = null
         p.loc?.let { delLoc(it) }
-        p.loc = loc("loc.tob_dungeon_verzik_pillar_rubble", CoordGrid(p.x, p.y, 0), shape = LocShape.CentrepieceStraight)
-        later(PILLAR_FADE) { p.loc?.let { delLoc(it) } }
+        val wide = CoordGrid(p.x - 1, p.y - 1, 0)
+        val falling = loc("loc.tob_dungeon_verzik_pillar_collapse", wide, shape = LocShape.CentrepieceStraight)
+        p.loc = falling
+        later(PILLAR_COLLAPSE_TICKS) {
+            delLoc(falling)
+            p.loc = loc("loc.tob_dungeon_verzik_pillar_rubble", wide, shape = LocShape.CentrepieceStraight)
+        }
+        later(PILLAR_FADE) { p.loc?.let { d.worldRepo.locAnim(it, "seq.verzik_pillar_fade") } }
+        later(PILLAR_FADE + PILLAR_FADE_TICKS) { p.loc?.let { delLoc(it) } }
         val q = inside() ?: return
         val c = real(q.coords)
         if (boxDist(c.x, c.z, p.x, p.y, p.x + 2, p.y + 2) <= 1) {
@@ -566,7 +583,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             v.hitpoints = 0
             v.routeDestination.clear()
             v.anim("seq.verzik_phase3_death_a")
-            tornado?.let { despawn(it) }
+            tornado?.let { vanish(it) }
             tornado = null
             for (c in crawlers) despawn(c.npc)
             crawlers.clear()
@@ -751,7 +768,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val tor = tornado
         if (tor == null) {
             if (tornadoAt in 0..t) {
-                tornado = spawn(TORNADO, CoordGrid(real(v.coords).x, real(v.coords).z, 0), null)
+                tornado = spawn(TORNADO, CoordGrid(real(v.coords).x, real(v.coords).z, 0), null).also { it.anim(TORNADO_SPAWN_SEQ) }
                 tornadoAt = -1
             }
             return
@@ -763,12 +780,18 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             hurt(p, dmg)
             v.hitpoints = minOf(v.baseHitpointsLvl, v.hitpoints + dmg * 3)
             v.spotanim("spotanim.verzik_p3_creeper_spot")
-            despawn(tor)
+            vanish(tor)
             tornado = null
             tornadoAt = t + TORNADO_BACK
             return
         }
         tor.walk(at(tr.x + sign(here.x - tr.x), tr.z + sign(here.z - tr.z)))
+    }
+
+    private fun vanish(tor: Npc) {
+        tor.routeDestination.clear()
+        tor.anim(TORNADO_DESPAWN_SEQ)
+        later(TORNADO_DESPAWN_TICKS) { despawn(tor) }
     }
 
     /* ---- the nylocas that chase you (P2 and P3) */
@@ -846,6 +869,13 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val RED = "npc.tob_verzik_phase2_bloodnylocas"
         const val WEB = "npc.verzik_web_npc"
         const val TORNADO = "npc.tob_verzik_creeper"
+        const val THRONE = "loc.tob_dungeon_verzik_throne_empty"
+        const val THRONE_TRANSFORMING = "loc.tob_dungeon_verzik_throne_transforming"
+        const val THRONE_DOOR = "loc.tob_dungeon_verzik_throne_door_opened"
+        const val THRONE_TRANSFORM_TICKS = 5
+        const val TORNADO_SPAWN_SEQ = "seq.tob_shadow_projectile_spawn"
+        const val TORNADO_DESPAWN_SEQ = "seq.tob_shadow_projectile_despawn"
+        const val TORNADO_DESPAWN_TICKS = 1
         const val DAWNBRINGER = "obj.verzik_special_weapon"
         const val P1_X = 3166
         const val P1_Y = 4323
@@ -866,6 +896,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val PILLAR_FALL_MIN = 30
         const val PILLAR_FALL_MAX = 60
         const val PILLAR_FADE = 10
+        const val PILLAR_COLLAPSE_TICKS = 4
+        const val PILLAR_FADE_TICKS = 2
         // Transition timings from Blert recordings, counted from the tick the room sees the phase die (one after the
         // killing hit lands): P1 sits dead 3 more ticks, her climb-down form lasts 13 and P2 attacks 3 ticks in; P2's
         // body goes the tick after, the P2-to-P3 form lasts 4 and P3 attacks 6 ticks in
@@ -891,9 +923,9 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val REDS_PCT = 35
         const val REDS_ATTACKS = 8
         const val RED_LIFE = 42
-        const val RED_POP_TICKS = 3
-        const val RED_SPAWN_SEQ = "seq.top_spider_melee_spawn_noloop"
-        const val RED_POP_SEQ = "seq.top_spider_melee_death"
+        const val RED_POP_TICKS = 2
+        const val RED_SPAWN_SEQ = "seq.elemental_spawn"
+        const val RED_POP_SEQ = "seq.elemental_death"
         const val SUMMON_TICKS = 12
         const val RED_HP = 150
         const val BLOOD_MAX = 45
@@ -924,7 +956,10 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val CRAWLER_BOOM_FAR = 8
         const val DEATH_B_AT = 5
         const val DEATH_TICKS = 10
+        const val DEATH_B_TICKS = 8
 
         val PILLARS = listOf(3161 to 4318, 3161 to 4312, 3161 to 4306, 3173 to 4318, 3173 to 4312, 3173 to 4306)
     }
 }
+
+private var Player.throneVisible by boolVarBit("varbit.tob_verzik_throne_visible")

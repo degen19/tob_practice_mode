@@ -27,6 +27,9 @@ dependencies {
     implementation(projects.api.specials)
     implementation(projects.api.weapons)
     implementation(projects.api.combat.combatCommons)
+    implementation(projects.api.combat.combatManager)
+    implementation(projects.api.combat.combatWeapon)
+    implementation(projects.api.spellsRunes)
 }
 
 dependencies {

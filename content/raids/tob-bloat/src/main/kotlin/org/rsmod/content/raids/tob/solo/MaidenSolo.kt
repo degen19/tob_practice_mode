@@ -317,8 +317,8 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                 transmog(maiden, DYING_B)
                 maiden.anim(DEATH_B)
             }
+            DEATH_B_AT + DEATH_B_TICKS -> despawn(maiden)
             DEATH_END -> {
-                despawn(maiden)
                 cleared = true
                 mes("The way on is open: pass the barrier to go on to the Pestilent Bloat.")
             }
@@ -355,7 +355,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val CRAB = "npc.maiden_elemental"
         const val CRAB_HP = 75
         const val CRABS = 2
-        const val LEAK_DESPAWN = 3
+        const val LEAK_DESPAWN = 2
         const val BLOOD_SPAWN = "npc.maiden_blood_slug"
         const val SPAWN_HP = 90
         const val AUTO_SEQ = "seq.maiden_attack_special"
@@ -364,6 +364,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val DEATH_B = "seq.maiden_death_b"
         const val DEATH_B_AT = 5
         const val DEATH_END = 8
+        const val DEATH_B_TICKS = 4
         const val SHADOW_PROJ = "spotanim.maiden_shadow_proj"
         const val BLOOD_PROJ = "spotanim.maiden_blood_proj"
         const val PROJ_START = 41

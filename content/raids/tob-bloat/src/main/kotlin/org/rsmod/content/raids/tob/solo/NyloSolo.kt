@@ -84,10 +84,13 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         boss = null
         bossDead = -1
         allDown = false
+        val standing = findLocs(PILLAR_PRISTINE)
         for (p in pillars) {
             p.hp = PILLAR_HP
             p.shaking = false
             p.npc = spawn(PILLAR_NPC, CoordGrid(p.x, p.y, 0), PILLAR_HP)
+            p.loc = standing.firstOrNull { (c, _) -> c.x == p.x && c.z == p.y }?.second
+            if (p.loc == null) logger.warn { "nylocas: no support loc at ${p.x}, ${p.y}" }
         }
     }
 
@@ -231,7 +234,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
                 val max = if (n.big) BIG_BOOM else SMALL_BOOM
                 p?.let { q -> if (boxDist(real(q.coords).x, real(q.coords).z, here.x, here.z, here.x + n.size - 1, here.z + n.size - 1) <= 1) hurt(q, rand(0, max), source = npc) }
             }
-            if (t - n.exploding >= (if (n.big) BIG_BOOM_TICKS else 1)) {
+            if (t - n.exploding >= (if (n.big) BIG_BOOM_TICKS else DETONATE_TICKS)) {
                 despawn(npc)
                 if (n.big) split(here)
             }
@@ -327,6 +330,11 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
 
     /* ---- pillars */
 
+    private fun swapPillar(pl: Pillar, type: String) {
+        val l = pl.loc ?: return
+        pl.loc = d.locRepo.add(l.coords, type, Int.MAX_VALUE, l.angle, l.shape)
+    }
+
     private fun pillarsTick() {
         for (pl in pillars) {
             val npc = pl.npc ?: continue
@@ -334,14 +342,15 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
                 npc.hitpoints = pl.hp.coerceIn(1, PILLAR_HP)
                 if (!pl.shaking && pl.hp * 5 <= PILLAR_HP) {
                     pl.shaking = true
-                    npc.anim("seq.nylocas_pillar_precollapse")
+                    swapPillar(pl, PILLAR_COLLAPSING)
                 }
                 continue
             }
-            // it falls
-            npc.anim("seq.nylocas_pillar_collapse")
-            later(PILLAR_COLLAPSE_TICKS) { despawn(npc) }
+            despawn(npc)
             pl.npc = null
+            if (!pl.shaking) swapPillar(pl, PILLAR_COLLAPSING)
+            pl.loc?.let { d.worldRepo.locAnim(it, "seq.nylocas_pillar_collapse") }
+            later(PILLAR_COLLAPSE_TICKS) { swapPillar(pl, PILLAR_DEAD) }
             inside()?.let { hurt(it, rand(PILLAR_FALL_MIN, PILLAR_FALL_MAX)) }
             mes("A pillar collapses!")
             if (pillars.none { it.up }) {
@@ -365,8 +374,8 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         }
         val b = boss ?: return
         if (bossDead >= 0) {
+            if (t - bossDead == BOSS_DEATH_SEQ_TICKS) despawn(b)
             if (t - bossDead == BOSS_DEATH_TICKS) {
-                despawn(b)
                 cleared = true
                 mes("The way on is open: go back out through the barrier for Sotetseg.")
             }
@@ -450,6 +459,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val SMALL_LIFE = 52
         const val BIG_LIFE = 53
         const val BIG_BOOM_TICKS = 3
+        const val DETONATE_TICKS = 2
         const val BIG_DEATH = 6
         const val SMALL_DEATH = 2
         const val SMALL_BOOM = 18
@@ -463,6 +473,9 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val FLICK_2 = 7
         const val LANE_TICKS = 14
         const val PILLAR_NPC = "npc.tob_nylocas_support"
+        const val PILLAR_PRISTINE = "loc.tob_nylocas_support_pristine"
+        const val PILLAR_COLLAPSING = "loc.tob_nylocas_support_collapsing"
+        const val PILLAR_DEAD = "loc.tob_nylocas_support_dead"
         const val PILLAR_COLLAPSE_TICKS = 4
         const val PILLAR_HP = 100
         const val PILLAR_HIT_MIN = 0
@@ -483,6 +496,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val RANGED_GAP = 8
         const val BOSS_MAX = 70
         const val BOSS_DEATH_TICKS = 5
+        const val BOSS_DEATH_SEQ_TICKS = 2
 
         val WAVES =
             listOf(

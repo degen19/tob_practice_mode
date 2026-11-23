@@ -131,7 +131,7 @@ constructor(
 
     override fun ScriptContext.startup() {
         onEvent<GameLifecycle.StartCycle> { tickRooms() }
-        onOpLoc1(BARRIER) { barrier(it.loc.coords) }
+        onOpLoc1(BARRIER) { barrier(it.loc) }
         if (System.getenv("TOB_BARRIERS") != null) onEvent<GameLifecycle.StartCycle> { if (mapClock.cycle == 5) scanBarriers() }
         onCommand("bloat") {
             desc = "ToB Bloat practice room: ::bloat [team size] | enter | bots [n] | los | stop"
@@ -269,8 +269,9 @@ constructor(
      * and only after answering the game's "ready to fight?" question - you leave it open and click Yes
      * on the tick you want, as in the game. Once someone is inside, Pass just takes you through.
      */
-    private suspend fun ProtectedAccess.barrier(barrier: CoordGrid) {
-        solo.forPlayer(player)?.let { return org.rsmod.content.raids.tob.solo.SoloBarrier.pass(this, it, barrier) }
+    private suspend fun ProtectedAccess.barrier(loc: org.rsmod.game.loc.BoundLocInfo) {
+        solo.forPlayer(player)?.let { return org.rsmod.content.raids.tob.solo.SoloBarrier.pass(this, it, loc.bounds()) }
+        val barrier = loc.coords
         val room = rooms.forPlayer(player)
         if (room != null && room.t < 0 && room.local(player.coords).first >= 24) {
             val leader = rooms.byOwner[player.username] === room

@@ -17,6 +17,7 @@ import org.rsmod.api.player.hook.TeleportType
 import org.rsmod.api.player.output.mes
 import org.rsmod.api.player.stat.hitpoints
 import org.rsmod.api.player.protect.ProtectedAccess
+import org.rsmod.api.player.protect.forcedWalk
 import org.rsmod.api.player.protect.ProtectedAccessLauncher
 import org.rsmod.api.repo.region.RegionTemplate
 import org.rsmod.api.script.onCommand
@@ -30,6 +31,7 @@ import org.rsmod.game.cheat.Cheat
 import org.rsmod.game.entity.Player
 import org.rsmod.game.loc.LocShape
 import org.rsmod.map.CoordGrid
+import org.rsmod.map.util.Bounds
 import org.rsmod.plugin.module.PluginModule
 import org.rsmod.plugin.scripts.PluginScript
 import org.rsmod.plugin.scripts.ScriptContext
@@ -281,7 +283,7 @@ constructor(
 
 /** Pass on a barrier in a solo room (the barrier handler hands over here). */
 object SoloBarrier {
-    suspend fun pass(access: ProtectedAccess, room: SoloRoom, barrier: CoordGrid) {
+    suspend fun pass(access: ProtectedAccess, room: SoloRoom, barrier: Bounds) {
         with(access) {
             val here = room.real(player.coords)
             val inside = room.inArena(here)
@@ -295,24 +297,18 @@ object SoloBarrier {
             } else if (!room.cleared) {
                 return mes("You can't leave while the fight goes on.")
             }
-            val dx = barrier.x - player.coords.x
-            val dz = barrier.z - player.coords.z
-            if (dx == 0 && dz == 0) return
-            val (dest, dir) =
-                if (dx != 0 && kotlin.math.abs(dx) >= kotlin.math.abs(dz)) {
-                    val step = if (dx > 0) 1 else -1
-                    CoordGrid(barrier.x + step, player.coords.z, player.coords.level) to (if (step > 0) constants.em_face_east else constants.em_face_west)
-                } else {
-                    val step = if (dz > 0) 1 else -1
-                    CoordGrid(player.coords.x, barrier.z + step, player.coords.level) to (if (step > 0) constants.em_face_north else constants.em_face_south)
+            val p = player.coords
+            val xs = barrier.x until barrier.x + barrier.width
+            val zs = barrier.z until barrier.z + barrier.length
+            val dest =
+                when {
+                    p.x in xs -> CoordGrid(p.x, if (p.z < zs.first) zs.last + 1 else zs.first - 1, p.level)
+                    p.z in zs -> CoordGrid(if (p.x < xs.first) xs.last + 1 else xs.first - 1, p.z, p.level)
+                    else -> return
                 }
-            // through the barrier at walking pace (a tile a tick), with the walk of the weapon you're holding
-            val tiles = maxOf(kotlin.math.abs(dest.x - player.coords.x), kotlin.math.abs(dest.z - player.coords.z))
-            val held = player.righthand?.let { dev.openrune.ServerCacheManager.getItem(it.id) }
-            val walk = held?.paramOrNull(org.rsmod.api.config.refs.params.bas_walk_f)
-            anim(walk?.let { dev.openrune.rscm.RSCM.getReverseMapping(dev.openrune.rscm.RSCMType.SEQ, it.id) } ?: "seq.human_walk_f")
-            exactMove(player.coords, dest, delay1 = 0, delay2 = tiles * 30, dir = dir, teleportType = TeleportType.Exempt)
+            val tiles = maxOf(kotlin.math.abs(dest.x - p.x), kotlin.math.abs(dest.z - p.z))
             if (!inside && room.t < 0) room.start()
+            forcedWalk(dest, crossTiles = tiles)
         }
     }
 }

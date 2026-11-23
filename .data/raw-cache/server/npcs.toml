@@ -12968,6 +12968,7 @@ inherit = "npc.xarpus_death"
 id = "npc.tob_nylocas_incoming_melee"
 inherit = "npc.tob_nylocas_incoming_melee"
 [npc.params]
+"param.death_anim"="seq.top_spider_melee_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -12975,6 +12976,7 @@ inherit = "npc.tob_nylocas_incoming_melee"
 id = "npc.tob_nylocas_incoming_ranged"
 inherit = "npc.tob_nylocas_incoming_ranged"
 [npc.params]
+"param.death_anim"="seq.top_spider_ranged_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -12982,6 +12984,7 @@ inherit = "npc.tob_nylocas_incoming_ranged"
 id = "npc.tob_nylocas_incoming_magic"
 inherit = "npc.tob_nylocas_incoming_magic"
 [npc.params]
+"param.death_anim"="seq.top_spider_magic_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -12989,6 +12992,7 @@ inherit = "npc.tob_nylocas_incoming_magic"
 id = "npc.tob_nylocas_big_incoming_melee"
 inherit = "npc.tob_nylocas_big_incoming_melee"
 [npc.params]
+"param.death_anim"="seq.top_spider_melee_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -12996,6 +13000,7 @@ inherit = "npc.tob_nylocas_big_incoming_melee"
 id = "npc.tob_nylocas_big_incoming_ranged"
 inherit = "npc.tob_nylocas_big_incoming_ranged"
 [npc.params]
+"param.death_anim"="seq.top_spider_ranged_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13003,6 +13008,7 @@ inherit = "npc.tob_nylocas_big_incoming_ranged"
 id = "npc.tob_nylocas_big_incoming_magic"
 inherit = "npc.tob_nylocas_big_incoming_magic"
 [npc.params]
+"param.death_anim"="seq.top_spider_magic_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13010,6 +13016,7 @@ inherit = "npc.tob_nylocas_big_incoming_magic"
 id = "npc.tob_nylocas_fighting_melee"
 inherit = "npc.tob_nylocas_fighting_melee"
 [npc.params]
+"param.death_anim"="seq.top_spider_melee_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13017,6 +13024,7 @@ inherit = "npc.tob_nylocas_fighting_melee"
 id = "npc.tob_nylocas_fighting_ranged"
 inherit = "npc.tob_nylocas_fighting_ranged"
 [npc.params]
+"param.death_anim"="seq.top_spider_ranged_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13024,6 +13032,7 @@ inherit = "npc.tob_nylocas_fighting_ranged"
 id = "npc.tob_nylocas_fighting_magic"
 inherit = "npc.tob_nylocas_fighting_magic"
 [npc.params]
+"param.death_anim"="seq.top_spider_magic_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13031,6 +13040,7 @@ inherit = "npc.tob_nylocas_fighting_magic"
 id = "npc.tob_nylocas_big_fighting_melee"
 inherit = "npc.tob_nylocas_big_fighting_melee"
 [npc.params]
+"param.death_anim"="seq.top_spider_melee_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13038,6 +13048,7 @@ inherit = "npc.tob_nylocas_big_fighting_melee"
 id = "npc.tob_nylocas_big_fighting_ranged"
 inherit = "npc.tob_nylocas_big_fighting_ranged"
 [npc.params]
+"param.death_anim"="seq.top_spider_ranged_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13045,6 +13056,7 @@ inherit = "npc.tob_nylocas_big_fighting_ranged"
 id = "npc.tob_nylocas_big_fighting_magic"
 inherit = "npc.tob_nylocas_big_fighting_magic"
 [npc.params]
+"param.death_anim"="seq.top_spider_magic_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13080,6 +13092,7 @@ inherit = "npc.nylocas_boss_ranged"
 id = "npc.maiden_elemental"
 inherit = "npc.maiden_elemental"
 [npc.params]
+"param.death_anim"="seq.elemental_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13087,6 +13100,7 @@ inherit = "npc.maiden_elemental"
 id = "npc.maiden_blood_slug"
 inherit = "npc.maiden_blood_slug"
 [npc.params]
+"param.death_anim"="seq.tob_blood_spawn_death"
 "param.elemental_weakness_type"=2
 "param.elemental_weakness_percent"=50
 
@@ -13094,6 +13108,7 @@ inherit = "npc.maiden_blood_slug"
 id = "npc.verzik_phase1"
 inherit = "npc.verzik_phase1"
 [npc.params]
+"param.defend_anim"="seq.verzik_phase1_defend"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=50
 
@@ -13136,6 +13151,7 @@ inherit = "npc.verzik_death_bat"
 id = "npc.verzik_nylocas_melee"
 inherit = "npc.verzik_nylocas_melee"
 [npc.params]
+"param.death_anim"="seq.top_spider_melee_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13143,6 +13159,7 @@ inherit = "npc.verzik_nylocas_melee"
 id = "npc.verzik_nylocas_ranged"
 inherit = "npc.verzik_nylocas_ranged"
 [npc.params]
+"param.death_anim"="seq.top_spider_ranged_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13150,6 +13167,7 @@ inherit = "npc.verzik_nylocas_ranged"
 id = "npc.verzik_nylocas_magic"
 inherit = "npc.verzik_nylocas_magic"
 [npc.params]
+"param.death_anim"="seq.top_spider_magic_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13157,6 +13175,7 @@ inherit = "npc.verzik_nylocas_magic"
 id = "npc.tob_verzik_phase2_armourednylocas"
 inherit = "npc.tob_verzik_phase2_armourednylocas"
 [npc.params]
+"param.death_anim"="seq.tob_spider_tank_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13164,6 +13183,7 @@ inherit = "npc.tob_verzik_phase2_armourednylocas"
 id = "npc.tob_verzik_phase2_bloodnylocas"
 inherit = "npc.tob_verzik_phase2_bloodnylocas"
 [npc.params]
+"param.death_anim"="seq.elemental_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13626,6 +13646,7 @@ inherit = "npc.xarpus_death_hard"
 id = "npc.tob_nylocas_incoming_melee_story"
 inherit = "npc.tob_nylocas_incoming_melee_story"
 [npc.params]
+"param.death_anim"="seq.top_spider_melee_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13633,6 +13654,7 @@ inherit = "npc.tob_nylocas_incoming_melee_story"
 id = "npc.tob_nylocas_incoming_ranged_story"
 inherit = "npc.tob_nylocas_incoming_ranged_story"
 [npc.params]
+"param.death_anim"="seq.top_spider_ranged_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13640,6 +13662,7 @@ inherit = "npc.tob_nylocas_incoming_ranged_story"
 id = "npc.tob_nylocas_incoming_magic_story"
 inherit = "npc.tob_nylocas_incoming_magic_story"
 [npc.params]
+"param.death_anim"="seq.top_spider_magic_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13647,6 +13670,7 @@ inherit = "npc.tob_nylocas_incoming_magic_story"
 id = "npc.tob_nylocas_big_incoming_melee_story"
 inherit = "npc.tob_nylocas_big_incoming_melee_story"
 [npc.params]
+"param.death_anim"="seq.top_spider_melee_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13654,6 +13678,7 @@ inherit = "npc.tob_nylocas_big_incoming_melee_story"
 id = "npc.tob_nylocas_big_incoming_ranged_story"
 inherit = "npc.tob_nylocas_big_incoming_ranged_story"
 [npc.params]
+"param.death_anim"="seq.top_spider_ranged_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13661,6 +13686,7 @@ inherit = "npc.tob_nylocas_big_incoming_ranged_story"
 id = "npc.tob_nylocas_big_incoming_magic_story"
 inherit = "npc.tob_nylocas_big_incoming_magic_story"
 [npc.params]
+"param.death_anim"="seq.top_spider_magic_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13668,6 +13694,7 @@ inherit = "npc.tob_nylocas_big_incoming_magic_story"
 id = "npc.tob_nylocas_fighting_melee_story"
 inherit = "npc.tob_nylocas_fighting_melee_story"
 [npc.params]
+"param.death_anim"="seq.top_spider_melee_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13675,6 +13702,7 @@ inherit = "npc.tob_nylocas_fighting_melee_story"
 id = "npc.tob_nylocas_fighting_ranged_story"
 inherit = "npc.tob_nylocas_fighting_ranged_story"
 [npc.params]
+"param.death_anim"="seq.top_spider_ranged_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13682,6 +13710,7 @@ inherit = "npc.tob_nylocas_fighting_ranged_story"
 id = "npc.tob_nylocas_fighting_magic_story"
 inherit = "npc.tob_nylocas_fighting_magic_story"
 [npc.params]
+"param.death_anim"="seq.top_spider_magic_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13689,6 +13718,7 @@ inherit = "npc.tob_nylocas_fighting_magic_story"
 id = "npc.tob_nylocas_big_fighting_melee_story"
 inherit = "npc.tob_nylocas_big_fighting_melee_story"
 [npc.params]
+"param.death_anim"="seq.top_spider_melee_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13696,6 +13726,7 @@ inherit = "npc.tob_nylocas_big_fighting_melee_story"
 id = "npc.tob_nylocas_big_fighting_ranged_story"
 inherit = "npc.tob_nylocas_big_fighting_ranged_story"
 [npc.params]
+"param.death_anim"="seq.top_spider_ranged_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13703,6 +13734,7 @@ inherit = "npc.tob_nylocas_big_fighting_ranged_story"
 id = "npc.tob_nylocas_big_fighting_magic_story"
 inherit = "npc.tob_nylocas_big_fighting_magic_story"
 [npc.params]
+"param.death_anim"="seq.top_spider_magic_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13738,6 +13770,7 @@ inherit = "npc.nylocas_boss_ranged_story"
 id = "npc.tob_nylocas_incoming_melee_hard"
 inherit = "npc.tob_nylocas_incoming_melee_hard"
 [npc.params]
+"param.death_anim"="seq.top_spider_melee_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13745,6 +13778,7 @@ inherit = "npc.tob_nylocas_incoming_melee_hard"
 id = "npc.tob_nylocas_incoming_ranged_hard"
 inherit = "npc.tob_nylocas_incoming_ranged_hard"
 [npc.params]
+"param.death_anim"="seq.top_spider_ranged_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13752,6 +13786,7 @@ inherit = "npc.tob_nylocas_incoming_ranged_hard"
 id = "npc.tob_nylocas_incoming_magic_hard"
 inherit = "npc.tob_nylocas_incoming_magic_hard"
 [npc.params]
+"param.death_anim"="seq.top_spider_magic_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13759,6 +13794,7 @@ inherit = "npc.tob_nylocas_incoming_magic_hard"
 id = "npc.tob_nylocas_big_incoming_melee_hard"
 inherit = "npc.tob_nylocas_big_incoming_melee_hard"
 [npc.params]
+"param.death_anim"="seq.top_spider_melee_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13766,6 +13802,7 @@ inherit = "npc.tob_nylocas_big_incoming_melee_hard"
 id = "npc.tob_nylocas_big_incoming_ranged_hard"
 inherit = "npc.tob_nylocas_big_incoming_ranged_hard"
 [npc.params]
+"param.death_anim"="seq.top_spider_ranged_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13773,6 +13810,7 @@ inherit = "npc.tob_nylocas_big_incoming_ranged_hard"
 id = "npc.tob_nylocas_big_incoming_magic_hard"
 inherit = "npc.tob_nylocas_big_incoming_magic_hard"
 [npc.params]
+"param.death_anim"="seq.top_spider_magic_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13780,6 +13818,7 @@ inherit = "npc.tob_nylocas_big_incoming_magic_hard"
 id = "npc.tob_nylocas_fighting_melee_hard"
 inherit = "npc.tob_nylocas_fighting_melee_hard"
 [npc.params]
+"param.death_anim"="seq.top_spider_melee_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13787,6 +13826,7 @@ inherit = "npc.tob_nylocas_fighting_melee_hard"
 id = "npc.tob_nylocas_fighting_ranged_hard"
 inherit = "npc.tob_nylocas_fighting_ranged_hard"
 [npc.params]
+"param.death_anim"="seq.top_spider_ranged_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13794,6 +13834,7 @@ inherit = "npc.tob_nylocas_fighting_ranged_hard"
 id = "npc.tob_nylocas_fighting_magic_hard"
 inherit = "npc.tob_nylocas_fighting_magic_hard"
 [npc.params]
+"param.death_anim"="seq.top_spider_magic_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13801,6 +13842,7 @@ inherit = "npc.tob_nylocas_fighting_magic_hard"
 id = "npc.tob_nylocas_big_fighting_melee_hard"
 inherit = "npc.tob_nylocas_big_fighting_melee_hard"
 [npc.params]
+"param.death_anim"="seq.top_spider_melee_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13808,6 +13850,7 @@ inherit = "npc.tob_nylocas_big_fighting_melee_hard"
 id = "npc.tob_nylocas_big_fighting_ranged_hard"
 inherit = "npc.tob_nylocas_big_fighting_ranged_hard"
 [npc.params]
+"param.death_anim"="seq.top_spider_ranged_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13815,6 +13858,7 @@ inherit = "npc.tob_nylocas_big_fighting_ranged_hard"
 id = "npc.tob_nylocas_big_fighting_magic_hard"
 inherit = "npc.tob_nylocas_big_fighting_magic_hard"
 [npc.params]
+"param.death_anim"="seq.top_spider_magic_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13878,6 +13922,7 @@ inherit = "npc.nylocas_boss_ranged_hard"
 id = "npc.maiden_elemental_story"
 inherit = "npc.maiden_elemental_story"
 [npc.params]
+"param.death_anim"="seq.elemental_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13885,6 +13930,7 @@ inherit = "npc.maiden_elemental_story"
 id = "npc.maiden_blood_slug_story"
 inherit = "npc.maiden_blood_slug_story"
 [npc.params]
+"param.death_anim"="seq.tob_blood_spawn_death"
 "param.elemental_weakness_type"=2
 "param.elemental_weakness_percent"=50
 
@@ -13892,6 +13938,7 @@ inherit = "npc.maiden_blood_slug_story"
 id = "npc.maiden_elemental_hard"
 inherit = "npc.maiden_elemental_hard"
 [npc.params]
+"param.death_anim"="seq.elemental_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13899,6 +13946,7 @@ inherit = "npc.maiden_elemental_hard"
 id = "npc.maiden_blood_slug_hard"
 inherit = "npc.maiden_blood_slug_hard"
 [npc.params]
+"param.death_anim"="seq.tob_blood_spawn_death"
 "param.elemental_weakness_type"=2
 "param.elemental_weakness_percent"=50
 
@@ -13913,6 +13961,7 @@ inherit = "npc.verzik_initial_story"
 id = "npc.verzik_phase1_story"
 inherit = "npc.verzik_phase1_story"
 [npc.params]
+"param.defend_anim"="seq.verzik_phase1_defend"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=50
 
@@ -13955,6 +14004,7 @@ inherit = "npc.verzik_death_bat_story"
 id = "npc.verzik_nylocas_melee_story"
 inherit = "npc.verzik_nylocas_melee_story"
 [npc.params]
+"param.death_anim"="seq.top_spider_melee_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13962,6 +14012,7 @@ inherit = "npc.verzik_nylocas_melee_story"
 id = "npc.verzik_nylocas_ranged_story"
 inherit = "npc.verzik_nylocas_ranged_story"
 [npc.params]
+"param.death_anim"="seq.top_spider_ranged_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13969,6 +14020,7 @@ inherit = "npc.verzik_nylocas_ranged_story"
 id = "npc.verzik_nylocas_magic_story"
 inherit = "npc.verzik_nylocas_magic_story"
 [npc.params]
+"param.death_anim"="seq.top_spider_magic_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13976,6 +14028,7 @@ inherit = "npc.verzik_nylocas_magic_story"
 id = "npc.tob_verzik_phase2_armourednylocas_story"
 inherit = "npc.tob_verzik_phase2_armourednylocas_story"
 [npc.params]
+"param.death_anim"="seq.tob_spider_tank_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13983,6 +14036,7 @@ inherit = "npc.tob_verzik_phase2_armourednylocas_story"
 id = "npc.tob_verzik_phase2_bloodnylocas_story"
 inherit = "npc.tob_verzik_phase2_bloodnylocas_story"
 [npc.params]
+"param.death_anim"="seq.elemental_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -13990,6 +14044,7 @@ inherit = "npc.tob_verzik_phase2_bloodnylocas_story"
 id = "npc.verzik_phase1_hard"
 inherit = "npc.verzik_phase1_hard"
 [npc.params]
+"param.defend_anim"="seq.verzik_phase1_defend"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=50
 
@@ -14032,6 +14087,7 @@ inherit = "npc.verzik_death_bat_hard"
 id = "npc.verzik_nylocas_melee_hard"
 inherit = "npc.verzik_nylocas_melee_hard"
 [npc.params]
+"param.death_anim"="seq.top_spider_melee_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -14039,6 +14095,7 @@ inherit = "npc.verzik_nylocas_melee_hard"
 id = "npc.verzik_nylocas_ranged_hard"
 inherit = "npc.verzik_nylocas_ranged_hard"
 [npc.params]
+"param.death_anim"="seq.top_spider_ranged_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -14046,6 +14103,7 @@ inherit = "npc.verzik_nylocas_ranged_hard"
 id = "npc.verzik_nylocas_magic_hard"
 inherit = "npc.verzik_nylocas_magic_hard"
 [npc.params]
+"param.death_anim"="seq.top_spider_magic_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -14053,6 +14111,7 @@ inherit = "npc.verzik_nylocas_magic_hard"
 id = "npc.tob_verzik_phase2_armourednylocas_hard"
 inherit = "npc.tob_verzik_phase2_armourednylocas_hard"
 [npc.params]
+"param.death_anim"="seq.tob_spider_tank_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 
@@ -14060,6 +14119,7 @@ inherit = "npc.tob_verzik_phase2_armourednylocas_hard"
 id = "npc.tob_verzik_phase2_bloodnylocas_hard"
 inherit = "npc.tob_verzik_phase2_bloodnylocas_hard"
 [npc.params]
+"param.death_anim"="seq.elemental_death"
 "param.elemental_weakness_type"=3
 "param.elemental_weakness_percent"=15
 

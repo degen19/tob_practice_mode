@@ -54,7 +54,6 @@ class BloatSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Co
         if (dead >= 0) {
             if (t - dead == DEATH_TICKS) {
                 cleared = true
-                despawn(bloat)
                 mes("The way on is open: leave by the west barrier for the Nylocas.")
             }
             return
@@ -64,6 +63,7 @@ class BloatSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Co
             bloat.hitpoints = 0
             bloat.routeDestination.clear()
             bloat.anim(DEATH_SEQ)
+            later(DEATH_SEQ_TICKS) { despawn(bloat) }
             mes("The Pestilent Bloat is dead.")
             return
         }
@@ -87,5 +87,6 @@ class BloatSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Co
         const val NPC = "npc.tob_bloat"
         const val DEATH_SEQ = "seq.tob_bloat_death"
         const val DEATH_TICKS = 6
+        const val DEATH_SEQ_TICKS = 3
     }
 }

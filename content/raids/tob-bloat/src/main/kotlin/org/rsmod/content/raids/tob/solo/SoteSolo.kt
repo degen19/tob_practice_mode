@@ -109,7 +109,6 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         if (dead >= 0) {
             if (t - dead == DEATH_TICKS) {
                 cleared = true
-                despawn(sote)
                 blockPlayers(CoordGrid(X, Y, 0), SIZE, false)
                 mes("The way on is open: go back out through the barrier for Xarpus.")
             }
@@ -128,6 +127,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             dead = t
             sote.hitpoints = 0
             sote.anim(DEATH_SEQ)
+            later(DEATH_SEQ_TICKS) { despawn(sote) }
             mes("Sotetseg is dead.")
             return
         }
@@ -264,13 +264,6 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         return m
     }
 
-    /** A lit path tile, glowing as it comes up. */
-    private fun glow(c: CoordGrid): LocInfo {
-        val l = loc(LIT, c, shape = LocShape.GroundDecor)
-        d.worldRepo.locAnim(l, "seq.tob_sotetseg_tile_glow")
-        return l
-    }
-
     private fun mazeTick() {
         val m = maze ?: return
         val since = now - mazeAt
@@ -281,19 +274,16 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             p.frozen = false
             jump(p, at(UNDER_START))
             // the path, lit for the chosen one
-            for (x in 0 until W) for (y in 0 until H) if (m[x][y]) lit += glow(CoordGrid(UNDER_X + x, UNDER_Y + y, 3))
+            for (x in 0 until W) for (y in 0 until H) if (m[x][y]) lit += loc(LIT, CoordGrid(UNDER_X + x, UNDER_Y + y, 3), shape = LocShape.GroundDecor)
             return
         }
         if (p == null) return
         val here = real(p.coords)
         if (under && here.level == 3) {
-            if (since > TELEPORT && (since - TELEPORT) % REALM_EVERY == 0) {
-                p.spotanim("spotanim.tob_sotetseg_drain")
-                hurt(p, rand(1, 3))
-            }
+            if (since > TELEPORT && (since - TELEPORT) % REALM_EVERY == 0) hurt(p, rand(1, 3))
             val x = here.x - UNDER_X
             val y = here.z - UNDER_Y
-            if (x in 0 until W && y in 0 until H && m[x][y] && litAbove.add(x to y)) lit += glow(CoordGrid(OVER_X + x, OVER_Y + y, 0))
+            if (x in 0 until W && y in 0 until H && m[x][y] && litAbove.add(x to y)) lit += loc(LIT, CoordGrid(OVER_X + x, OVER_Y + y, 0), shape = LocShape.GroundDecor)
             return
         }
         if (here.level != 0) return
@@ -306,7 +296,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         val x = here.x - OVER_X
         val y = here.z - OVER_Y
         if (x in 0 until W && y in 0 until H && !m[x][y]) {
-            gfx("spotanim.tob_sotetseg_zap", here)
+            gfx("spotanim.devious_explosion", here)
             hurt(p, p.hitpoints * 667 / 10000 + MAZE_HIT)
         }
         if (here.z >= OVER_Y + H) {
@@ -384,6 +374,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val MELEE_SEQ = "seq.tob_sotetseg_attack_melee"
         const val DEATH_SEQ = "seq.tob_sotetseg_death"
         const val DEATH_TICKS = 5
+        const val DEATH_SEQ_TICKS = 2
         const val W = 14
         const val H = 15
         const val TURNS = 8

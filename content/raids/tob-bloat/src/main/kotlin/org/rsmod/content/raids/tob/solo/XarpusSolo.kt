@@ -95,8 +95,8 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                     transmog(xarpus, "npc.xarpus_death")
                     xarpus.anim("seq.tob_xarpus_death_b")
                 }
+                DEATH_B_AT + DEATH_B_TICKS -> despawn(xarpus)
                 DEATH_TICKS -> {
-                    despawn(xarpus)
                     cleared = true
                     mes("The way on is open: leave by the north barrier for Verzik Vitur.")
                 }
@@ -360,5 +360,6 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val SPIT_BACK_GAP = 4
         const val DEATH_B_AT = 3
         const val DEATH_TICKS = 6
+        const val DEATH_B_TICKS = 2
     }
 }
