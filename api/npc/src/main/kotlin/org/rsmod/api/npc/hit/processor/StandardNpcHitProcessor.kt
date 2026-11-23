@@ -51,7 +51,9 @@ constructor(
             changedDamage = survivable
         }
 
-        if (changedDamage == 0) {
+        // a land hook that took a hit down to nothing (a wrong-style Nylocas, a pillar) shows the blue 0, as any 0 does
+        val hookedToZero = hit.damage == 0 && landing.damage > 0
+        if (changedDamage == 0 || hookedToZero) {
             val zeroDamageHitmark = hitmark_groups.zero_damage
             val modifiedHitmark =
                 hit.hitmark.copy(
@@ -60,7 +62,7 @@ constructor(
                     public =
                         if (hit.hitmark.isPrivate) null
                         else zeroDamageHitmark.tint?.asRSCM(RSCMType.HITMARK),
-                    damage = changedDamage,
+                    damage = 0,
                 )
             takeHit(hit.copy(hitmark = modifiedHitmark))
             return

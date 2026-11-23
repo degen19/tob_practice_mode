@@ -1,0 +1,6 @@
+# The Pestilent Bloat is undead: a salve amulet's bonus applies to him.
+[[npc]]
+id = "npc.tob_bloat"
+inherit = "npc.tob_bloat"
+[npc.params]
+"param.undead" = 1

@@ -209,7 +209,7 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     private fun hud() {
         val p = player() ?: return
         TobHud.update(p, progress())
-        if (id in TIMED_ROOMS) p.say("${instanceTick + 1}")
+        if (id in TIMED_ROOMS) p.say("${if (instanceTick == 0) INSTANCE_CYCLE else instanceTick}")
     }
 
     /** A tick before the room has started. */
@@ -526,7 +526,10 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
 
         const val INSTANCE_CYCLE = 4
 
-        /** Rooms whose instance tick (1 to 4) shows over the player's head, so they can go in on the one they want. */
+        /**
+         * Rooms whose instance tick shows over the player's head (1 to 4: the client timer's 0 is the cycle's last tick, 4),
+         * so they can go in on the one they want. Sotetseg wakes on a 1.
+         */
         val TIMED_ROOMS = setOf(TobRoom.NYLOCAS, TobRoom.XARPUS, TobRoom.SOTETSEG)
         val STEPS = listOf(1 to 0, -1 to 0, 0 to 1, 0 to -1)
 

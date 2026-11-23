@@ -17,11 +17,14 @@ import kotlin.math.abs
  * four pillars, splits, the 52-tick explosions, then Nylocas Vasilias.
  *
  * - Nylocas walk their lane to its end, then to their pillar (attacking it until it falls) - or, if aggressive, turn
- *   into the "fighting" form there and come for you. Only their own style hurts them; anything else does nothing.
+ *   into the "fighting" form there and come for you (melee ones to a tile straight beside you, ranged and magic ones to
+ *   within 3). Only their own style hurts them; a wrong-style hit nulls one, and after that nothing you do hurts it -
+ *   every hit shows its shield and a blue 0.
  * - A flicker changes style halfway down its lane (5 ticks in), and again 2 ticks later to its last style.
  * - A big one dying splits into two small ones of random styles. Every nylocas explodes 52 ticks after it spawns
  *   (a big one 53), hurting anyone next to it.
- * - A pillar that falls hurts you for up to 50; when all four are down you die.
+ * - A pillar that falls hurts you for up to 50, and the nylocas that were on it come for you. When all four are down
+ *   the game wipes the room; for practice the waves carry on and Vasilias still comes.
  * - Vasilias drops in 16 ticks after the last nylocas goes, melee first; every 10 ticks he changes to another style.
  *   The wrong style heals him and comes back at you. Melee: two attacks, 4 ticks apart; ranged/magic: one.
  */
@@ -56,6 +59,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         var nextAttack = 0
         var diedAt = -1
         var exploding = -1
+        var nulled = false
         val size: Int
             get() = if (big) 2 else 1
     }
@@ -113,7 +117,11 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         }
         val n = nylos.firstOrNull { it.npc === npc } ?: return null
         if (hit.type == HitType.Typeless) return hit.damage
-        return if (hit.type == styleType(n.style)) hit.damage else 0
+        // a wrong style nulls it: from then on nothing you do hurts it (Blert), and every hit shows its shield
+        if (hit.type != styleType(n.style)) n.nulled = true
+        if (!n.nulled) return hit.damage
+        npc.spotanim(SHIELDED)
+        return 0
     }
 
     private fun styleType(s: Char): HitType = when (s) {
@@ -138,7 +146,6 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         "npc.tob_nylocas_" + (if (big) "big_" else "") + (if (fighting) "fighting_" else "incoming_") + styleName(s)
 
     override fun step() {
-        if (allDown) return
         val p = inside()
         waves()
         for (n in nylos.toList()) nylo(n, p)
@@ -266,16 +273,26 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         if (n.aggro) {
             p ?: return
             val pc = real(p.coords)
-            val range = if (n.style == 'M') 1 else AGGRO_RANGE
             val dist = boxDist(pc.x, pc.z, here.x, here.z, here.x + n.size - 1, here.z + n.size - 1)
-            if (dist > range || (n.style == 'M' && dist == 0)) {
-                npc.walk(at(stepToward(here, pc, n.size)))
+            val inPlace = if (n.style == 'M') here in meleeSpots(pc, n.size) else dist in 1..AGGRO_RANGE
+            if (!inPlace) {
+                val goal = if (n.style == 'M' || dist == 0) meleeSpots(pc, n.size).filter { free(it, n.size) }.minByOrNull { chebyshev(here, it) } else pc
+                if (goal != null) npc.walk(at(stepToward(here, goal, n.size)))
                 return
             }
             if (t >= n.nextAttack) attackPlayer(n, p)
             return
         }
-        val pillar = n.pillar?.takeIf { it.up } ?: nearestPillar(here)?.also { n.pillar = it } ?: return
+        // its pillar fell: it comes for you instead (Blert)
+        if (n.pillar?.up == false) {
+            n.aggro = true
+            return
+        }
+        val pillar = n.pillar ?: nearestPillar(here)?.also { n.pillar = it }
+        if (pillar == null) {
+            n.aggro = true
+            return
+        }
         val pd = boxDist(here.x, here.z, pillar.x - n.size + 1, pillar.y - n.size + 1, pillar.x + 2, pillar.y + 2)
         if (pd > 1) {
             npc.walk(at(stepToward(here, CoordGrid(pillar.cx, pillar.cy, 0), n.size)))
@@ -322,6 +339,19 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         return opts.firstOrNull { it != from && free(it, size) } ?: from
     }
 
+    /** Where a nylocas of [size] stands to bite [pc]: its south-west tile, with the player straight beside it (no diagonals). */
+    private fun meleeSpots(pc: CoordGrid, size: Int): List<CoordGrid> =
+        (0 until size).flatMap { i ->
+            listOf(
+                CoordGrid(pc.x - size, pc.z - i, 0),
+                CoordGrid(pc.x + 1, pc.z - i, 0),
+                CoordGrid(pc.x - i, pc.z - size, 0),
+                CoordGrid(pc.x - i, pc.z + 1, 0),
+            )
+        }
+
+    private fun chebyshev(a: CoordGrid, b: CoordGrid): Int = maxOf(abs(a.x - b.x), abs(a.z - b.z))
+
     /** Nylocas walk the lanes (no tiles for players) and only the pillars stand in their way. */
     private fun free(c: CoordGrid, size: Int): Boolean =
         pillars.none { p -> p.up && c.x + size - 1 >= p.x && c.x <= p.x + 2 && c.z + size - 1 >= p.y && c.z <= p.y + 2 }
@@ -353,10 +383,10 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             later(PILLAR_COLLAPSE_TICKS) { swapPillar(pl, PILLAR_DEAD) }
             inside()?.let { hurt(it, rand(PILLAR_FALL_MIN, PILLAR_FALL_MAX)) }
             mes("A pillar collapses!")
-            if (pillars.none { it.up }) {
+            // the game wipes the room here; for practice the wave carries on and Vasilias still comes
+            if (pillars.none { it.up } && !allDown) {
                 allDown = true
-                mes("The last pillar falls: the roof comes down on you.")
-                inside()?.let { hurt(it, 255) }
+                mes("The last pillar falls. (In the game this wipes the room; here the waves carry on.)")
             }
         }
     }
@@ -467,7 +497,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val SMALL_LIFE = 52
         const val BIG_LIFE = 53
         const val BIG_BOOM_TICKS = 3
-        const val DETONATE_TICKS = 1
+        const val DETONATE_TICKS = 2
         const val BIG_DEATH = 6
         const val SMALL_DEATH = 2
         const val SMALL_BOOM = 18
@@ -476,7 +506,8 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val BIG_MAX = 24
         const val NYLO_SPEED = 4
         const val NYLO_ACCURACY = 0.6
-        const val AGGRO_RANGE = 7
+        const val AGGRO_RANGE = 3
+        const val SHIELDED = "spotanim.tob_nylocas_shielded"
         const val FLICK_1 = 5
         const val FLICK_2 = 7
         const val LANE_TICKS = 14

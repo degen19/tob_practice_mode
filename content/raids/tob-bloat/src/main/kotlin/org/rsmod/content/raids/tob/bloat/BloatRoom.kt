@@ -258,8 +258,7 @@ class BloatRoom(
                 mode = Mode.Down
                 downAt = t
                 attackedInDown = false
-                // a tick behind the down: his head settles and a light flashes on the counter's 29, as in the game
-                npc.anim(DOWN_SEQ, delay = DOWN_SEQ_DELAY)
+                npc.anim(DOWN_SEQ)
                 logger.debug { "bloat t$t down (walk $walkN, $walkT ticks)" }
             }
         } else if (t - downAt == BloatRules.STOMP_AT) {
@@ -438,7 +437,6 @@ class BloatRoom(
 
     private companion object {
         const val DOWN_SEQ = "seq.tob_bloat_sleep"
-        const val DOWN_SEQ_DELAY = 30
         const val FLIES_SPOT = "spotanim.tob_bloat_flies_small"
         const val FLIES_PROJ = "spotanim.tob_bloat_flies_large"
         const val FLY_TICKS = 1
