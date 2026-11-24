@@ -1,6 +1,7 @@
 package org.rsmod.content.raids.tob.solo
 
 import org.rsmod.api.instances.InstanceSession
+import org.rsmod.api.npc.showHealth
 import org.rsmod.api.player.clearInteractionRoute
 import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
@@ -41,7 +42,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     private class Wave(val stall: Int, vararg val spawns: Spawn)
 
     private inner class Pillar(val name: String, val x: Int, val y: Int) {
-        var hp = PILLAR_HP
+        var hp = pillarHp
         var shaking = false
         var npc: Npc? = null
         var loc: LocInfo? = null
@@ -53,7 +54,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             get() = y + 1
     }
 
-    private inner class Nylo(val npc: Npc, val born: Int, val big: Boolean, val lane: String?, rot: String, var aggro: Boolean, var pillar: Pillar?) {
+    private inner class Nylo(val npc: Npc, val born: Int, val big: Boolean, val lane: String?, rot: String, var aggro: Boolean, var pillar: Pillar?, val wave: Int) {
         val rot = rot
         var style = rot[0]
         var fighting = false
@@ -64,6 +65,9 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         val size: Int
             get() = if (big) 2 else 1
     }
+
+    private val pillarHp: Int
+        get() = if (entryMode) ENTRY_PILLAR_HP else PILLAR_HP
 
     private val pillars = listOf(Pillar("SW", OX + 25, OY + 18), Pillar("NW", OX + 25, OY + 29), Pillar("SE", OX + 36, OY + 18), Pillar("NE", OX + 36, OY + 29))
     private val nylos = ArrayList<Nylo>()
@@ -91,9 +95,9 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         allDown = false
         val standing = findLocs(PILLAR_PRISTINE)
         for (p in pillars) {
-            p.hp = PILLAR_HP
+            p.hp = pillarHp
             p.shaking = false
-            p.npc = spawn(PILLAR_NPC, CoordGrid(p.x, p.y, 0), PILLAR_HP)
+            p.npc = spawn(PILLAR_NPC, CoordGrid(p.x, p.y, 0), pillarHp)
             p.loc = standing.firstOrNull { (c, _) -> c.x == p.x && c.z == p.y }?.second
             if (p.loc == null) logger.warn { "nylocas: no support loc at ${p.x}, ${p.y}" }
         }
@@ -135,11 +139,6 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         else -> HitType.Magic
     }
 
-    private fun styleName(s: Char): String = when (s) {
-        'M' -> "melee"
-        'R' -> "ranged"
-        else -> "magic"
-    }
 
     private fun prayerFor(s: Char): String = when (s) {
         'M' -> "melee"
@@ -148,29 +147,41 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     }
 
     private fun typeOf(big: Boolean, fighting: Boolean, s: Char): String =
-        "npc.tob_nylocas_" + (if (big) "big_" else "") + (if (fighting) "fighting_" else "incoming_") + styleName(s)
+        NyloLooks.npc(big, fighting, s)
 
     override fun step() {
         val p = inside()
+        val party = party()
         waves()
-        for (n in nylos.toList()) nylo(n, p)
+        for (n in nylos.toList()) nylo(n, party)
         nylos.removeAll { !it.npc.isSlotAssigned }
+        cleanupEnd()
         pillarsTick()
         bossTick(p)
     }
 
     /* ---- waves */
 
+    /** Vasilias comes on the 5th cycle counting the one the last nylocas despawns in (Blert: 16-19 ticks later). */
+    private fun cleanupEnd() {
+        if (wave < WAVES.size || bossAt >= 0 || nylos.isNotEmpty()) return
+        recordEvent(122, "\"nyloWave\":{\"wave\":$wave,\"nylosAlive\":0,\"roomCap\":$CAP_LATE}")
+        bossAt = t + Math.floorMod(WAVE_TICK - instanceTick, CYCLE) + CYCLE * (BOSS_CYCLES - 1)
+        logger.info { "nylocas: last one gone at t$t, Vasilias at t$bossAt" }
+    }
+
     private fun waves() {
-        if (wave >= WAVES.size) {
-            if (bossAt < 0 && nylos.isEmpty()) bossAt = t + BOSS_DELAY
-            return
-        }
+        if (wave >= WAVES.size) return
         if (t < nextWaveAt || instanceTick != WAVE_TICK) return
         val cap = if (wave + 1 >= CAP_WAVE) CAP_LATE else CAP_EARLY
-        if (roomCount() >= cap) return
+        val alive = roomCount()
+        if (alive >= cap) {
+            recordEvent(121, "\"nyloWave\":{\"wave\":${wave + 1},\"nylosAlive\":$alive,\"roomCap\":$cap}")
+            return
+        }
         val w = WAVES[wave]
         wave++
+        recordEvent(120, "\"nyloWave\":{\"wave\":$wave,\"nylosAlive\":$alive,\"roomCap\":$cap}")
         for (s in w.spawns) spawnNylo(s)
         logger.info { "nylocas: wave $wave at t$t, clock ${d.mapClock.cycle}, instance tick $instanceTick" }
         lastWaveAt = t
@@ -192,7 +203,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         val npc = spawn(typeOf(s.big, false, first), CoordGrid(OX + s.x, OY + s.y, 0), if (s.big) hp(BIG_HP, ENTRY_BIG_HP) else hp(SMALL_HP, ENTRY_SMALL_HP))
         npc.moveRestrict = dev.openrune.types.MoveRestrict.BlockedNormal
         val pillar = if (s.target == "A") null else pillars.first { it.name == s.target }
-        nylos += Nylo(npc, t, s.big, s.lane, s.rot, s.target == "A", pillar)
+        nylos += Nylo(npc, t, s.big, s.lane, s.rot, s.target == "A", pillar, wave)
     }
 
     private fun split(at: CoordGrid) {
@@ -201,7 +212,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             val c = CoordGrid(at.x + i, at.z + i, 0)
             val npc = spawn(typeOf(false, false, style), c, hp(SMALL_HP, ENTRY_SMALL_HP))
             npc.moveRestrict = dev.openrune.types.MoveRestrict.BlockedNormal
-            val n = Nylo(npc, t, false, null, style.toString(), false, nearestPillar(c))
+            val n = Nylo(npc, t, false, null, style.toString(), false, nearestPillar(c), wave)
             n.style = style
             nylos += n
         }
@@ -211,7 +222,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
 
     /* ---- one nylocas's tick */
 
-    private fun nylo(n: Nylo, p: Player?) {
+    private fun nylo(n: Nylo, party: List<Player>) {
         val npc = n.npc
         if (!npc.isSlotAssigned) return
         val age = t - n.born
@@ -221,7 +232,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             if (n.diedAt < 0) {
                 n.diedAt = t
                 npc.routeDestination.clear()
-                gfx("spotanim.tob_nylocas_death_${styleName(n.style)}_standard", here)
+                gfx(NyloLooks.deathGfx(n.style), here)
                 if (n.big) {
                     dying += Int.MAX_VALUE
                     later(BIG_DEATH) {
@@ -241,10 +252,10 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             if (n.exploding < 0) {
                 n.exploding = t
                 npc.routeDestination.clear()
-                npc.anim("seq.top_spider_${styleName(n.style)}_death_detonate")
-                gfx("spotanim.tob_nylocas_death_${styleName(n.style)}_detonate", here)
+                npc.anim(NyloLooks.detonateSeq(n.style))
+                gfx(NyloLooks.detonateGfx(n.style), here)
                 val max = if (n.big) BIG_BOOM else SMALL_BOOM
-                p?.let { q -> if (boxDist(real(q.coords).x, real(q.coords).z, here.x, here.z, here.x + n.size - 1, here.z + n.size - 1) <= 1) hurt(q, rand(0, max), source = npc) }
+                for (q in party) if (boxDist(real(q.coords).x, real(q.coords).z, here.x, here.z, here.x + n.size - 1, here.z + n.size - 1) <= 1) hurt(q, rand(0, max), source = npc)
             }
             if (t - n.exploding >= (if (n.big) BIG_BOOM_TICKS else DETONATE_TICKS)) {
                 despawn(npc)
@@ -276,7 +287,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             transmog(npc, typeOf(n.big, true, n.style))
         }
         if (n.aggro) {
-            p ?: return
+            val p = party.minByOrNull { q -> real(q.coords).let { c -> chebyshev(here, c) } } ?: return
             val pc = real(p.coords)
             val dist = boxDist(pc.x, pc.z, here.x, here.z, here.x + n.size - 1, here.z + n.size - 1)
             val inPlace = if (n.style == 'M') here in meleeSpots(pc, n.size) else dist in 1..AGGRO_RANGE
@@ -311,12 +322,12 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         }
     }
 
-    private fun attackSeq(s: Char, close: Boolean): String = if (s == 'M' || !close) "seq.top_spider_${styleName(s)}_attack" else "seq.top_spider_${styleName(s)}_meleeattack"
+    private fun attackSeq(s: Char, close: Boolean): String = if (close) NyloLooks.meleeAttack(s) else NyloLooks.attack(s)
 
     private fun attackPlayer(n: Nylo, p: Player) {
         n.nextAttack = t + NYLO_SPEED
         n.npc.facePlayer(p)
-        n.npc.anim("seq.top_spider_${styleName(n.style)}_attack")
+        n.npc.anim(NyloLooks.attack(n.style))
         val max = if (n.big) BIG_MAX else SMALL_MAX
         val roll = if (chance(NYLO_ACCURACY)) rand(0, max) else 0
         val delay =
@@ -326,7 +337,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
                 else -> 2
             }
         val prayer = prayerFor(n.style)
-        later(delay) { inside()?.let { hurt(it, roll, prayer = prayer, source = n.npc) } }
+        later(delay) { if (p in party()) hurt(p, roll, prayer = prayer, source = n.npc) }
     }
 
     private fun laneEnd(lane: String, here: CoordGrid): CoordGrid =
@@ -374,8 +385,13 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         for (pl in pillars) {
             val npc = pl.npc ?: continue
             if (pl.hp > 0) {
-                npc.hitpoints = pl.hp.coerceIn(1, PILLAR_HP)
-                if (!pl.shaking && pl.hp * 5 <= PILLAR_HP) {
+                val hp = pl.hp.coerceIn(1, pillarHp)
+                // its health bar over it, no hitsplats (only Verzik's pillars show those)
+                if (hp != npc.hitpoints) {
+                    npc.hitpoints = hp
+                    npc.showHealth()
+                }
+                if (!pl.shaking && pl.hp * 5 <= pillarHp) {
                     pl.shaking = true
                     swapPillar(pl, PILLAR_COLLAPSING)
                 }
@@ -386,7 +402,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             if (!pl.shaking) swapPillar(pl, PILLAR_COLLAPSING)
             pl.loc?.let { d.worldRepo.locAnim(it, "seq.nylocas_pillar_collapse") }
             later(PILLAR_COLLAPSE_TICKS) { swapPillar(pl, PILLAR_DEAD) }
-            inside()?.let { hurt(it, rand(PILLAR_FALL_MIN, PILLAR_FALL_MAX)) }
+            for (q in party()) hurt(q, rand(PILLAR_FALL_MIN, PILLAR_FALL_MAX))
             mes("A pillar collapses!")
             // the game wipes the room here; for practice the wave carries on and Vasilias still comes
             if (pillars.none { it.up } && !allDown) {
@@ -401,6 +417,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     private fun bossTick(p: Player?) {
         if (bossAt < 0 || t < bossAt) return
         if (t == bossAt) {
+            recordEvent(123, "\"nyloBoss\":{}")
             val b = spawn(BOSS_SPAWNING, CoordGrid(BOSS_X, BOSS_Y, 0), hp(BOSS_HP, entryHp(1800)))
             b.anim("seq.tob_spider_tank_spawn")
             boss = b
@@ -445,7 +462,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         bossLast = t
         if (bossStyle == 'M' && t - formAt < FORM_TICKS - MELEE_GAP) bossNext = t + MELEE_GAP
         b.facePlayer(p)
-        b.anim("seq.top_spider_${styleName(bossStyle)}_attack")
+        b.anim(NyloLooks.attack(bossStyle))
         recordAttack(b, when (bossStyle) { 'M' -> 4; 'R' -> 5; else -> 6 })
         val delay = if (bossStyle == 'M') 1 else proj(if (bossStyle == 'R') "spotanim.tob_nylocas_rangedprojectile_size2" else "spotanim.tob_nylocas_rangedprojectile_sizemid", b, p, delay = 30, speed = 5, startHeight = 60)
         val roll = rand(0, BOSS_MAX)
@@ -472,6 +489,20 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         })
     }
 
+    /** A live nylocas as a bot sees it: its style now, size, when it came and whether it hunts players. */
+    class Target(val npc: Npc, val style: Char, val big: Boolean, val born: Int, val aggro: Boolean, val wave: Int)
+
+    fun targets(): List<Target> =
+        nylos.filter { it.npc.isSlotAssigned && it.npc.hitpoints > 0 && it.exploding < 0 && !it.nulled }
+            .map { Target(it.npc, it.style, it.big, it.born, it.aggro, it.wave) }
+
+    /** The tick Vasilias drops in (-1 until the last nylocas is gone), and the waves spawned so far. */
+    val bossTick: Int
+        get() = bossAt
+
+    val wavesSpawned: Int
+        get() = wave
+
     override fun autoTarget(): Npc? {
         boss?.let { if (bossDead < 0) return it }
         val p = owner
@@ -487,7 +518,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     override fun progress(): TobHud.Bar? {
         if (t < 0 || cleared) return null
         if (boss != null) return super.progress()
-        return TobHud.bar(TobHud.FIGHT, pillars.sumOf { it.hp.coerceAtLeast(0) }, pillars.size * PILLAR_HP)
+        return TobHud.bar(TobHud.FIGHT, pillars.sumOf { it.hp.coerceAtLeast(0) }, pillars.size * pillarHp)
     }
 
     override fun debug(): String = nylos.take(4).joinToString(" ") { "${real(it.npc.coords).x - OX},${real(it.npc.coords).z - OY}${it.style}" } + " wave $wave nylos ${nylos.size} (${nylos.count { it.aggro }} aggro) pillars ${pillars.map { it.hp }} boss ${boss?.hitpoints} $bossStyle"
@@ -527,7 +558,9 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val PILLAR_COLLAPSING = "loc.tob_nylocas_support_collapsing"
         const val PILLAR_DEAD = "loc.tob_nylocas_support_dead"
         const val PILLAR_COLLAPSE_TICKS = 4
-        const val PILLAR_HP = 100
+        /** The cache's pillar hitpoints (normal, Entry); how they scale with the party isn't known yet. */
+        const val PILLAR_HP = 130
+        const val ENTRY_PILLAR_HP = 155
         const val PILLAR_HIT_MIN = 0
         const val PILLAR_HIT_MAX = 2
         const val PILLAR_FALL_MIN = 25
@@ -537,7 +570,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val BOSS_Y = 4246
         const val BOSS_SIZE = 4
         const val BOSS_HP = 1875
-        const val BOSS_DELAY = 16
+        const val BOSS_CYCLES = 5
         const val BOSS_DROP = 2
         const val FORM_TICKS = 10
         const val MELEE_FIRST = 4

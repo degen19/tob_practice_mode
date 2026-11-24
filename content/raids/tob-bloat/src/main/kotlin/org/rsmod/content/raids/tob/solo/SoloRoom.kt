@@ -71,6 +71,13 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     /** The player, if inside the arena (past the entry barrier). */
     fun inside(): Player? = player()?.takeIf { inArena(real(it.coords)) }
 
+    /** Others raiding with the owner (bots, for now), in the room the same way the owner is. */
+    val helpers = ArrayList<Player>()
+
+    /** Everyone in the arena, the owner first. */
+    fun party(): List<Player> =
+        (listOf(owner) + helpers).filter { it.isSlotAssigned && it.hitpoints > 0 && contains(it.coords) && inArena(real(it.coords)) }
+
     abstract fun inArena(c: CoordGrid): Boolean
 
     /** Where the player stands to start: in front of the entry barrier (real tile). */
@@ -163,8 +170,8 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     /** Everyone's tile and hitpoints at the start of this tick (where the last tick left them). */
     private fun snapshot() {
         if (recording.length > MAX_RECORDING) return
-        val p = player()
-        if (p != null) {
+        for (p in listOf(owner) + helpers) {
+            if (!p.isSlotAssigned || p.hitpoints <= 0 || !contains(p.coords)) continue
             val r = real(p.coords)
             recording.append("{\"type\":4,\"stage\":$stage,\"tick\":$t,\"xCoord\":${r.x},\"yCoord\":${r.z},\"plane\":${r.level},")
                 .append("\"player\":{\"name\":\"${p.username}\",\"hitpoints\":${(p.hitpoints shl 16) or p.baseHitpointsLvl}}}\n")
@@ -173,7 +180,7 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
             if (!n.isSlotAssigned) continue
             val r = real(n.coords)
             recording.append("{\"type\":8,\"stage\":$stage,\"tick\":$t,\"xCoord\":${r.x},\"yCoord\":${r.z},\"plane\":${r.level},")
-                .append("\"npc\":{\"id\":${n.id},\"roomId\":${n.slotId},\"hitpoints\":${(n.hitpoints.coerceAtLeast(0) shl 16) or n.baseHitpointsLvl}}}\n")
+                .append("\"npc\":{\"id\":${n.visType.id},\"roomId\":${n.slotId},\"hitpoints\":${(n.hitpoints.coerceAtLeast(0) shl 16) or n.baseHitpointsLvl}}}\n")
         }
     }
 
@@ -199,7 +206,7 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
             val dir = java.io.File(".data/recordings")
             dir.mkdirs()
             val stamp = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
-            java.io.File(dir, "${id.name.lowercase()}-${if (entryMode) "entry" else "normal"}-$stamp.jsonl").writeText(recording.toString())
+            java.io.File(dir, "${id.name.lowercase()}-${if (entryMode) "entry" else "normal"}-$stamp-${owner.username.lowercase()}.jsonl").writeText(recording.toString())
         } catch (_: Exception) {
         }
         recording.setLength(0)
@@ -396,7 +403,7 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     /** Queues a hit on [p] ([delay] ticks); returns the damage it will deal (after Entry mode and prayer). */
     fun hurt(p: Player, damage: Int, prayer: String? = null, blocks: Double = 1.0, source: Npc? = null, delay: Int = 1): Int {
         var dmg = if (entryMode) damage / 2 else damage
-        if (prayer != null && p.vars["varbit.prayer_protectfrom$prayer"] == 1) dmg = (dmg * (1.0 - blocks)).toInt()
+        if (prayer != null && p.vars[protectVarbit(prayer)] == 1) dmg = (dmg * (1.0 - blocks)).toInt()
         dmg = dmg.coerceAtLeast(0)
         val delay = delay.coerceAtLeast(1)
         if (source != null && source.isSlotAssigned) p.queueHit(source, delay, HitType.Typeless, dmg, d.playerHits) else p.queueHit(delay, HitType.Typeless, dmg, d.playerHits)
@@ -511,7 +518,14 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
      */
     fun entryHp(base: Int, partySize: Int = 1): Int = base * partySize.coerceIn(1, 5) / 5
 
-    fun prays(p: Player, prayer: String): Boolean = p.vars["varbit.prayer_protectfrom$prayer"] == 1
+    fun prays(p: Player, prayer: String): Boolean = p.vars[protectVarbit(prayer)] == 1
+
+    private fun protectVarbit(prayer: String): String =
+        when (prayer) {
+            "melee" -> "varbit.prayer_protectfrommelee"
+            "missiles" -> "varbit.prayer_protectfrommissiles"
+            else -> "varbit.prayer_protectfrommagic"
+        }
 
     /** Runs [block] [ticks] ticks from now (on the world queue), if the room still stands. */
     fun later(ticks: Int, block: () -> Unit) {

@@ -61,6 +61,13 @@ public fun Npc.heal(amount: Int, showHitsplat: Boolean = false): Int {
     return healed
 }
 
+/** Shows the npc's health bar at its current hitpoints, with no hitsplat (e.g. a pillar wearing down). */
+public fun Npc.showHealth() {
+    val bar = visHeadbar(params.headbar)
+    val fill = (bar.segments * hitpoints.coerceAtLeast(0) / baseHitpointsLvl.coerceAtLeast(1)).coerceIn(0, bar.segments)
+    showHeadbar(org.rsmod.game.headbar.Headbar.fromNoSource(bar.id, bar.id, fill, fill, 0, 0))
+}
+
 public fun Npc.isOutOfCombat(): Boolean = !isInCombat()
 
 public fun Npc.isInCombat(): Boolean {

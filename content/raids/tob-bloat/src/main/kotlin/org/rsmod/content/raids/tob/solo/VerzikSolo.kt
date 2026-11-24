@@ -228,11 +228,6 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         else -> HitType.Magic
     }
 
-    private fun styleName(s: Char): String = when (s) {
-        'M' -> "melee"
-        'R' -> "ranged"
-        else -> "magic"
-    }
 
     override fun step() {
         val v = verzik ?: return
@@ -896,7 +891,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
 
     private fun crawler(p: Player) {
         val style = "MRG"[rand(3)]
-        val n = spawn("npc.verzik_nylocas_${styleName(style)}", CoordGrid(P2_X, P2_Y + 7, 0), CRAWLER_HP)
+        val n = spawn(NyloLooks.verzikCrawler(style), CoordGrid(P2_X, P2_Y + 7, 0), CRAWLER_HP)
         crawlers += Crawler(n, style, t)
     }
 
@@ -930,8 +925,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                 if ((pc != null && age >= CRAWLER_LOCK_AGE && besideCrab(here, pc)) || age >= CRAWLER_LIFE) c.lockAt = t
             }
             if (c.lockAt >= 0 && t - c.lockAt == CRAWLER_POP) {
-                gfx("spotanim.tob_nylocas_death_${styleName(c.style)}_detonate", here)
-                n.anim("seq.top_spider_${styleName(c.style)}_death_detonate")
+                gfx(NyloLooks.detonateGfx(c.style), here)
+                n.anim(NyloLooks.detonateSeq(c.style))
                 val dmg = p?.let { q -> crabDamage(here, real(q.coords))?.let { hurt(q, it, source = n) } }
                 logger.info { "verzik crab popped at age $age (stopped at ${c.lockAt - c.born}) at $here, player ${p?.let { real(it.coords) }}, damage $dmg" }
                 n.hitpoints = 0

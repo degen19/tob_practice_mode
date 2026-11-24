@@ -70,6 +70,7 @@ constructor(
     val collision: CollisionFlagMap,
     val random: GameRandom,
     val playerHits: PlayerHitModifier,
+    val npcHits: org.rsmod.api.npc.hit.modifier.NpcHitModifier,
     val queues: WorldQueueList,
     val mapClock: MapClock,
     val raids: SoloRaids,

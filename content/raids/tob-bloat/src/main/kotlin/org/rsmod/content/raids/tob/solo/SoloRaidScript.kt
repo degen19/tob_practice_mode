@@ -82,6 +82,10 @@ constructor(
             // only the PvP tutorial's fake runes: no spell lights up in the Theatre
             player.pvpTutorial = -1
         }
+        System.getenv("TOB_TRIO")?.toIntOrNull()?.let { teams ->
+            org.rsmod.api.player.PracticeSettings.noDeaths = true
+            onEvent<GameLifecycle.StartCycle> { if (d.mapClock.cycle == SELF_TEST_AT) startTrios(teams) }
+        }
         System.getenv("TOB_SELFTEST")?.let { list ->
             val rooms = ArrayDeque(list.split(',').mapNotNull { TobRoom.parse(it.trim()) })
             org.rsmod.api.player.PracticeSettings.noDeaths = true
@@ -220,6 +224,11 @@ constructor(
                     continue
                 }
                 room.tick()
+                val trio = trios[room]
+                if (trio != null) {
+                    trioTick(room, trio)
+                    continue
+                }
                 if (room.owner in auto) autopilot(room)
                 val limit = System.getenv("TOB_ROOM_TICKS")?.toIntOrNull()
                 if (room.owner in auto && limit != null && room.t >= limit && selfTestQueue.isNotEmpty()) {
@@ -253,6 +262,51 @@ constructor(
     }
 
     private var selfTestQueue = ArrayDeque<TobRoom>()
+
+    /** Tests (`TOB_TRIO=n`): n bot trios, each in its own Nylocas room, run the waves until Vasilias drops in. */
+    private val trios = HashMap<SoloRoom, NyloTrio>()
+
+    private fun startTrios(teams: Int) {
+        for (i in 1..teams) {
+            val crew = NyloTrio.Role.entries.map { role -> role to bots.spawn("${role.name}$i", EXIT, SELF_TEST_GEAR, emptyList()) }
+            if (crew.any { it.second == null }) return logger.warn { "nylo trio $i: no room for its bots" }
+            val owner = crew[0].second!!
+            auto += owner
+            travel(owner, TobRoom.NYLOCAS)
+            val room = raids.byOwner[owner.username] as? NyloSolo ?: continue
+            for ((_, bot) in crew.drop(1)) {
+                room.helpers += bot!!
+                org.rsmod.game.entity.util.PathingEntityCommon.telejump(bot, d.collision, room.at(room.entry))
+            }
+            trios[room] = NyloTrio(room, crew.map { it.second!! to it.first }, bots, d.npcHits)
+        }
+    }
+
+    /** A trio's tick: start on a 4 like a team does, then play until Vasilias spawns. */
+    private fun trioTick(room: SoloRoom, trio: NyloTrio) {
+        val nylo = room as NyloSolo
+        if (room.t < 0) {
+            // as a Yes clicked on the timer's 4: the room's first tick comes on its 2
+            if (d.mapClock.cycle - room.builtAt < 4 || room.instanceTick != 1) return
+            for (p in listOf(room.owner) + room.helpers) org.rsmod.game.entity.util.PathingEntityCommon.telejump(p, d.collision, room.at(room.autoStart))
+            room.start()
+            return
+        }
+        trio.tick()
+        if (nylo.bossTick >= 0 && room.t >= nylo.bossTick) {
+            logger.info { "nylo trio ${room.owner.username}: Vasilias at room tick ${nylo.bossTick} (${raidTime(nylo.bossTick)}), waves ${nylo.wavesSpawned}" }
+            trios.remove(room)
+            auto.remove(room.owner)
+            val crew = listOf(room.owner) + room.helpers
+            close(room)
+            for (p in crew) bots.remove(p)
+        }
+    }
+
+    private fun raidTime(ticks: Int): String {
+        val cs = ticks * 60
+        return "%d:%02d.%d".format(cs / 6000, cs / 100 % 60, cs / 10 % 10)
+    }
 
     /** Tests: the server plays the room's owner - starts the room, attacks what the room says, walks out when clear. */
     private fun autopilot(room: SoloRoom) {
