@@ -140,12 +140,18 @@ class MaidenCrew(
     /* ---- the tick */
 
     override fun tick() {
-        if (room.deadAt >= 0) return
+        if (room.deadAt >= 0) {
+            if (TRACING && procAt.size < TALLIED) {
+                procAt += -1
+                trace { "tally ${room.tally}" }
+            }
+            return
+        }
         t = room.t - 1
         while (procAt.size < room.phase) {
             procAt += t - 1
             onProc(procAt.size)
-            trace { "t$t proc ${procAt.size}: party ${room.party().size} " + crew.joinToString { "${it.role} hp ${it.player.hitpoints} at ${room.real(it.player.coords)}" } }
+            trace { "t$t proc ${procAt.size}: def ${her.defenceLvl} party ${room.party().size} " + crew.joinToString { "${it.role} hp ${it.player.hitpoints} at ${room.real(it.player.coords)}" } }
         }
         snapshot()
         inflight.removeAll { it.land < t }
@@ -173,12 +179,13 @@ class MaidenCrew(
 
     /**
      * Off her blood: a bot standing in a splat or a trail steps to the nearest clean tile (beside her if it was), and
-     * its order goes on from there.
+     * its order goes on from there - unless that order's swing is due within [MaidenCrewParams.dodgeLead] ticks.
      */
     private fun dodge(b: Bot): Boolean {
         val p = b.player
         val here = room.real(p.coords)
         if (!room.bloody(here) || b.order?.walkTo != null) return false
+        if (b.order != null && p.actionDelay <= clock.cycle + params.dodgeLead) return false
         val beside = room.besideHer(here)
         val to =
             (-DODGE..DODGE).flatMap { dx -> (-DODGE..DODGE).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
@@ -1162,6 +1169,7 @@ class MaidenCrew(
         const val W_S2 = 1.2
         const val ORDER_TICKS = 6
         const val WALK_TICKS = 3
+        const val TALLIED = 4
         const val OBL_REACH = 3
         const val OBL_MAX = 3
         const val DODGE = 2
@@ -1252,6 +1260,7 @@ data class MaidenCrewParams(
     val redOffset: Int = 0,
     val walkWeight: Int = 30,
     val dinhWalk: Int = 2,
+    val dodgeLead: Int = 1,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
@@ -1276,6 +1285,7 @@ data class MaidenCrewParams(
                 redOffset = int("redOffset", d.redOffset),
                 walkWeight = int("walkWeight", d.walkWeight),
                 dinhWalk = int("dinhWalk", d.dinhWalk),
+                dodgeLead = int("dodgeLead", d.dodgeLead),
             )
         }
     }

@@ -84,6 +84,11 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     override fun land(npc: Npc, hit: Hit): Int? {
         if (npc !== maiden) return null
         if (dead >= 0) return 0
+        if (TALLY) {
+            val who = attacker(hit)?.username?.filter { it.isLetter() } ?: "other"
+            tally.merge("$phase:$who:${hit.type}", hit.damage, Int::plus)
+            tally.merge("$phase:$who:n", 1, Int::plus)
+        }
         // the crabs come on the tick the hit that takes her past 70 / 50 / 30% lands (Blert: same tick, and she
         // takes the whole hit)
         phases(maiden.hitpoints - hit.damage)
@@ -370,6 +375,9 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         crabs.filter { it.npc.isSlotAssigned && it.npc.hitpoints > 0 && it.leakedAt < 0 }
             .map { CrabView(it.npc, SPOT_NAMES[it.spot], it.born, gap(it.npc), it.npc.vars["varn.freeze_end_clock"], it.arrived) }
 
+    /** `TOB_TRIO_TRACE`: her damage taken by phase, attacker and hit type, for comparing with the sim. */
+    val tally = java.util.TreeMap<String, Int>()
+
     /** Whether her blood (a splat or a spawn's trail) is on [tile] (a real tile). */
     fun bloody(tile: CoordGrid): Boolean = splats.any { it.tile == tile } || trails.containsKey(tile)
 
@@ -460,6 +468,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
 
         /** `TOB_CRAB_UNIFORM`: every spawn as likely (the sim's draw), for comparing runs with it. */
         val UNIFORM_SPAWNS = System.getenv("TOB_CRAB_UNIFORM") != null
+        val TALLY = System.getenv("TOB_TRIO_TRACE") != null
         val SPOT_NAMES = listOf("N1", "N2", "N3", "N4a", "N4b", "S1", "S2", "S3", "S4a", "S4b")
     }
 }

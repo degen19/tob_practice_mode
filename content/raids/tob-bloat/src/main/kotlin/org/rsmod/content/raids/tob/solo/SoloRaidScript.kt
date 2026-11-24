@@ -1,6 +1,7 @@
 package org.rsmod.content.raids.tob.solo
 
 import org.rsmod.api.player.righthand
+import org.rsmod.api.player.syncPrayerOverrides
 import com.github.michaelbull.logging.InlineLogger
 import dev.openrune.rscm.RSCM
 import dev.openrune.rscm.RSCM.asRSCM
@@ -362,7 +363,9 @@ constructor(
         bot.statBoost("stat.ranged", RANGING_BOOST, RANGING_PERCENT)
         bot.statBoost("stat.magic", HEART_BOOST, HEART_PERCENT)
         org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(bot, "varp.sa_energy", FULL_SPEC)
+        for (unlock in PRAYER_UNLOCKS) org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(bot, unlock, 1)
         for (prayer in OFFENSIVE_PRAYERS) org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(bot, prayer, 1)
+        bot.syncPrayerOverrides()
     }
 
     /** A trio's tick: start on a 4 like a team does, then play until the crew's run is over. */
@@ -497,6 +500,9 @@ constructor(
         const val LUNARS = 2
         /** Bots keep each style's prayer on at once: the same as flicking the right one with every switch. */
         val OFFENSIVE_PRAYERS = listOf("varbit.prayer_piety", "varbit.prayer_rigour", "varbit.prayer_augury")
+
+        /** Maxed raiders have the scroll prayers: Zeal over Piety (as the sim's melee). */
+        val PRAYER_UNLOCKS = listOf("varbit.prayer_zeal_unlocked", "varbit.prayer_deadeye_unlocked", "varbit.prayer_mystic_vigour_unlocked")
         const val WATCH_LINGER = 8
         val SELF_TEST_GEAR =
             listOf(
