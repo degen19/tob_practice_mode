@@ -551,6 +551,20 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             return at
         }
 
+    /** A nylocas still to come: its wave, the tick that wave is due (no stalls from here), lane, size, colour on arrival. */
+    class Incoming(val wave: Int, val at: Int, val lane: String, val big: Boolean, val style: Char, val aggro: Boolean)
+
+    /** The next [count] waves' nylocas - what players know is coming and line their prefires up for. */
+    fun incoming(count: Int): List<Incoming> {
+        val out = ArrayList<Incoming>()
+        var at = nextWaveCheck
+        for (i in wave until minOf(WAVES.size, wave + count)) {
+            for (s in WAVES[i].spawns) out += Incoming(i + 1, at, s.lane, s.big, s.rot.last(), s.target == "A")
+            at += WAVES[i].stall.coerceAtLeast(CYCLE)
+        }
+        return out
+    }
+
     /** Ticks until [target] goes off on its own. */
     fun lifeLeft(target: Target): Int = (if (target.big) BIG_LIFE else SMALL_LIFE) - (t - target.born)
 

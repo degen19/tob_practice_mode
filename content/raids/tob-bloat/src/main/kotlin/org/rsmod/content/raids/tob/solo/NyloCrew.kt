@@ -22,7 +22,9 @@ import kotlin.math.max
  *   only when nothing better is up, or when the room would stall at the next wave check with it still standing;
  * - area weapons (chinchompas, barrage, Obligator thrust, scythe on bigs) go where they reach the most;
  * - a big one isn't popped into its two splits just before a wave check the splits would stall;
- * - aggressive ones (they come for players) go first.
+ * - aggressive ones (they come for players) go first;
+ * - they know the wave table: between waves each heads for the lane the next wave brings it the most at, and as a wave
+ *   is about to arrive they don't chase targets far from that lane's mouth.
  *
  * [NyloCrewParams] holds the weights, so a search over runs can tune them. Bots fill whatever roles the people in the
  * room don't: the room reacts to everyone's kills, so the bots react to a person's play as it happens.
@@ -162,7 +164,8 @@ class NyloCrew(
         val walk = (reach - weapon.range).coerceAtLeast(0) * params.walkCost
         val swap = if (wearing(bot, weapon.set)) 0.0 else params.swapCost
         val stay = if (current(bot) == target.npc) 1.0 + params.stickiness else 1.0
-        return value / (weapon.speed + walk + swap) * stay
+        val ahead = 1.0 / (1.0 + params.lookahead * drift(role, target) / LOOKAHEAD_SCALE)
+        return value / (weapon.speed + walk + swap) * stay * ahead
     }
 
     /** Shield Bash (half the bar, in the late waves Blert's trios save it for), only into a crowd of melee nylocas. */
@@ -176,13 +179,41 @@ class NyloCrew(
         return untilCheck <= params.bigCheckTicks && room.roomAlive + 1 >= room.cap
     }
 
-    /** Nothing to hit: stand where Blert's fastest trios stand for the next wave (their most common tile per role). */
+    /**
+     * Nothing to hit: get to the lane the next wave brings this bot the most to do at (its own colour above all, then
+     * what its switches hit), on the tile Blert's fastest trios stand on for that wave when it's at that lane's mouth.
+     */
     private fun prefire(bot: Player, role: NyloRole) {
-        val next = room.wavesSpawned
-        if (next >= PREFIRES.size) return
-        val tile = PREFIRES[next][role.ordinal]
+        val lane = nextLane(role) ?: return
+        val blert = PREFIRES.getOrNull(room.wavesSpawned)?.get(role.ordinal)
+        val mouth = MOUTHS.getValue(lane)
+        val tile = if (blert != null && chebyshev(blert, mouth) <= PREFIRE_SLACK) blert else mouth
         if (room.real(bot.coords) != tile && bot.routeDestination.isEmpty()) bots.walk(bot, room.at(tile))
     }
+
+    /** The lane whose part of the next wave is worth most to [role] (null: no waves left). */
+    private fun nextLane(role: NyloRole): String? {
+        val next = room.incoming(1)
+        if (next.isEmpty()) return null
+        return next.groupBy { it.lane }.maxByOrNull { (_, spawns) -> spawns.sumOf { worth(role, it) } }?.key
+    }
+
+    private fun worth(role: NyloRole, n: NyloSolo.Incoming): Double {
+        var w = if (n.style == role.style) params.ownColour else 1.0
+        if (n.big) w *= params.bigWorth
+        if (n.aggro) w *= params.aggroWorth
+        return w
+    }
+
+    /** How far a target pulls the bot from the mouth its next wave arrives at, if that wave is about to arrive. */
+    private fun drift(role: NyloRole, target: NyloSolo.Target): Double {
+        val next = room.incoming(1).firstOrNull() ?: return 0.0
+        if (next.at + LANE_TICKS - room.t > params.lookaheadTicks) return 0.0
+        val mouth = MOUTHS.getValue(nextLane(role) ?: return 0.0)
+        return (chebyshev(room.real(target.npc.coords), mouth) - PREFIRE_SLACK).coerceAtLeast(0).toDouble()
+    }
+
+    private fun chebyshev(a: CoordGrid, b: CoordGrid): Int = max(kotlin.math.abs(a.x - b.x), kotlin.math.abs(a.z - b.z))
 
     private fun onFloor(c: CoordGrid): Boolean = c.x in FLOOR_X && c.z in FLOOR_Z
 
@@ -233,6 +264,10 @@ class NyloCrew(
         const val AREA_MAX = 9
         const val LINE_TILES = 3
         const val LIFE = 52
+        const val PREFIRE_SLACK = 3
+        const val LANE_TICKS = 9
+        const val LOOKAHEAD_SCALE = 10.0
+        val MOUTHS = mapOf("W" to CoordGrid(3290, 4248, 0), "E" to CoordGrid(3301, 4248, 0), "S" to CoordGrid(3295, 4243, 0))
         const val BASH_RADIUS = 5
         const val BASH_MAX = 10
         const val DINH_ENERGY = 500
@@ -295,6 +330,8 @@ data class NyloCrewParams(
     val stickiness: Double = 1.0,
     val pillarWorth: Double = 1.5,
     val walkCost: Double = 0.5,
+    val lookahead: Double = 1.0,
+    val lookaheadTicks: Int = 6,
     val dinhWave: Int = 26,
     val dinhMin: Int = 5,
     val youth: Double = 2.0,
@@ -319,6 +356,8 @@ data class NyloCrewParams(
                 youth = num("youth", d.youth),
                 pillarWorth = num("pillarWorth", d.pillarWorth),
                 walkCost = num("walkCost", d.walkCost),
+                lookahead = num("lookahead", d.lookahead),
+                lookaheadTicks = int("lookaheadTicks", d.lookaheadTicks),
                 dinhWave = int("dinhWave", d.dinhWave),
                 dinhMin = int("dinhMin", d.dinhMin),
             )
