@@ -207,19 +207,19 @@ class MaidenCrew(
 
 /** The Maiden crew's choices (see [MaidenCrew]); `parse` reads `name=value,...` and keeps the default for the rest. */
 data class MaidenCrewParams(
-    val crabGap: Int = 2,
-    val clumpGap: Int = 4,
-    val mustFreeze: Int = 7,
-    val thawTicks: Int = 10,
-    val holdTicks: Int = 3,
-    val mageKillHp: Int = 60,
-    val mageScytheBelow: Int = 12,
-    val refreezeTicks: Int = 1,
-    val pileHp: Int = 40,
+    val crabGap: Int = 4,
+    val clumpGap: Int = 3,
+    val mustFreeze: Int = 10,
+    val thawTicks: Int = 0,
+    val holdTicks: Int = 0,
+    val mageKillHp: Int = 144,
+    val mageScytheBelow: Int = 32,
+    val refreezeTicks: Int = 2,
+    val pileHp: Int = 0,
     val dinhPhase: Int = 1,
-    val dinhMin: Int = 3,
-    val rangerSpecAt: Int = 45,
-    val mageSpecAt: Int = 85,
+    val dinhMin: Int = 5,
+    val rangerSpecAt: Int = 29,
+    val mageSpecAt: Int = 120,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
