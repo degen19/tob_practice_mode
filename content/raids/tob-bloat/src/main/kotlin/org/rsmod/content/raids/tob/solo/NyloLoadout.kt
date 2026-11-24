@@ -57,10 +57,12 @@ object NyloLoadout {
     val BLOWPIPE = GearSet(RANGED_ARMOUR + (Wearpos.RightHand to "obj.toxic_blowpipe_loaded"))
     val CHINS = GearSet(RANGED_ARMOUR + (Wearpos.RightHand to "obj.chinchompa_black"))
     val CROSSBOWS = GearSet(RANGED_ARMOUR + (Wearpos.RightHand to "obj.ascension_crossbows"))
+    val RALOS = GearSet(RANGED_ARMOUR + (Wearpos.RightHand to "obj.tonalztics_of_ralos_charged"))
 
     const val BOLTS = "obj.ascension_bolts"
     const val CHINCHOMPAS = "obj.chinchompa_black"
     const val ARROWS = "obj.dragon_arrow"
+    const val SEEKING_ARROWS = "obj.seeking_dragon_arrow"
     const val ICE_BARRAGE = "obj.94_ice_barrage"
     val BARRAGE_RUNES = listOf("obj.waterrune", "obj.bloodrune", "obj.deathrune")
 
@@ -72,14 +74,22 @@ object NyloLoadout {
             NyloRole.Mage -> listOf(BARRAGE, CROSSBOWS, TBOW, SCYTHE)
         }
 
-    /** Worn at the start: the role's first set plus bolts in the ammo slot. */
-    fun worn(role: NyloRole): List<Pair<Int, String>> =
-        sets(role).first().worn.map { it.first.slot to it.second } + (Wearpos.Quiver.slot to BOLTS)
+    /** At Maiden every role opens with a Twisted bow (seeking arrows) and the Tonalztics spec, then scythes. */
+    fun maidenSets(role: NyloRole): List<GearSet> =
+        when (role) {
+            NyloRole.Melee -> listOf(TBOW, RALOS, SCYTHE, DINH)
+            NyloRole.Ranger -> listOf(TBOW, RALOS, SCYTHE)
+            NyloRole.Mage -> listOf(TBOW, RALOS, BARRAGE, SCYTHE)
+        }
 
-    /** Everything else the role's sets need, once each, in the pack. */
-    fun pack(role: NyloRole): List<String> {
-        val wearing = sets(role).first().worn.map { it.second }.toSet()
-        val switches = sets(role).flatMap { set -> set.worn.map { it.second } }.distinct().filter { it !in wearing }
+    /** Worn at the start: the first set plus bolts in the ammo slot. */
+    fun worn(sets: List<GearSet>): List<Pair<Int, String>> =
+        sets.first().worn.map { it.first.slot to it.second } + (Wearpos.Quiver.slot to BOLTS)
+
+    /** Everything else the sets need, once each, in the pack. */
+    fun pack(role: NyloRole, sets: List<GearSet>): List<String> {
+        val wearing = sets.first().worn.map { it.second }.toSet()
+        val switches = sets.flatMap { set -> set.worn.map { it.second } }.distinct().filter { it !in wearing }
         return switches + if (role == NyloRole.Mage) BARRAGE_RUNES else emptyList()
     }
 }

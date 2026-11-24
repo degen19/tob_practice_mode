@@ -111,6 +111,9 @@ internal class AncientSpellEffects(private val random: GameRandom) {
         const val SMOKE_POISON_CHANCE = 8
         const val AOE_RADIUS = 1
 
+        /** `varn.freeze_guaranteed` at this value: ice spells can't splash on the NPC given an accurate enough caster. */
+        const val SURE_ON_ROLL = 2
+
         fun overlapsAoe(centre: CoordGrid, coords: CoordGrid, size: Int): Boolean =
             coords.x <= centre.x + AOE_RADIUS &&
                 coords.x + size - 1 >= centre.x - AOE_RADIUS &&

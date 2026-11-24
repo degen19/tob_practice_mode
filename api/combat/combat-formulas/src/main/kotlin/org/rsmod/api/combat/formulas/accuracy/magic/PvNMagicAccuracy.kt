@@ -96,6 +96,28 @@ constructor(
         return AccuracyOperations.calculateHitChance(attackRoll, defenceRoll, npcAttributes)
     }
 
+    /** The [player]'s magic attack roll for [spell] on [target], before it meets the target's defence roll. */
+    public fun getSpellAttackRoll(
+        player: Player,
+        target: Npc,
+        spell: ItemServerType,
+        spellbook: Spellbook?,
+        usedSunfireRune: Boolean,
+    ): Int {
+        val targetType = target.visType
+        val spellAttributes =
+            magicAttributes.spellCollect(player, spell, spellbook, usedSunfireRune, random)
+        val slayerTask = targetType.isSlayerTask(player)
+        val npcAttributes =
+            npcAttributes.collect(targetType, target, target.hitpoints, target.baseHitpointsLvl, slayerTask)
+        return computeSpellAttackRoll(
+            source = player,
+            targetWeaknessPercent = targetType.param(params.elemental_weakness_percent),
+            spellAttributes = spellAttributes,
+            npcAttributes = npcAttributes,
+        )
+    }
+
     public fun computeSpellAttackRoll(
         source: Player,
         targetWeaknessPercent: Int,

@@ -11,6 +11,7 @@ import org.rsmod.api.combat.manager.PlayerAttackManager
 import org.rsmod.api.config.constants
 import org.rsmod.api.player.protect.ProtectedAccess
 import org.rsmod.api.player.vars.boolVarBit
+import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.PathingEntity
 import org.rsmod.game.hit.Hit
 import org.rsmod.game.proj.ProjAnim
@@ -133,6 +134,21 @@ constructor(
         attack: CombatAttack.Spell,
         castResult: MagicRuneManager.CastResult,
     ): Boolean = !rollSpellAccuracy(source, target, attack, castResult)
+
+    /** @see [PlayerAttackManager.spellAttackRoll] */
+    public fun spellAttackRoll(
+        source: ProtectedAccess,
+        target: Npc,
+        attack: CombatAttack.Spell,
+        castResult: MagicRuneManager.CastResult,
+    ): Int =
+        manager.spellAttackRoll(
+            source = source.player,
+            target = target,
+            spell = attack.spell.obj,
+            spellbook = attack.spell.spellbook,
+            sunfireRune = castResult.consumedRune() && castResult.usedSunfire,
+        )
 
     /** @see [PlayerAttackManager.rollSpellAccuracy] */
     public fun rollSpellAccuracy(

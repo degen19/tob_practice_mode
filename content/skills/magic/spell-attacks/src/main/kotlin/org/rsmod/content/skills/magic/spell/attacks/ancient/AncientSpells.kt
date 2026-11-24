@@ -19,6 +19,7 @@ import org.rsmod.api.player.isValidTarget
 import org.rsmod.api.player.mapMultiway
 import org.rsmod.api.player.protect.ProtectedAccess
 import org.rsmod.api.player.righthand
+import org.rsmod.api.player.stat.statBase
 import org.rsmod.api.random.GameRandom
 import org.rsmod.api.repo.world.WorldRepository
 import org.rsmod.api.route.RayCastValidator
@@ -88,6 +89,15 @@ constructor(
             manager.continueCombatIfAutocast(this, target)
         }
 
+        /**
+         * An ice spell can't splash on an NPC marked [AncientSpellEffects.SURE_ON_ROLL] while the caster's attack roll
+         * reaches (base Magic + 9) x 204 (the Nylocas Matomenos rule); the freeze still respects immunity.
+         */
+        private fun ProtectedAccess.sureFreeze(target: PathingEntity, attack: CombatAttack.Spell, castResult: MagicRuneManager.CastResult): Boolean {
+            if (spell.element != Element.Ice || target !is Npc || target.vars["varn.freeze_guaranteed"] != AncientSpellEffects.SURE_ON_ROLL) return false
+            return manager.spellAttackRoll(this, target, attack, castResult) >= (player.statBase("stat.magic") + SURE_LEVEL_OFFSET) * SURE_ROLL_PER_LEVEL
+        }
+
         private fun ProtectedAccess.hitTarget(
             target: PathingEntity,
             attack: CombatAttack.Spell,
@@ -98,7 +108,8 @@ constructor(
         ) {
             val spellObj = attack.spell.obj
             val guaranteedFreeze = effects.claimGuaranteedFreeze(spell, target)
-            if (!guaranteedFreeze && manager.rollSplash(this, target, attack, castResult)) {
+            val sure = guaranteedFreeze || sureFreeze(target, attack, castResult)
+            if (!sure && manager.rollSplash(this, target, attack, castResult)) {
                 manager.playSplashFx(this, target, clientDelay, castSound = null, soundRadius = 8)
                 manager.queueSplashHit(this, target, spellObj, clientDelay, serverDelay)
                 return
@@ -271,6 +282,8 @@ constructor(
         private const val NULL_SPOTANIM = -1
         private const val MAX_TARGETS = 9
         private const val AOE_SEARCH_RADIUS = 6
+        private const val SURE_LEVEL_OFFSET = 9
+        private const val SURE_ROLL_PER_LEVEL = 204
 
         private val ANCIENT_SCEPTRES =
             listOf(

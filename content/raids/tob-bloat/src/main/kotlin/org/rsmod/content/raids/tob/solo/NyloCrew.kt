@@ -30,13 +30,20 @@ import kotlin.math.max
  * room don't: the room reacts to everyone's kills, so the bots react to a person's play as it happens.
  */
 class NyloCrew(
-    private val room: NyloSolo,
+    override val room: NyloSolo,
     private val members: List<Pair<Player, NyloRole>>,
     private val bots: RaidBots,
     private val clock: MapClock,
     private val barrage: Int,
     private val params: NyloCrewParams = NyloCrewParams(),
-) {
+) : BotCrew {
+    override fun starts(): List<CoordGrid> = members.map { room.autoStart }
+
+    override fun doneAt(): Int = room.bossTick
+
+    override fun summary(): String =
+        "Vasilias at room tick ${room.bossTick} (${raidTime(room.bossTick)}), waves ${room.wavesSpawned}, nulls ${room.nulls}, stalls ${room.stalls}, pillars ${room.pillarsStanding}"
+
     enum class Weapon(
         val set: GearSet,
         val hits: Char,
@@ -75,7 +82,7 @@ class NyloCrew(
     /** Who each bot is busy with: a small nylocas one bot has an attack on its way to is no one else's. */
     private val claimed = HashMap<Npc, Pair<Player, Int>>()
 
-    fun tick() {
+    override fun tick() {
         val now = clock.cycle
         claimed.entries.removeIf { (npc, claim) -> !npc.isSlotAssigned || npc.hitpoints <= 0 || claim.second < room.t }
         unreachable.entries.removeIf { it.value < room.t }

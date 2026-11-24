@@ -17,6 +17,10 @@ import org.rsmod.api.instances.RegionLocal
 import org.rsmod.api.player.hook.TeleportType
 import org.rsmod.api.player.output.mes
 import org.rsmod.api.player.stat.hitpoints
+import org.rsmod.api.player.stat.stat
+import org.rsmod.api.player.stat.statAdd
+import org.rsmod.api.player.stat.statBase
+import org.rsmod.api.player.stat.statBoost
 import org.rsmod.api.player.protect.ProtectedAccess
 import org.rsmod.api.player.protect.forcedWalk
 import org.rsmod.api.player.protect.ProtectedAccessLauncher
@@ -101,7 +105,7 @@ constructor(
             }
         }
         onCommand("tob") {
-            desc = "Theatre of Blood, solo: ::tob maiden | bloat | nylo | sote | xarpus | verzik | stop | watch (a bot trio's Nylocas)"
+            desc = "Theatre of Blood, solo: ::tob maiden | bloat | nylo | sote | xarpus | verzik | stop | watch [maiden] (a bot trio plays the Nylocas or Maiden)"
             invalidArgs = "Usage: ::tob <room> | stop"
             cheat { tob() }
         }
@@ -136,7 +140,7 @@ constructor(
             "map" -> raids.byOwner[player.username]?.let { dumpMap(it) }
             "mode" -> raids.switchMode(player)
             "start" -> raids.byOwner[player.username]?.start()
-            "watch" -> watch(player)
+            "watch" -> watch(player, args.getOrNull(1)?.let { TobRoom.parse(it) }?.takeIf { it == TobRoom.MAIDEN } ?: TobRoom.NYLOCAS)
             "auto" -> if (!auto.remove(player)) { auto += player; player.mes("Autopilot on.") } else player.mes("Autopilot off.")
             "hp" -> raids.byOwner[player.username]?.autoTarget()?.let { it.hitpoints = args.getOrNull(1)?.toIntOrNull() ?: it.hitpoints }
             else -> {
@@ -270,10 +274,10 @@ constructor(
 
     private var selfTestQueue = ArrayDeque<TobRoom>()
 
-    /** Tests (`TOB_TRIO=n`): n bot trios, each in its own Nylocas room, run the waves until Vasilias drops in. */
-    private val trios = HashMap<SoloRoom, NyloCrew>()
+    /** Tests (`TOB_TRIO=n`): n bot trios, each in its own room (`TOB_TRIO_ROOM`: nylo, the default, or maiden), play it out. */
+    private val trios = HashMap<SoloRoom, BotCrew>()
 
-    /** `TOB_TRIO_PARAMS`: a file with one line of [NyloCrewParams] per trio (a search's candidates). */
+    /** `TOB_TRIO_PARAMS`: a file with one line of crew params per trio (a search's candidates). */
     private val trioParams: List<String> by lazy { System.getenv("TOB_TRIO_PARAMS")?.let { java.io.File(it).readLines() } ?: emptyList() }
 
     private val barrageButton: Int by lazy {
@@ -282,46 +286,52 @@ constructor(
     }
 
     private fun startTrios(teams: Int) {
-        for (i in 1..teams) {
-            startTrio("$i", trioParams.getOrNull(i - 1)?.let(NyloCrewParams::parse) ?: NyloCrewParams()) ?: return
-        }
+        val where = TobRoom.parse(System.getenv("TOB_TRIO_ROOM") ?: "nylo") ?: TobRoom.NYLOCAS
+        for (i in 1..teams) startTrio("$i", where, trioParams.getOrNull(i - 1) ?: "") ?: return
     }
 
-    /** A bot trio in a fresh Nylocas room (bots named Mage[tag], Ranger[tag], Melee[tag]); null if they can't all log in. */
-    private fun startTrio(tag: String, params: NyloCrewParams): NyloSolo? {
-        val crew = NyloRole.entries.map { role -> role to spawnNyloBot("${role.name}$tag", role) }
+    /** A bot trio in a fresh room (bots named Mage[tag], Ranger[tag], Melee[tag]); null if they can't all log in. */
+    private fun startTrio(tag: String, where: TobRoom, params: String): SoloRoom? {
+        val maiden = where == TobRoom.MAIDEN
+        val crew = NyloRole.entries.map { role -> role to spawnCrewBot("${role.name}$tag", role, if (maiden) NyloLoadout.maidenSets(role) else NyloLoadout.sets(role), maiden) }
         if (crew.any { it.second == null }) {
             for ((_, bot) in crew) bot?.let(bots::remove)
-            logger.warn { "nylo trio $tag: no room for its bots" }
+            logger.warn { "${where.name.lowercase()} trio $tag: no room for its bots" }
             return null
         }
         val owner = crew[0].second!!
         auto += owner
         for ((_, bot) in crew) raids.undying += bot!!
-        travel(owner, TobRoom.NYLOCAS)
-        val room = raids.byOwner[owner.username] as? NyloSolo ?: return null
+        travel(owner, where)
+        val room = raids.byOwner[owner.username] ?: return null
         for ((_, bot) in crew.drop(1)) {
             room.helpers += bot!!
             org.rsmod.game.entity.util.PathingEntityCommon.telejump(bot, d.collision, room.at(room.entry))
         }
-        trios[room] = NyloCrew(room, crew.map { it.second!! to it.first }, bots, d.mapClock, barrageButton, params)
+        val members = crew.map { it.second!! to it.first }
+        trios[room] =
+            when (room) {
+                is MaidenSolo -> MaidenCrew(room, members, bots, d.mapClock, barrageButton, MaidenCrewParams.parse(params))
+                is NyloSolo -> NyloCrew(room, members, bots, d.mapClock, barrageButton, NyloCrewParams.parse(params))
+                else -> return null
+            }
         return room
     }
 
-    /** `::tob watch`: a bot trio runs the Nylocas waves and you watch from the room's doorway (nothing targets you). */
+    /** `::tob watch [maiden]`: a bot trio plays the room (Nylocas unless named) and you watch from the doorway. */
     private val spectators = HashMap<SoloRoom, MutableList<Player>>()
     private var watchRuns = 0
 
-    private fun watch(player: Player) {
+    private fun watch(player: Player, where: TobRoom) {
         if (raids.forPlayer(player) != null || spectators.values.any { player in it }) return player.mes("You're already in the Theatre.")
-        val room = startTrio("w${++watchRuns}", NyloCrewParams()) ?: return player.mes("No room for a bot trio right now.")
+        val room = startTrio("w${++watchRuns}", where, "") ?: return player.mes("No room for a bot trio right now.")
         spectators.getOrPut(room) { ArrayList() } += player
         protectedAccess.launch(player) { telejump(room.at(room.entry), TeleportType.Exempt) }
-        player.mes("A bot trio takes on the Nylocas; you're watching from the doorway. It ends when Vasilias drops in.")
+        player.mes("A bot trio takes on ${where.label}; you're watching from the doorway (nothing targets you).")
     }
 
-    private fun spawnNyloBot(name: String, role: NyloRole): Player? {
-        val bot = bots.spawn(name, EXIT, NyloLoadout.worn(role), NyloLoadout.pack(role)) ?: return null
+    private fun spawnCrewBot(name: String, role: NyloRole, sets: List<GearSet>, seeking: Boolean): Player? {
+        val bot = bots.spawn(name, EXIT, NyloLoadout.worn(sets), NyloLoadout.pack(role, sets)) ?: return null
         for (slot in 0 until bot.inv.size) {
             val obj = bot.inv[slot] ?: continue
             val rune = (NyloLoadout.BARRAGE_RUNES + NyloLoadout.CHINCHOMPAS).firstOrNull { it.asRSCM(dev.openrune.rscm.RSCMType.OBJ) == obj.id } ?: continue
@@ -329,30 +339,46 @@ constructor(
         }
         bot.worn[dev.openrune.util.Wearpos.Quiver.slot] = org.rsmod.game.inv.InvObj(NyloLoadout.BOLTS, RUNES)
         org.rsmod.content.raids.tob.bloat.fillCharges(bot.inv)
-        org.rsmod.api.player.worn.DizanasQuiver.store(bot, NyloLoadout.ARROWS.asRSCM(dev.openrune.rscm.RSCMType.OBJ), RUNES)
+        val arrows = if (seeking) NyloLoadout.SEEKING_ARROWS else NyloLoadout.ARROWS
+        org.rsmod.api.player.worn.DizanasQuiver.store(bot, arrows.asRSCM(dev.openrune.rscm.RSCMType.OBJ), RUNES)
         if (role == NyloRole.Mage) org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(bot, "varbit.spellbook", 1)
         bot.varMoveSpeed = org.rsmod.game.movement.MoveSpeed.Run
         return bot
     }
 
-    /** A trio's tick: start on a 4 like a team does, then play until Vasilias spawns. */
-    private fun trioTick(room: SoloRoom, trio: NyloCrew) {
-        val nylo = room as NyloSolo
+    /** A bot walking in as a team does: fully potted (super combat, ranging, saturated heart), full spec, prayers up. */
+    private fun potUp(bot: Player) {
+        for (stat in MELEE_STATS) bot.statBoost(stat, SUPER_COMBAT_BOOST, SUPER_COMBAT_PERCENT)
+        bot.statBoost("stat.ranged", RANGING_BOOST, RANGING_PERCENT)
+        bot.statBoost("stat.magic", HEART_BOOST, HEART_PERCENT)
+        org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(bot, "varp.sa_energy", FULL_SPEC)
+        for (prayer in OFFENSIVE_PRAYERS) org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(bot, prayer, 1)
+    }
+
+    /** A trio's tick: start on a 4 like a team does, then play until the crew's run is over. */
+    private fun trioTick(room: SoloRoom, trio: BotCrew) {
+        val crew = listOf(room.owner) + room.helpers
         if (room.t < 0) {
             // as a Yes clicked on the timer's 4: the room's first tick comes on its 2
             if (d.mapClock.cycle - room.builtAt < 4 || room.instanceTick != 1) return
-            for (p in listOf(room.owner) + room.helpers) org.rsmod.game.entity.util.PathingEntityCommon.telejump(p, d.collision, room.at(room.autoStart))
+            for ((p, at) in crew.zip(trio.starts())) org.rsmod.game.entity.util.PathingEntityCommon.telejump(p, d.collision, room.at(at))
+            for (p in crew) if (p in bots.all) potUp(p)
             room.start()
             return
         }
-        for (p in listOf(room.owner) + room.helpers) if (p in bots.all) p.runEnergy = org.rsmod.api.config.constants.run_max_energy
+        for (p in crew) {
+            if (p !in bots.all) continue
+            p.runEnergy = org.rsmod.api.config.constants.run_max_energy
+            val missing = p.statBase("stat.prayer") - p.stat("stat.prayer")
+            if (missing > 0) p.statAdd("stat.prayer", missing, 0)
+        }
         trio.tick()
         val linger = if (room in spectators) WATCH_LINGER else 0
-        if (nylo.bossTick >= 0 && room.t >= nylo.bossTick + linger) {
-            logger.info { "nylo trio ${room.owner.username}: Vasilias at room tick ${nylo.bossTick} (${raidTime(nylo.bossTick)}), waves ${nylo.wavesSpawned}, nulls ${nylo.nulls}, stalls ${nylo.stalls}, pillars ${nylo.pillarsStanding}" }
+        val done = trio.doneAt()
+        if (done >= 0 && room.t >= done + linger) {
+            logger.info { "${room.id.name.lowercase()} trio ${room.owner.username}: ${trio.summary()}" }
             trios.remove(room)
             auto.remove(room.owner)
-            val crew = listOf(room.owner) + room.helpers
             close(room)
             for (p in crew) {
                 raids.undying -= p
@@ -360,15 +386,10 @@ constructor(
             }
             for (p in spectators.remove(room) ?: emptyList()) {
                 if (!p.isSlotAssigned) continue
-                p.mes("The bots got Vasilias out at ${raidTime(nylo.bossTick)} (${nylo.stalls} stalls).")
+                p.mes("The bots are done: ${trio.summary()}.")
                 protectedAccess.launch(p) { telejump(EXIT, TeleportType.Exempt) }
             }
         }
-    }
-
-    private fun raidTime(ticks: Int): String {
-        val cs = ticks * 60
-        return "%d:%02d.%d".format(cs / 6000, cs / 100 % 60, cs / 10 % 10)
     }
 
     /** Tests: the server plays the room's owner - starts the room, attacks what the room says, walks out when clear. */
@@ -448,6 +469,16 @@ constructor(
                 "npc.nylocas_boss_spawning", "npc.nylocas_boss_melee", "npc.nylocas_boss_ranged", "npc.nylocas_boss_magic", "npc.tob_xarpus_combat",
                 "npc.tob_xarpus_static", "npc.tob_xarpus_feeding", "npc.verzik_phase2")
         const val RUNES = 100_000
+        val MELEE_STATS = listOf("stat.attack", "stat.strength", "stat.defence")
+        const val SUPER_COMBAT_BOOST = 5
+        const val SUPER_COMBAT_PERCENT = 15
+        const val RANGING_BOOST = 4
+        const val RANGING_PERCENT = 10
+        const val HEART_BOOST = 4
+        const val HEART_PERCENT = 10
+        const val FULL_SPEC = 1000
+        /** Bots keep each style's prayer on at once: the same as flicking the right one with every switch. */
+        val OFFENSIVE_PRAYERS = listOf("varbit.prayer_piety", "varbit.prayer_rigour", "varbit.prayer_augury")
         const val WATCH_LINGER = 8
         val SELF_TEST_GEAR =
             listOf(

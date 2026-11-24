@@ -1172,6 +1172,15 @@ constructor(
      * @param sunfireRune Set to `true` if the spell was cast using a Sunfire rune.
      * @return `true` if the accuracy roll succeeds (the spell will "land"), `false` otherwise.
      */
+    /** [source]'s magic attack roll for [spell] on [target], before the target's defence roll. */
+    public fun spellAttackRoll(
+        source: Player,
+        target: Npc,
+        spell: ItemServerType,
+        spellbook: Spellbook?,
+        sunfireRune: Boolean,
+    ): Int = accuracy.getSpellAttackRoll(source, target, spell, spellbook, sunfireRune)
+
     public fun rollSpellAccuracy(
         source: Player,
         target: PathingEntity,

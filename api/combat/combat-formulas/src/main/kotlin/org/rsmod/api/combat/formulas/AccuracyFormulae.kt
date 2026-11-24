@@ -463,6 +463,15 @@ constructor(
         return isSuccessfulHit(hitChance, random)
     }
 
+    /** The [player]'s magic attack roll for [spell] on [target] (see [PvNMagicAccuracy.getSpellAttackRoll]). */
+    public fun getSpellAttackRoll(
+        player: Player,
+        target: Npc,
+        spell: ItemServerType,
+        spellbook: Spellbook?,
+        usedSunfireRune: Boolean,
+    ): Int = pvnMagicAccuracy.getSpellAttackRoll(player, target, spell, spellbook, usedSunfireRune)
+
     /**
      * Calculates the magic spell hit chance based on the [player]'s magic attack roll and the
      * [target]'s magic defence roll.

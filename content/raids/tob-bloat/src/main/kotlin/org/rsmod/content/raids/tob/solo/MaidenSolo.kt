@@ -14,14 +14,15 @@ import kotlin.math.floor
 import kotlin.math.min
 
 /**
- * The Maiden of Sugadinti, solo (trio-and-under numbers: 2625 hitpoints, crabs 75, blood spawns 90).
+ * The Maiden of Sugadinti (trio-and-under numbers: 2625 hitpoints, crabs 75, blood spawns 90), for the owner and any
+ * bots raiding with them: each attack goes at one of the party at random.
  *
  * - She attacks every 10 ticks from tick 9: Blackstorm at you (36 + 3.5 per crab that reached her; Protect from Magic
  *   halves it; half the time it drains the stat you're attacking with), or blood splats - one on your tile and two more
  *   in a 5x5 round you - after which she can't throw blood for her next two attacks.
  * - A splat hurts and heals her while you stand on it (10 + 2 per crab) and drains prayer; when it dries there's a
  *   chance (10%, 20% if stood on) a blood spawn rises from it. Blood spawns wander leaving a trail that does the same.
- * - At 70%, 50% and 30% two Nylocas Matomenos come in from the north and south sides and walk to her (one tile a
+ * - At 70%, 50% and 30% two Nylocas Matomenos a player come in from the north and south sides and walk to her (one tile a
  *   tick, frozen ones stay put); one that reaches her heals her twice its hitpoints and makes her hit harder.
  */
 class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: CoordGrid, copyBase: CoordGrid) :
@@ -32,12 +33,18 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     override fun inArena(c: CoordGrid): Boolean = c.x in 3160..3184 && c.z in 4435..4458
 
     private lateinit var maiden: Npc
-    private var phase = 0
+    /** Procs so far: 1 after the 70s, 2 the 50s, 3 the 30s. */
+    var phase = 0
+        private set
     private var leaks = 0
     private var throwCooldown = 0
     private var dead = -1
 
-    private class Crab(val npc: Npc) {
+    /** What crabs that reached her healed her, this run. */
+    var healed = 0
+        private set
+
+    private class Crab(val npc: Npc, val spot: Int) {
         var arrived = false
         var leakedAt = -1
     }
@@ -60,6 +67,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         leaks = 0
         throwCooldown = 0
         dead = -1
+        healed = 0
         crabs.clear()
         splats.clear()
         spawns.clear()
@@ -90,12 +98,12 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             die()
             return
         }
-        val p = inside()
+        val party = party()
         phases()
-        if (p != null && t >= FIRST_ATTACK && (t - FIRST_ATTACK) % ATTACK_EVERY == 0) attack(p)
-        crabs(p)
-        splats(p)
-        bloodSpawns(p)
+        if (party.isNotEmpty() && t >= FIRST_ATTACK && (t - FIRST_ATTACK) % ATTACK_EVERY == 0) attack(party[rand(party.size)])
+        crabs()
+        splats(party)
+        bloodSpawns()
     }
 
     /* ---- her phases and the crabs they bring */
@@ -116,14 +124,21 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     }
 
     private fun spawnCrabs() {
-        val spots = CRAB_SPOTS.shuffled(java.util.Random(d.random.of(Int.MAX_VALUE).toLong())).take(CRABS)
-        for ((x, y) in spots) {
-            val n = spawn(CRAB, CoordGrid(x, y, 0), hp(CRAB_HP, ENTRY_CRAB_HP))
-            crabs += Crab(n)
+        val count = (CRABS_EACH * party().size).coerceIn(CRABS_EACH, CRAB_SPOTS.size)
+        val left = CRAB_SPOTS.indices.toMutableList()
+        repeat(count) {
+            var roll = rand(left.sumOf { CRAB_WEIGHTS[it] })
+            val spot = left.first { i -> (roll < CRAB_WEIGHTS[i]).also { roll -= CRAB_WEIGHTS[i] } }
+            left -= spot
+            val (x, y) = CRAB_SPOTS[spot]
+            val crab = spawn(CRAB, CoordGrid(x, y, 0), hp(CRAB_HP, ENTRY_CRAB_HP))
+            // the Nylocas Matomenos wiki: a freeze can't miss them from an accurate enough caster
+            crab.vars["varn.freeze_guaranteed"] = FREEZE_SURE_ON_ROLL
+            crabs += Crab(crab, spot)
         }
     }
 
-    private fun crabs(p: Player?) {
+    private fun crabs() {
         val it = crabs.iterator()
         while (it.hasNext()) {
             val c = it.next()
@@ -160,6 +175,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             if (!c.arrived || c.leakedAt >= 0 || !n.isSlotAssigned || n.hitpoints <= 0) continue
             c.leakedAt = t - 1
             leaks++
+            healed += n.hitpoints * 2
             healNpc(maiden, n.hitpoints * 2)
             deathAnim(n)
             n.hitpoints = 0
@@ -205,7 +221,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val max = floor(BASE_MAX + PER_LEAK * leaks).toInt()
         val roll = rand(0, max)
         later(lands) {
-            val q = inside() ?: return@later
+            val q = p.takeIf { it in party() } ?: return@later
             val dmg = if (prays(q, "magic")) roll / 2 else roll
             hurt(q, dmg, source = maiden)
             if (dmg > 0 && chance(0.5)) drain(q, (dmg + 1) / 5)
@@ -245,8 +261,8 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         }
     }
 
-    private fun splats(p: Player?) {
-        val here = p?.let { real(it.coords) }
+    private fun splats(party: List<Player>) {
+        val here = party.associateWith { real(it.coords) }
         val it = splats.iterator()
         while (it.hasNext()) {
             val s = it.next()
@@ -258,13 +274,14 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                 }
                 continue
             }
-            if (p != null && here == s.tile) {
+            for ((p, tile) in here) {
+                if (tile != s.tile) continue
                 s.stoodOn = true
                 bleed(p)
             }
         }
         // the trails left by blood spawns
-        if (p != null && here != null) trails[here]?.let { bleed(p) }
+        for ((p, tile) in here) if (trails.containsKey(tile)) bleed(p)
         val dry = trails.entries.filter { t >= it.value.second }
         for (e in dry) {
             delLoc(e.value.first)
@@ -282,7 +299,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         p.statSub("stat.prayer", constant = dmg / 2 + 1, percent = 0)
     }
 
-    private fun bloodSpawns(p: Player?) {
+    private fun bloodSpawns() {
         val it = spawns.iterator()
         while (it.hasNext()) {
             val s = it.next()
@@ -337,6 +354,23 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         }
     }
 
+    /** A crab as a bot sees it: its spawn, tiles from her, the clock its freeze ends on, and whether it's melting in. */
+    class CrabView(val npc: Npc, val spot: String, val gap: Int, val frozenUntil: Int, val arrived: Boolean)
+
+    fun crabViews(): List<CrabView> =
+        crabs.filter { it.npc.isSlotAssigned && it.npc.hitpoints > 0 && it.leakedAt < 0 }
+            .map { CrabView(it.npc, SPOT_NAMES[it.spot], gap(it.npc), it.npc.vars["varn.freeze_end_clock"], it.arrived) }
+
+    val boss: Npc
+        get() = maiden
+
+    /** The room tick she died on (-1 while she's up), and the crabs that reached her. */
+    val deadAt: Int
+        get() = dead
+
+    val leaked: Int
+        get() = leaks
+
     override fun autoTarget(): Npc? =
         if (System.getenv("TOB_LEAK") != null) maiden
         else crabs.firstOrNull { it.npc.isSlotAssigned && it.npc.hitpoints > 0 && it.leakedAt < 0 }?.npc ?: maiden
@@ -369,7 +403,8 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val CRAB = "npc.maiden_elemental"
         const val CRAB_HP = 75
         const val ENTRY_CRAB_HP = 16
-        const val CRABS = 2
+        const val CRABS_EACH = 2
+        const val FREEZE_SURE_ON_ROLL = 2
         const val LEAK_DESPAWN = 2
         const val BLOOD_SPAWN = "npc.maiden_blood_slug"
         const val SPAWN_HP = 90
@@ -391,11 +426,13 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val RANGED_WORDS = listOf("bow", "chinchompa", "blowpipe", "dart", "knife", "javelin", "thrownaxe", "ballista", "eclipse atlatl")
         val MAGIC_WORDS = listOf("staff", "wand", "sceptre", "trident", "shadow", "sanguinesti", "harmonised", "nightmare", "ayak", "kodai")
 
-        /** Blert's ten crab spawns (N1-N4 outer, S1-S4 outer). */
+        /** Blert's ten crab spawns (N1-N4 outer, S1-S4 outer), and how often each came in Blert's 50 fastest trios. */
         val CRAB_SPOTS =
             listOf(
                 3173 to 4456, 3177 to 4456, 3181 to 4456, 3185 to 4454, 3185 to 4456,
                 3173 to 4436, 3177 to 4436, 3181 to 4436, 3185 to 4438, 3185 to 4436,
             )
+        val CRAB_WEIGHTS = listOf(44, 66, 110, 109, 107, 59, 79, 107, 109, 104)
+        val SPOT_NAMES = listOf("N1", "N2", "N3", "N4a", "N4b", "S1", "S2", "S3", "S4a", "S4b")
     }
 }
