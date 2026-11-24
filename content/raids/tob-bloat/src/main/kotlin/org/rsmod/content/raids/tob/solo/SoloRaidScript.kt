@@ -349,7 +349,7 @@ constructor(
         trio.tick()
         val linger = if (room in spectators) WATCH_LINGER else 0
         if (nylo.bossTick >= 0 && room.t >= nylo.bossTick + linger) {
-            logger.info { "nylo trio ${room.owner.username}: Vasilias at room tick ${nylo.bossTick} (${raidTime(nylo.bossTick)}), waves ${nylo.wavesSpawned}, stalls ${nylo.stalls}, pillars ${nylo.pillarsStanding}" }
+            logger.info { "nylo trio ${room.owner.username}: Vasilias at room tick ${nylo.bossTick} (${raidTime(nylo.bossTick)}), waves ${nylo.wavesSpawned}, nulls ${nylo.nulls}, stalls ${nylo.stalls}, pillars ${nylo.pillarsStanding}" }
             trios.remove(room)
             auto.remove(room.owner)
             val crew = listOf(room.owner) + room.helpers
@@ -438,9 +438,14 @@ constructor(
         const val CHEST = "loc.tob_midway_chest_closed"
         const val NPC_VIEW = 32
         const val SELF_TEST_AT = 30
-        /** NPCs whose hits are judged by how things stood when they were thrown (Vasilias's colour, Xarpus's gaze, a P2 kill). */
+        /** NPCs whose hits are judged when thrown (Vasilias's colour, Xarpus's gaze, a P2 kill, a nylocas' damage on its way). */
         val QUEUE_WATCHED =
-            listOf("npc.nylocas_boss_spawning", "npc.nylocas_boss_melee", "npc.nylocas_boss_ranged", "npc.nylocas_boss_magic", "npc.tob_xarpus_combat",
+            listOf(
+                "npc.tob_nylocas_incoming_melee", "npc.tob_nylocas_incoming_ranged", "npc.tob_nylocas_incoming_magic",
+                "npc.tob_nylocas_big_incoming_melee", "npc.tob_nylocas_big_incoming_ranged", "npc.tob_nylocas_big_incoming_magic",
+                "npc.tob_nylocas_fighting_melee", "npc.tob_nylocas_fighting_ranged", "npc.tob_nylocas_fighting_magic",
+                "npc.tob_nylocas_big_fighting_melee", "npc.tob_nylocas_big_fighting_ranged", "npc.tob_nylocas_big_fighting_magic",
+                "npc.nylocas_boss_spawning", "npc.nylocas_boss_melee", "npc.nylocas_boss_ranged", "npc.nylocas_boss_magic", "npc.tob_xarpus_combat",
                 "npc.tob_xarpus_static", "npc.tob_xarpus_feeding", "npc.verzik_phase2")
         const val RUNES = 100_000
         const val WATCH_LINGER = 8

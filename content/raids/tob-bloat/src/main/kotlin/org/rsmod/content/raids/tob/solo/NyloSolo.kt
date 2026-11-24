@@ -20,8 +20,8 @@ import kotlin.math.abs
  *
  * - Nylocas walk their lane to its end, then to their pillar (attacking it until it falls) - or, if aggressive, turn
  *   into the "fighting" form there and come for you (melee ones to a tile straight beside you, ranged and magic ones to
- *   within 2). Only their own style hurts them; a wrong-style hit nulls one, and after that nothing you do hurts it -
- *   every hit shows its shield and a blue 0.
+ *   within 2). Only their own style hurts them; a wrong-style hit nulls one for whoever threw it, and after that nothing
+ *   that player does hurts it - every hit of theirs shows its shield and a blue 0 (Blert's mechanics guide).
  * - A flicker changes style halfway down its lane (5 ticks in), and again 2 ticks later to its last style.
  * - A big one splits into two small ones of random styles when it dies, killed or gone off. Every nylocas explodes
  *   52 ticks after it spawns (a big one 53), hurting anyone next to it.
@@ -61,7 +61,8 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         var nextAttack = 0
         var diedAt = -1
         var exploding = -1
-        var nulled = false
+        val nulledBy = HashSet<Player>()
+        var pending = 0
         var biting = false
         val size: Int
             get() = if (big) 2 else 1
@@ -84,6 +85,9 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
 
     /** Wave checks the cap held back, so far. */
     var stalls = 0
+
+    /** Nylocas a wrong-style hit has nulled, so far. */
+    var nulls = 0
         private set
     private var bossAt = -1
     private var boss: Npc? = null
@@ -103,6 +107,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         wave = 0
         nextWaveAt = FIRST_WAVE
         stalls = 0
+        nulls = 0
         lastWaveAt = 0
         bossAt = -1
         boss = null
@@ -148,10 +153,11 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             return hit.damage
         }
         val n = nylos.firstOrNull { it.npc === npc } ?: return null
+        if (hit.queueTag > 0) n.pending -= hit.queueTag - 1
         if (hit.type == HitType.Typeless) return hit.damage
-        // a wrong style nulls it: from then on nothing you do hurts it (Blert), and every hit shows its shield
-        if (hit.type != styleType(n.style)) n.nulled = true
-        if (!n.nulled) return hit.damage
+        val p = attacker(hit) ?: return hit.damage
+        if (hit.type != styleType(n.style) && n.nulledBy.add(p)) nulls++
+        if (p !in n.nulledBy) return hit.damage
         npc.spotanim(SHIELDED)
         return 0
     }
@@ -162,6 +168,14 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
      * even if he changes before it lands, and one thrown at the wrong colour heals him and comes back.
      */
     override fun queued(npc: Npc, hit: org.rsmod.game.hit.HitBuilder) {
+        nylos.firstOrNull { it.npc === npc }?.let { n ->
+            val p = attacker(hit)
+            val hurts = hit.type == HitType.Typeless || (hit.type == styleType(n.style) && p !in n.nulledBy)
+            val dealt = if (hurts) hit.damage else 0
+            n.pending += dealt
+            hit.queueTag = dealt + 1
+            return
+        }
         if (npc !== boss || bossDead >= 0) return
         if (bossStyle != '-') hit.queueTag = if (rightStyle(hit.type)) TAG_RIGHT else TAG_WRONG
         if (bossTarget == null) bossTarget = attacker(hit)
@@ -570,11 +584,11 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     }
 
     /** A live nylocas as a bot sees it: its style now, size, when it came and whether it hunts players. */
-    class Target(val npc: Npc, val style: Char, val big: Boolean, val born: Int, val aggro: Boolean, val wave: Int, val onPillar: Boolean)
+    class Target(val npc: Npc, val style: Char, val big: Boolean, val born: Int, val aggro: Boolean, val wave: Int, val onPillar: Boolean, val nulledBy: Set<Player>, val doomed: Boolean)
 
     fun targets(): List<Target> =
-        nylos.filter { it.npc.isSlotAssigned && it.npc.hitpoints > 0 && it.exploding < 0 && !it.nulled }
-            .map { Target(it.npc, it.style, it.big, it.born, it.aggro, it.wave, it.biting) }
+        nylos.filter { it.npc.isSlotAssigned && it.npc.hitpoints > 0 && it.exploding < 0 && it.nulledBy.size < party().size }
+            .map { Target(it.npc, it.style, it.big, it.born, it.aggro, it.wave, it.biting, it.nulledBy, it.pending >= it.npc.hitpoints) }
 
     /** The tick Vasilias drops in (-1 until the last nylocas is gone), and the waves spawned so far. */
     val bossTick: Int

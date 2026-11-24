@@ -79,14 +79,15 @@ class NyloCrew(
         val now = clock.cycle
         claimed.entries.removeIf { (npc, claim) -> !npc.isSlotAssigned || npc.hitpoints <= 0 || claim.second < room.t }
         unreachable.entries.removeIf { it.value < room.t }
-        val all = room.targets().filter { onFloor(room.real(it.npc.coords)) }
+        everyone = room.targets()
+        val all = everyone.filter { onFloor(room.real(it.npc.coords)) }
         val wanted = all
         spare = spareOnes(all)
         for ((bot, role) in members) {
             if (!bot.isSlotAssigned || bot.hitpoints <= 0) continue
             if (bot.actionDelay > now + 1) continue
             noteStuck(bot, now)
-            val plan = best(bot, role, wanted)
+            val plan = best(bot, role, wanted.filter { bot !in it.nulledBy && !it.doomed })
             if (plan == null) prefire(bot, role) else act(bot, plan)
         }
     }
@@ -95,6 +96,9 @@ class NyloCrew(
 
     /** This tick's nylocas not worth a hit unless nothing better is up (see [spareOnes]). */
     private var spare: Set<Npc> = emptySet()
+
+    /** Every nylocas someone can still hurt, lanes included: an area hit nulls any of the wrong colour it catches. */
+    private var everyone: List<NyloSolo.Target> = emptyList()
 
     /**
      * Players' logic: a nylocas that will go off on its own before the room could be done anyway (wave 31 out on
@@ -125,7 +129,7 @@ class NyloCrew(
                 if (holder != null && holder != bot && !target.big && weapon.area == Area.Single) continue
                 val victims = victims(weapon, target, wanted, here)
                 if (weapon == Weapon.Dinh && victims.size < params.dinhMin) continue
-                val score = score(bot, role, weapon, target, victims, here)
+                val score = score(bot, role, weapon, target, victims, nulled(bot, weapon, target, here), here)
                 if (best == null || score > best.score) best = Plan(weapon, target, victims, score)
             }
         }
@@ -147,25 +151,49 @@ class NyloCrew(
         }
     }
 
-    private fun score(bot: Player, role: NyloRole, weapon: Weapon, target: NyloSolo.Target, victims: List<NyloSolo.Target>, here: CoordGrid): Double {
-        var value = 0.0
-        for (v in victims) {
-            var worth = if (v.big) params.bigWorth else 1.0
-            if (v.big && splitsWouldStall()) worth *= params.bigBeforeCheck
-            if (v.aggro) worth *= params.aggroWorth
-            if (v.onPillar) worth *= params.pillarWorth
-            if (weapon.area == Area.Scythe && v.big) worth *= params.scytheBig
-            worth *= 1.0 + params.youth * room.lifeLeft(v).coerceIn(0, LIFE) / LIFE
-            if (v.npc in spare) worth *= params.spareWorth
-            value += worth
+    /** The wrong-coloured nylocas an attack would also catch: each one this bot nulls is one it can't hurt again. */
+    private fun nulled(bot: Player, weapon: Weapon, target: NyloSolo.Target, from: CoordGrid): List<NyloSolo.Target> {
+        val at = room.real(target.npc.coords)
+        val others = everyone.filter { it !== target && it.style != weapon.hits && bot !in it.nulledBy && !it.doomed }
+        return when (weapon.area) {
+            Area.Single -> emptyList()
+            Area.Bash -> others.filter { dist(from, room.real(it.npc.coords), size(it)) <= BASH_RADIUS }
+            Area.Square -> others.filter { overlaps(room.real(it.npc.coords), size(it), at.x - 1, at.z - 1, at.x + size(target), at.z + size(target)) }
+            Area.Line, Area.Scythe -> {
+                if (weapon.area == Area.Scythe && target.big) return emptyList()
+                val dx = Integer.signum(at.x - from.x)
+                val dz = Integer.signum(at.z - from.z)
+                val tiles =
+                    if (weapon.area == Area.Line) (1 until LINE_TILES).map { CoordGrid(at.x + dx * it, at.z + if (dx != 0) 0 else dz * it, 0) }
+                    else listOf(CoordGrid(at.x + dz, at.z + dx, 0), CoordGrid(at.x - dz, at.z - dx, 0))
+                others.filter { o -> tiles.any { overlaps(room.real(o.npc.coords), size(o), it.x, it.z, it.x, it.z) } }
+            }
         }
+    }
+
+    private fun score(bot: Player, role: NyloRole, weapon: Weapon, target: NyloSolo.Target, victims: List<NyloSolo.Target>, nulls: List<NyloSolo.Target>, here: CoordGrid): Double {
+        var value = victims.sumOf { worth(weapon, it) }
         if (target.style == role.style) value *= params.ownColour
+        if (weapon.area == Area.Square) value *= params.areaWorth
+        value -= params.nullCost * nulls.sumOf { worth(Weapon.Ayak, it) }
+        if (value <= 0.0) return value
         val reach = dist(here, room.real(target.npc.coords), size(target))
         val walk = (reach - weapon.range).coerceAtLeast(0) * params.walkCost
         val swap = if (wearing(bot, weapon.set)) 0.0 else params.swapCost
         val stay = if (current(bot) == target.npc) 1.0 + params.stickiness else 1.0
         val ahead = 1.0 / (1.0 + params.lookahead * drift(role, target) / LOOKAHEAD_SCALE)
         return value / (weapon.speed + walk + swap) * stay * ahead
+    }
+
+    private fun worth(weapon: Weapon, v: NyloSolo.Target): Double {
+        var worth = if (v.big) params.bigWorth else 1.0
+        if (v.big && splitsWouldStall()) worth *= params.bigBeforeCheck
+        if (v.aggro) worth *= params.aggroWorth
+        if (v.onPillar) worth *= params.pillarWorth
+        if (weapon.area == Area.Scythe && v.big) worth *= params.scytheBig
+        worth *= 1.0 + params.youth * room.lifeLeft(v).coerceIn(0, LIFE) / LIFE
+        if (v.npc in spare) worth *= params.spareWorth
+        return worth
     }
 
     /** Shield Bash (half the bar, in the late waves Blert's trios save it for), only into a crowd of melee nylocas. */
@@ -335,6 +363,8 @@ data class NyloCrewParams(
     val dinhWave: Int = 26,
     val dinhMin: Int = 5,
     val youth: Double = 2.0,
+    val nullCost: Double = 1.0,
+    val areaWorth: Double = 1.0,
 ) {
     companion object {
         fun parse(text: String): NyloCrewParams {
@@ -360,6 +390,8 @@ data class NyloCrewParams(
                 lookaheadTicks = int("lookaheadTicks", d.lookaheadTicks),
                 dinhWave = int("dinhWave", d.dinhWave),
                 dinhMin = int("dinhMin", d.dinhMin),
+                nullCost = num("nullCost", d.nullCost),
+                areaWorth = num("areaWorth", d.areaWorth),
             )
         }
     }
