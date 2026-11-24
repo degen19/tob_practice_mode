@@ -58,7 +58,7 @@ class NyloCrew(
         Blowpipe(NyloLoadout.BLOWPIPE, 'R', 2, 5, Area.Single, 1),
         Tbow(NyloLoadout.TBOW, 'R', 5, 10, Area.Single, 1),
         Chins(NyloLoadout.CHINS, 'R', 3, 9, Area.Square, 1),
-        Crossbows(NyloLoadout.CROSSBOWS, 'R', 4, 7, Area.Single, 1),
+        Crossbows(NyloLoadout.CROSSBOWS, 'R', 2, 7, Area.Single, 1),
         Ayak(NyloLoadout.AYAK, 'G', 3, 10, Area.Single, 0),
         Barrage(NyloLoadout.BARRAGE, 'G', 5, 10, Area.Square, 0),
         Dinh(NyloLoadout.DINH, 'M', 5, 1, Area.Bash, 0),
