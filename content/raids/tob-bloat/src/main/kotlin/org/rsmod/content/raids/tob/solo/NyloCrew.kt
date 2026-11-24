@@ -67,6 +67,8 @@ class NyloCrew(
 
     enum class Area { Single, Square, Line, Scythe, Bash }
 
+    class Play(val role: Char, val firstAge: Int, val deathAge: Int)
+
     private class Plan(val weapon: Weapon, val target: NyloSolo.Target, val victims: List<NyloSolo.Target>, val score: Double)
 
     private val weapons: Map<NyloRole, List<Weapon>> =
@@ -88,14 +90,20 @@ class NyloCrew(
         claimed.entries.removeIf { (npc, claim) -> !npc.isSlotAssigned || npc.hitpoints <= 0 || claim.second < room.t }
         unreachable.entries.removeIf { it.value < room.t }
         everyone = room.targets()
-        val all = everyone.filter { onFloor(room.real(it.npc.coords)) }
+        val all = everyone.filter { params.lanes || onFloor(room.real(it.npc.coords)) }
         val wanted = all
         spare = spareOnes(all)
+        if (TRACING && room.wavesSpawned >= TRACE_FROM && room.bossTick < 0 && room.t % 2 == 0) {
+            println("nylo ${members[0].first.username} t${room.t} alive " + everyone.joinToString(" ") { "w${it.wave}${if (it.big) "B" else ""}${it.style}:${it.npc.hitpoints}/${room.lifeLeft(it)}${if (it.npc in spare) "s" else ""}${if (onFloor(room.real(it.npc.coords))) "" else "L"}${if (it.nulledBy.isNotEmpty()) "n" + it.nulledBy.joinToString("") { p -> p.username.take(2) } else ""}${if (it.doomed) "d" else ""}${if (it.onPillar) "p" else ""}" })
+        }
         for ((bot, role) in members) {
             if (!bot.isSlotAssigned || bot.hitpoints <= 0) continue
             if (bot.actionDelay > now + 1) continue
             noteStuck(bot, now)
             val plan = best(bot, role, wanted.filter { bot !in it.nulledBy && !it.doomed })
+            if (TRACING && room.wavesSpawned >= TRACE_FROM && room.bossTick < 0) {
+                println("nylo ${members[0].first.username} t${room.t} $role " + (plan?.let { "${it.weapon} w${it.target.wave}${if (it.target.big) "B" else ""}${it.target.style}:${it.target.npc.hitpoints} x${it.victims.size}" } ?: "prefire"))
+            }
             if (plan == null) prefire(bot, role) else act(bot, plan)
         }
     }
@@ -115,7 +123,15 @@ class NyloCrew(
      * always worth it. Once every wave is out, the room ends when the last one goes: the crew kills the ones that would
      * last longest, as many as finishing them sooner than the rest go off on their own pays for.
      */
-    private fun spareOnes(all: List<NyloSolo.Target>): Set<Npc> {
+    private fun spareOnes(all: List<NyloSolo.Target>): Set<Npc> = spareFrom(all).filterTo(HashSet()) { npc -> !params.mustKill || all.none { it.npc === npc && mustKill(it) } }
+
+    /**
+     * Blert's 50 fastest trios: a big from the cap rise (wave 20) on is killed, never left to go off (1 of 950, at a
+     * median 15 ticks old), and so is every nylocas from wave 28 on (none of 1,770 went off).
+     */
+    private fun mustKill(t: NyloSolo.Target): Boolean = (t.big && t.wave >= POST_CAP) || t.wave >= LATE_WAVE
+
+    private fun spareFrom(all: List<NyloSolo.Target>): Set<Npc> {
         if (room.wavesSpawned >= room.wavesTotal) return cleanupSpare(all)
         val check = room.nextWaveCheck
         val standingAtCheck = all.filter { room.t + room.lifeLeft(it) > check }
@@ -148,6 +164,8 @@ class NyloCrew(
         val here = room.real(bot.coords)
         var best: Plan? = null
         for (weapon in weapons.getValue(role)) {
+            if (weapon.area == Area.Square && weapon != Weapon.Barrage && room.wavesSpawned < params.chinsFrom) continue
+            if (weapon == Weapon.Barrage && room.wavesSpawned >= params.barrageTo) continue
             for (target in wanted) {
                 if (target.style != weapon.hits) continue
                 if (weapon == Weapon.Dinh && !dinhReady(bot)) continue
@@ -157,7 +175,9 @@ class NyloCrew(
                 if (holder != null && holder != bot && !target.big && weapon.area == Area.Single) continue
                 val victims = victims(weapon, target, wanted, here)
                 if (weapon == Weapon.Dinh && victims.size < params.dinhMin) continue
-                val score = score(bot, role, weapon, target, victims, nulled(bot, weapon, target, here), here)
+                val nulls = nulled(bot, weapon, target, here)
+                if (params.keepBigs && nulls.any { it.big }) continue
+                val score = score(bot, role, weapon, target, victims, nulls, here)
                 if (best == null || score > best.score) best = Plan(weapon, target, victims, score)
             }
         }
@@ -200,10 +220,10 @@ class NyloCrew(
     }
 
     private fun score(bot: Player, role: NyloRole, weapon: Weapon, target: NyloSolo.Target, victims: List<NyloSolo.Target>, nulls: List<NyloSolo.Target>, here: CoordGrid): Double {
-        var value = victims.sumOf { worth(weapon, it) }
+        var value = victims.sumOf { worth(role, weapon, it) }
         if (target.style == role.style) value *= params.ownColour
         if (weapon.area == Area.Square) value *= params.areaWorth
-        value -= params.nullCost * nulls.sumOf { worth(Weapon.Ayak, it) }
+        value -= params.nullCost * nulls.sumOf { worth(role, Weapon.Ayak, it) }
         if (value <= 0.0) return value
         val reach = dist(here, room.real(target.npc.coords), size(target))
         val walk = (reach - weapon.range).coerceAtLeast(0) * params.walkCost
@@ -213,15 +233,27 @@ class NyloCrew(
         return value / (weapon.speed + walk + swap) * stay * ahead
     }
 
-    private fun worth(weapon: Weapon, v: NyloSolo.Target): Double {
+    private fun worth(role: NyloRole, weapon: Weapon, v: NyloSolo.Target): Double {
         var worth = if (v.big) params.bigWorth else 1.0
+        playOf(v)?.let { play ->
+            if (play.role != role.style) worth *= params.bookOther
+            else if (room.t - v.born >= play.firstAge - params.bookLead) worth *= params.bookWorth
+        }
         if (v.big && splitsWouldStall()) worth *= params.bigBeforeCheck
+        else if (v.big && room.wavesSpawned >= POST_CAP) worth *= params.postCapBig
         if (v.aggro) worth *= params.aggroWorth
         if (v.onPillar) worth *= params.pillarWorth
         if (weapon.area == Area.Scythe && v.big) worth *= params.scytheBig
-        worth *= 1.0 + params.youth * room.lifeLeft(v).coerceIn(0, LIFE) / LIFE
+        val left = room.lifeLeft(v) + if (v.big && params.bigYouth) LIFE else 0
+        worth *= 1.0 + params.youth * left.coerceIn(0, LIFE) / LIFE
         if (v.npc in spare) worth *= if (room.wavesSpawned >= room.wavesTotal) params.cleanupSpareWorth else params.spareWorth
         return worth
+    }
+
+    /** Who Blert's fastest trios have hit this wave nylocas first, and from what age (null: a split, or no clear call). */
+    private fun playOf(v: NyloSolo.Target): Play? {
+        val at = v.spawnTile ?: return null
+        return PLAYBOOK["${v.wave}:${at.x}:${at.z}:${if (v.big) 1 else 0}"]
     }
 
     /** Shield Bash (half the bar, in the late waves Blert's trios save it for), only into a crowd of melee nylocas. */
@@ -320,6 +352,20 @@ class NyloCrew(
         const val AREA_MAX = 9
         const val LINE_TILES = 3
         const val LIFE = 52
+        val TRACING = System.getenv("TOB_TRIO_TRACE") != null
+
+        /** Blert's 50 fastest regular trios, by wave spawn (`tob/nylo_playbook.tsv`): its role, first-hit age, death age. */
+        val PLAYBOOK: Map<String, Play> by lazy {
+            val text = NyloCrew::class.java.getResourceAsStream(PLAYBOOK_FILE)?.bufferedReader()?.readText() ?: return@lazy emptyMap()
+            text.lineSequence().filter { it.isNotBlank() && !it.startsWith("#") }.map { it.split('\t') }
+                .associate { f -> "${f[0]}:${f[1]}:${f[2]}:${f[3]}" to Play(f[4][0], f[5].toInt(), f[6].toInt()) }
+        }
+        const val PLAYBOOK_FILE = "/tob/nylo_playbook.tsv"
+        const val TRACE_FROM = 20
+
+        /** The wave the cap goes up on: from then, Blert's guide pops bigs fast so their splits come out early. */
+        const val POST_CAP = 20
+        const val LATE_WAVE = 28
         const val BIG_WORK = 3.0
         const val PREFIRE_SLACK = 3
         const val LANE_TICKS = 9
@@ -396,6 +442,16 @@ data class NyloCrewParams(
     val areaWorth: Double = 1.234,
     val cleanupRate: Double = 1.412,
     val cleanupSpareWorth: Double = 0.0,
+    val postCapBig: Double = 1.0,
+    val lanes: Boolean = false,
+    val mustKill: Boolean = false,
+    val keepBigs: Boolean = false,
+    val bookWorth: Double = 1.0,
+    val bookOther: Double = 1.0,
+    val bookLead: Int = 0,
+    val chinsFrom: Int = 0,
+    val barrageTo: Int = 99,
+    val bigYouth: Boolean = false,
 ) {
     companion object {
         fun parse(text: String): NyloCrewParams {
@@ -425,6 +481,16 @@ data class NyloCrewParams(
                 areaWorth = num("areaWorth", d.areaWorth),
                 cleanupRate = num("cleanupRate", d.cleanupRate),
                 cleanupSpareWorth = num("cleanupSpareWorth", d.cleanupSpareWorth),
+                postCapBig = num("postCapBig", d.postCapBig),
+                lanes = num("lanes", if (d.lanes) 1.0 else 0.0) != 0.0,
+                mustKill = num("mustKill", if (d.mustKill) 1.0 else 0.0) != 0.0,
+                keepBigs = num("keepBigs", if (d.keepBigs) 1.0 else 0.0) != 0.0,
+                bookWorth = num("bookWorth", d.bookWorth),
+                bookOther = num("bookOther", d.bookOther),
+                bookLead = int("bookLead", d.bookLead),
+                chinsFrom = int("chinsFrom", d.chinsFrom),
+                barrageTo = int("barrageTo", d.barrageTo),
+                bigYouth = num("bigYouth", if (d.bigYouth) 1.0 else 0.0) != 0.0,
             )
         }
     }

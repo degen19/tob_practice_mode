@@ -55,7 +55,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             get() = y + 1
     }
 
-    private inner class Nylo(val npc: Npc, val born: Int, val big: Boolean, val lane: String?, rot: String, var aggro: Boolean, var pillar: Pillar?, val wave: Int) {
+    private inner class Nylo(val npc: Npc, val born: Int, val big: Boolean, val lane: String?, rot: String, var aggro: Boolean, var pillar: Pillar?, val wave: Int, val spawnTile: CoordGrid? = null) {
         val rot = rot
         var style = rot[0]
         var fighting = false
@@ -63,7 +63,13 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         var diedAt = -1
         var exploding = -1
         val nulledBy = HashSet<Player>()
-        var pending = 0
+        /** Damage on its way (queued at, amount): a hit that never lands (its queue cleared) drops out after a while. */
+        val inbound = ArrayList<IntArray>()
+
+        fun pending(now: Int): Int {
+            inbound.removeIf { now - it[0] > PENDING_TICKS }
+            return inbound.sumOf { it[1] }
+        }
         var biting = false
         val size: Int
             get() = if (big) 2 else 1
@@ -154,7 +160,8 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             return hit.damage
         }
         val n = nylos.firstOrNull { it.npc === npc } ?: return null
-        if (hit.queueTag > 0) n.pending -= hit.queueTag - 1
+        if (HIT_TRACE && wave in 24..26) println("nylohit t$t w${n.wave}${if (n.big) "B" else ""}${n.style} ${hit.type} ${hit.damage} by ${attacker(hit)?.username} nulled ${n.nulledBy.map { it.username }}")
+        if (hit.queueTag > 0) n.inbound.firstOrNull { it[1] == hit.queueTag - 1 }?.let { n.inbound.remove(it) }
         if (hit.type == HitType.Typeless) return hit.damage
         val p = attacker(hit) ?: return hit.damage
         if (hit.type != styleType(n.style) && n.nulledBy.add(p)) nulls++
@@ -173,7 +180,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             val p = attacker(hit)
             val hurts = hit.type == HitType.Typeless || (hit.type == styleType(n.style) && p !in n.nulledBy)
             val dealt = if (hurts) hit.damage else 0
-            n.pending += dealt
+            if (dealt > 0) n.inbound += intArrayOf(t, dealt)
             hit.queueTag = dealt + 1
             return
         }
@@ -263,7 +270,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         val npc = spawn(typeOf(s.big, false, first), CoordGrid(OX + s.x, OY + s.y, 0), if (s.big) hp(BIG_HP, ENTRY_BIG_HP) else hp(SMALL_HP, ENTRY_SMALL_HP))
         npc.moveRestrict = dev.openrune.types.MoveRestrict.BlockedNormal
         val pillar = if (s.target == "A") null else pillars.first { it.name == s.target }
-        nylos += Nylo(npc, t, s.big, s.lane, s.rot, s.target == "A", pillar, wave)
+        nylos += Nylo(npc, t, s.big, s.lane, s.rot, s.target == "A", pillar, wave, CoordGrid(OX + s.x, OY + s.y, 0))
     }
 
     private fun split(at: CoordGrid) {
@@ -573,11 +580,12 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     }
 
     /** A live nylocas as a bot sees it: its style now, size, when it came and whether it hunts players. */
-    class Target(val npc: Npc, val style: Char, val big: Boolean, val born: Int, val aggro: Boolean, val wave: Int, val onPillar: Boolean, val nulledBy: Set<Player>, val doomed: Boolean)
+    /** A nylocas as a bot sees it ([spawnTile]: the real tile a wave nylocas came in on, null for a split). */
+    class Target(val npc: Npc, val style: Char, val big: Boolean, val born: Int, val aggro: Boolean, val wave: Int, val onPillar: Boolean, val nulledBy: Set<Player>, val doomed: Boolean, val spawnTile: CoordGrid?)
 
     fun targets(): List<Target> =
         nylos.filter { it.npc.isSlotAssigned && it.npc.hitpoints > 0 && it.exploding < 0 && it.nulledBy.size < party().size }
-            .map { Target(it.npc, it.style, it.big, it.born, it.aggro, it.wave, it.biting, it.nulledBy, it.pending >= it.npc.hitpoints) }
+            .map { Target(it.npc, it.style, it.big, it.born, it.aggro, it.wave, it.biting, it.nulledBy, it.pending(t) >= it.npc.hitpoints, it.spawnTile) }
 
     /** The tick Vasilias drops in (-1 until the last nylocas is gone), and the waves spawned so far. */
     val bossTick: Int
@@ -667,6 +675,10 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val ENTRY_BIG_HP = 3
         const val BIG_HP = 16
         const val SMALL_LIFE = 52
+
+        /** The longest a hit takes to land (a barrage from across the room): one queued longer ago never will. */
+        const val PENDING_TICKS = 6
+        val HIT_TRACE = System.getenv("TOB_HIT_TRACE") != null
         const val BIG_LIFE = 53
         const val BIG_BOOM_TICKS = 3
         const val DETONATE_TICKS = 2
