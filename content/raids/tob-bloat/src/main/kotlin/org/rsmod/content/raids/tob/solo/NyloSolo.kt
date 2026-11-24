@@ -290,16 +290,18 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         }
     }
 
-    /** Its look: its colour (and fighting stance), or nothing at all while Nylo Death Indicators has it marked dead. */
-    private fun look(n: Nylo) = transmog(n.npc, if (n.hidden) (if (n.big) HIDDEN_BIG else HIDDEN_SMALL) else typeOf(n.big, n.fighting, n.style))
+    private fun look(n: Nylo) = transmog(n.npc, typeOf(n.big, n.fighting, n.style))
 
-    /** Nylo Death Indicators: gone for everyone the moment an attack that kills it is thrown, back if that never lands. */
+    /**
+     * Nylo Death Indicators: taken off everyone's screen (nothing to see or click) the moment an attack that kills it is
+     * thrown, back if that never lands. The room still has it until the hit does.
+     */
     private fun doom(n: Nylo) {
         if (n.npc.hitpoints <= 0) return
         val doomed = PracticeSettings.nyloDeathIndicators && n.pending(t) >= n.npc.hitpoints
         if (doomed == n.hidden) return
         n.hidden = doomed
-        look(n)
+        if (doomed) n.npc.infoProtocol.hide() else n.npc.infoProtocol.reveal()
         if (!doomed) label(n)
     }
 
@@ -730,10 +732,6 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val FLICK_3 = 26
         const val LABEL_TICKS = 4
         val LABEL_COLOURS = mapOf('M' to "ffffff", 'R' to "00ff00", 'G' to "00ffff")
-
-        /** Multi-NPCs that show nothing to a player who hasn't touched their quest: a 1x1 and a 2x2. */
-        const val HIDDEN_SMALL = "npc.myarm_multi_walk0"
-        const val HIDDEN_BIG = "npc.dt2_hazeel_vault"
         const val LANE_TICKS = 14
         const val PILLAR_NPC = "npc.tob_nylocas_support"
         const val PILLAR_PRISTINE = "loc.tob_nylocas_support_pristine"

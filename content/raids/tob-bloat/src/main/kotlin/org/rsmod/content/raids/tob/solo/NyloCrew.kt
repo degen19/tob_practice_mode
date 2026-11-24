@@ -165,7 +165,7 @@ class NyloCrew(
         var goal = Math.floorDiv(room.t + BOSS_LEAD + GRID - 1, GRID) * GRID
         repeat(GOALS_TRIED) {
             val deadline = goal - BOSS_LEAD
-            val must = all.filter { gone(it) > deadline || it.aggro }
+            val must = all.filter { gone(it) > deadline || it.aggro || it.wave >= params.killFrom }
             val work = must.sumOf { if (it.big) BIG_WORK else 1.0 }
             if (room.t + work * params.cleanupRate <= deadline) return all.filter { it !in must }.mapTo(HashSet()) { it.npc }
             goal += GRID
@@ -614,6 +614,7 @@ data class NyloCrewParams(
     val playBarrage: Boolean = true,
     val playSpec: Boolean = true,
     val playSwitch: Boolean = true,
+    val killFrom: Int = 99,
 ) {
     companion object {
         fun parse(text: String): NyloCrewParams {
@@ -669,6 +670,7 @@ data class NyloCrewParams(
                 playBarrage = num("playBarrage", if (d.playBarrage) 1.0 else 0.0) != 0.0,
                 playSpec = num("playSpec", if (d.playSpec) 1.0 else 0.0) != 0.0,
                 playSwitch = num("playSwitch", if (d.playSwitch) 1.0 else 0.0) != 0.0,
+                killFrom = int("killFrom", d.killFrom),
             )
         }
     }
