@@ -459,7 +459,7 @@ constructor(
         const val CHEST = "loc.tob_midway_chest_closed"
         const val NPC_VIEW = 32
         const val SELF_TEST_AT = 30
-        /** NPCs whose hits are judged when thrown (Vasilias's colour, Xarpus's gaze, a P2 kill, a nylocas' damage on its way). */
+        /** NPCs whose hits are judged when thrown (Vasilias's colour, Xarpus's gaze, a nylocas' damage on its way). */
         val QUEUE_WATCHED =
             listOf(
                 "npc.tob_nylocas_incoming_melee", "npc.tob_nylocas_incoming_ranged", "npc.tob_nylocas_incoming_magic",
@@ -467,7 +467,7 @@ constructor(
                 "npc.tob_nylocas_fighting_melee", "npc.tob_nylocas_fighting_ranged", "npc.tob_nylocas_fighting_magic",
                 "npc.tob_nylocas_big_fighting_melee", "npc.tob_nylocas_big_fighting_ranged", "npc.tob_nylocas_big_fighting_magic",
                 "npc.nylocas_boss_spawning", "npc.nylocas_boss_melee", "npc.nylocas_boss_ranged", "npc.nylocas_boss_magic", "npc.tob_xarpus_combat",
-                "npc.tob_xarpus_static", "npc.tob_xarpus_feeding", "npc.verzik_phase2")
+                "npc.tob_xarpus_static", "npc.tob_xarpus_feeding")
         const val RUNES = 100_000
         val MELEE_STATS = listOf("stat.attack", "stat.strength", "stat.defence")
         const val SUPER_COMBAT_BOOST = 5

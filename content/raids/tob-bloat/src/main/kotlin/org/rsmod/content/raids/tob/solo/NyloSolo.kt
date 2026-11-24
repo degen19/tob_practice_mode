@@ -27,7 +27,8 @@ import kotlin.math.abs
  *   52 ticks after it spawns (a big one 53), hurting anyone next to it.
  * - A pillar that falls hurts you for up to 50, and the nylocas that were on it come for you. When all four are down
  *   the game wipes the room; for practice the waves carry on and Vasilias still comes.
- * - Vasilias drops in 16 ticks after the last nylocas goes, melee first; every 10 ticks he changes to another style.
+ * - Vasilias drops in 16 ticks after the last nylocas goes (a 2-tick descent), melee first, and goes for one of the party
+ *   straight away; every 10 ticks he changes to another style.
  *   The wrong style heals him and comes back at you. Melee: two attacks, 4 ticks apart; ranged/magic: one.
  */
 class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: CoordGrid, copyBase: CoordGrid) :
@@ -92,7 +93,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     private var bossAt = -1
     private var boss: Npc? = null
 
-    /** Who Vasilias goes for: no one until someone attacks him (he wanders until then). */
+    /** Who Vasilias goes for: one of the party, picked the moment his drop-in finishes (he never wanders). */
     private var bossTarget: Player? = null
     private var bossStyle = 'M'
     private var formAt = 0
@@ -178,7 +179,6 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         }
         if (npc !== boss || bossDead >= 0) return
         if (bossStyle != '-') hit.queueTag = if (rightStyle(hit.type)) TAG_RIGHT else TAG_WRONG
-        if (bossTarget == null) bossTarget = attacker(hit)
     }
 
     private fun rightStyle(type: HitType): Boolean = type == HitType.Typeless || type == styleType(bossStyle)
@@ -215,7 +215,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         nylos.removeAll { !it.npc.isSlotAssigned }
         cleanupEnd()
         pillarsTick()
-        bossTick(bossTarget?.takeIf { it in party })
+        bossTick(party)
     }
 
     /* ---- waves */
@@ -496,7 +496,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
 
     /* ---- Nylocas Vasilias */
 
-    private fun bossTick(p: Player?) {
+    private fun bossTick(party: List<Player>) {
         if (bossAt < 0 || t < bossAt) return
         if (t == bossAt) {
             recordEvent(123, "\"nyloBoss\":{}")
@@ -532,10 +532,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             bossNext = if (bossStyle == 'M') t + MELEE_FIRST else maxOf(t + RANGED_FIRST, bossLast + RANGED_GAP)
         }
         if (bossStyle == '-') return
-        if (p == null) {
-            wander(b)
-            return
-        }
+        val p = bossTarget?.takeIf { it in party } ?: (if (party.isEmpty()) null else party[rand(party.size)])?.also { bossTarget = it } ?: return
         val here = real(b.coords)
         val pc = real(p.coords)
         val dist = boxDist(pc.x, pc.z, here.x, here.z, here.x + BOSS_SIZE - 1, here.z + BOSS_SIZE - 1)
@@ -557,14 +554,6 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             if (p !in party()) return@later
             hurt(p, if (prays(p, prayer)) roll / 4 else roll, source = b)
         }
-    }
-
-    /** No one has attacked him yet: now and then he takes a step or two about the floor. */
-    private fun wander(b: Npc) {
-        if (frozen(b) || !b.routeDestination.isEmpty() || !chance(WANDER_CHANCE)) return
-        val here = real(b.coords)
-        val to = CoordGrid(here.x + rand(-WANDER_RANGE, WANDER_RANGE), here.z + rand(-WANDER_RANGE, WANDER_RANGE), 0)
-        if (to != here && free(to, BOSS_SIZE)) b.walk(at(to))
     }
 
     private fun form(s: Char) {
@@ -723,8 +712,6 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val BOSS_SIZE = 4
         const val TAG_RIGHT = 1
         const val TAG_WRONG = 2
-        const val WANDER_CHANCE = 0.125
-        const val WANDER_RANGE = 2
         const val BOSS_HP = 1875
         const val BOSS_CYCLES = 5
         const val BOSS_DROP = 2

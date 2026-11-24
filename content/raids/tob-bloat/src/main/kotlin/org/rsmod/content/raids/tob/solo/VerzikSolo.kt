@@ -77,7 +77,6 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private var p2Killed = false
 
     /** P2: damage thrown at her that hasn't landed yet (a hit counts against the hitpoints she had when it was thrown). */
-    private var p2Pending = 0
     private var summoning = -1
     private var athanatos: Npc? = null
     private var athanatosNext = 0
@@ -85,6 +84,9 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     /* P3 */
     private var special = 0
     private var specialUntil = -1
+
+    /** The tick her last yellows started (-1 until then). */
+    private var yellowAt = -1
     private var invulnerable = false
     private var enraged = false
     private var tornado: Npc? = null
@@ -116,6 +118,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         summoning = -1
         special = 0
         specialUntil = -1
+        yellowAt = -1
         invulnerable = false
         enraged = false
         tornado = null
@@ -126,7 +129,6 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         redCrabs.clear()
         redHeals.clear()
         p2Killed = false
-        p2Pending = 0
         redBorn.clear()
         redHome.clear()
         redGoal.clear()
@@ -199,8 +201,6 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             return if (hit.type == styleType(c.style)) hit.damage else 0
         }
         if (npc !== verzik) return null
-        if (phase == 2 && hit.damage > 0) p2Pending = (p2Pending - hit.damage).coerceAtLeast(0)
-        if (phase == 2 && hit.queueTag == LETHAL && dead < 0 && !invulnerable) p2Killed = true
         if (dead >= 0 || invulnerable || phase == 0 || phase == 12 || phase == 23) return 0
         if (phase == 1) {
             val dawn = hit.righthandType()?.id == DAWNBRINGER.asRSCM(dev.openrune.rscm.RSCMType.OBJ)
@@ -222,22 +222,16 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
      * red appears) and the live recording (first attack 12 ticks after the summon; the pop and its heal splat on the same
      * tick, 4 after her last attack).
      */
-    /** She can't be attacked while she charges a yellow (her powerblast). */
-    override fun attackable(npc: Npc): Boolean = !(npc === verzik && yellow != null)
+    /**
+     * Her yellows: no one can attack her for the 14 ticks after the powerblast starts (the first attack goes on the
+     * 15th and lands on the 16th); hits already on their way still land (the sim's P3 rules). Players act after the
+     * room's step, by when [t] has moved on to the next tick.
+     */
+    override fun attackable(npc: Npc): Boolean = !(npc === verzik && yellowAt >= 0 && t - 1 in yellowAt + 1..yellowAt + YELLOW_TICKS)
 
     override fun healedByHits(npc: Npc, hit: Hit): Boolean = npc === verzik && phase == 2 && shielded()
 
     private fun shielded(): Boolean = summoning >= 0 && t - 1 - summoning in 1..SHIELD_TICKS
-
-    /**
-     * P2 ends on the hit that would have killed her when it was thrown: a red's heal landing between the swing and the
-     * hit still shows, but she goes down.
-     */
-    override fun queued(npc: Npc, hit: org.rsmod.game.hit.HitBuilder) {
-        if (npc !== verzik || phase != 2 || shielded() || hit.damage <= 0) return
-        p2Pending += hit.damage
-        if (p2Pending >= npc.hitpoints) hit.queueTag = LETHAL
-    }
 
         private fun poisoned(hit: Hit): Boolean {
         val name = hit.righthandType()?.name?.lowercase() ?: return false
@@ -381,7 +375,6 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private fun p2(v: Npc) {
         if (v.hitpoints <= 1 || p2Killed) {
             p2Killed = false
-            p2Pending = 0
             redHeals.clear()
             phase = 23
             phaseAt = t
@@ -557,12 +550,12 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private fun alivePlayers(): Int = if (inside() != null) 1 else 0
 
     /**
-     * The reds pop (their death animation) 40 ticks after the summon and heal her that tick for what they have left after
-     * the tick's hits (a scythe swung the tick before lands first), gone two ticks later. If the hits took her down, the
-     * heal still shows but she dies.
+     * The reds pop (their death animation) 40 ticks after the summon (r40) and heal her on r41 for what they have left,
+     * after that tick's damage queue: a swing on r40 lands first, so if it takes her down the heal still shows but she
+     * dies (the sim's reds rules). [late] runs after the tick's npc and player processing, which is that order.
      */
     override fun late() {
-        val now = t - 1
+        val now = t - 2
         if (redHeals.none { it.first <= now }) return
         val v = verzik ?: return redHeals.clear()
         if (phase != 2 || dead >= 0) return redHeals.clear()
@@ -756,7 +749,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                 if (boxDist(here.x, here.z, vr.x, vr.z, vr.x + v.size - 1, vr.z + v.size - 1) <= 1) knock(v, p, 3)
             }
             2 -> {
-                invulnerable = true
+                yellowAt = t
                 specialUntil = t + YELLOW_TICKS
                 v.anim("seq.verzik_phase3_attack_powerblast")
                 recordAttack(v, 23)
@@ -1068,7 +1061,6 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val TORNADO_DESPAWN_SEQ = "seq.tob_shadow_projectile_despawn"
         const val TORNADO_DESPAWN_TICKS = 1
         const val DAWNBRINGER = "obj.verzik_special_weapon"
-        const val LETHAL = 1
         val CENTRE = CoordGrid(3167, 4315, 0)
         const val P1_X = 3166
         const val P1_Y = 4323
