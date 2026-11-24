@@ -176,6 +176,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             c.leakedAt = t - 1
             leaks++
             healed += n.hitpoints * 2
+            recordEvent(LEAK_EVENT, "\"npc\":{\"id\":${n.visType.id},\"roomId\":${n.slotId},\"hitpoints\":${(n.hitpoints shl 16) or n.baseHitpointsLvl}}")
             healNpc(maiden, n.hitpoints * 2)
             deathAnim(n)
             n.hitpoints = 0
@@ -405,6 +406,8 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val ENTRY_CRAB_HP = 16
         const val CRABS_EACH = 2
         const val FREEZE_SURE_ON_ROLL = 2
+        /** Blert's TOB_MAIDEN_CRAB_LEAK event. */
+        const val LEAK_EVENT = 100
         const val LEAK_DESPAWN = 2
         const val BLOOD_SPAWN = "npc.maiden_blood_slug"
         const val SPAWN_HP = 90

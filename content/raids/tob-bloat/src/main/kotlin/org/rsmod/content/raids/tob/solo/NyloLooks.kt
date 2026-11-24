@@ -54,4 +54,14 @@ internal object NyloLooks {
             'R' -> "spotanim.tob_nylocas_death_ranged_detonate"
             else -> "spotanim.tob_nylocas_death_magic_detonate"
         }
+
+    /** Vasilias drops in on his melee form's skeleton (the "tank" sequences are another rig and tear his model apart). */
+    const val BOSS_SPAWN = "seq.top_spider_melee_spawn"
+
+    fun bossDeath(s: Char): String =
+        when (s) {
+            'M' -> "seq.top_spider_melee_death"
+            'R' -> "seq.top_spider_ranged_death"
+            else -> "seq.top_spider_magic_death"
+        }
 }

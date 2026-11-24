@@ -501,7 +501,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         if (t == bossAt) {
             recordEvent(123, "\"nyloBoss\":{}")
             val b = spawn(BOSS_SPAWNING, CoordGrid(BOSS_X, BOSS_Y, 0), hp(BOSS_HP, entryHp(1800)))
-            b.anim("seq.tob_spider_tank_spawn")
+            b.anim(NyloLooks.BOSS_SPAWN)
             boss = b
             bossStyle = '-'
             return
@@ -520,7 +520,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             bossDead = t
             b.hitpoints = 0
             b.routeDestination.clear()
-            b.anim("seq.tob_spider_tank_death")
+            b.anim(NyloLooks.bossDeath(if (bossStyle == '-') 'M' else bossStyle))
             mes("Nylocas Vasilias is dead.")
             return
         }

@@ -129,7 +129,7 @@ class NyloLiveRoom(
         }
 
         override fun dead(t: Int) {
-            boss.anim(NyloRules.DEATH_SEQ)
+            boss.anim(NyloRules.DEATH_SEQ.getValue(engine.formAt(t)?.form ?: "melee"))
         }
     }
 

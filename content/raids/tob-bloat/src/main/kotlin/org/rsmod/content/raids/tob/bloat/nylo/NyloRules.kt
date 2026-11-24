@@ -9,8 +9,8 @@ object NyloRules {
     const val SIZE = 4
     const val SPAWNING = "npc.nylocas_boss_spawning"
     val FORM_NPC = mapOf("melee" to "npc.nylocas_boss_melee", "ranged" to "npc.nylocas_boss_ranged", "magic" to "npc.nylocas_boss_magic")
-    const val SPAWN_SEQ = "seq.tob_spider_tank_spawn"
-    const val DEATH_SEQ = "seq.tob_spider_tank_death"
+    const val SPAWN_SEQ = "seq.top_spider_melee_spawn"
+    val DEATH_SEQ = mapOf("melee" to "seq.top_spider_melee_death", "ranged" to "seq.top_spider_ranged_death", "magic" to "seq.top_spider_magic_death")
     /** His attack by form (the small Nylocas' attacks - his model is theirs, scaled up). */
     val ATTACK_SEQ = mapOf("melee" to "seq.top_spider_melee_attack", "ranged" to "seq.top_spider_ranged_attack", "magic" to "seq.top_spider_magic_attack")
     /** The bots' stack: the middle of his south side (each a tile along). */
