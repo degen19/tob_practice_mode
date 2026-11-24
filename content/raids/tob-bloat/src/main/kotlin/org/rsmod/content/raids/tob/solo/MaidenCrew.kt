@@ -588,6 +588,7 @@ class MaidenCrew(
         val now = dinPick(0, strag)
         val later = dinPick(5, strag)
         val cap = proc50 != null && tt + 5 > proc50!! + params.dinhCap
+        trace { "t$tt dinh now ${now?.key}:${now?.value?.toInt()}:${now?.n} later ${later?.key}:${later?.value?.toInt()}:${later?.n} skip $strag sw $sw0 crabs ${crabs.joinToString(" ") { "${it.key}:${it.hp}@${it.x},${it.y}${if (it.frozenTo >= tt) "f" else ""}" }}" }
         if (!cap && now != null && later != null && later.value * 100 >= now.value * params.dinhHoldPct) {
             b.sw50++
             return sw0
@@ -1060,7 +1061,8 @@ class MaidenCrew(
             }
             "dinhs" -> {
                 val target = if (ref == "maiden") her else crab?.npc
-                val pos = b.dinPos?.let { CoordGrid(it[0] + ROOM_X, ROOM_Y - it[1], 0) }
+                val here = room.real(b.player.coords)
+                val pos = b.dinPos?.let { CoordGrid(it[0] + ROOM_X, ROOM_Y - it[1], 0) }?.takeIf { maxOf(abs(it.x - here.x), abs(it.z - here.z)) <= params.dinhWalk }
                 b.dinPos = null
                 if (target == null) hold(b) else act(b, Move.Dinh, target, pos)
             }
@@ -1084,6 +1086,7 @@ class MaidenCrew(
     private fun fire(b: Bot, o: Order) {
         val p = b.player
         o.walkTo = null
+        trace { "t$t ${b.role} fires ${o.move} at ${crabs.firstOrNull { it.npc === o.target }?.key ?: "her"} from ${room.real(p.coords).let { "${it.x - ROOM_X},${ROOM_Y - it.z}" }} energy ${b.spec} delay ${p.actionDelay - clock.cycle} weapon ${p.worn[3]?.id}" }
         for ((slot, obj) in o.move.set.worn) {
             val id = obj.asRSCM(RSCMType.OBJ)
             if (p.worn[slot.slot]?.id != id) bots.equip(p, slot.slot, id)
@@ -1248,6 +1251,7 @@ data class MaidenCrewParams(
     val straggleTicks: Int = 6,
     val redOffset: Int = 0,
     val walkWeight: Int = 30,
+    val dinhWalk: Int = 2,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
@@ -1271,6 +1275,7 @@ data class MaidenCrewParams(
                 straggleTicks = int("straggleTicks", d.straggleTicks),
                 redOffset = int("redOffset", d.redOffset),
                 walkWeight = int("walkWeight", d.walkWeight),
+                dinhWalk = int("dinhWalk", d.dinhWalk),
             )
         }
     }
