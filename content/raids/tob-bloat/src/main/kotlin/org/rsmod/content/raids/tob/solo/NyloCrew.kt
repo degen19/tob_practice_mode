@@ -60,6 +60,7 @@ class NyloCrew(
         Chins(NyloLoadout.CHINS, 'R', 3, 9, Area.Square, 1),
         Crossbows(NyloLoadout.CROSSBOWS, 'R', 2, 7, Area.Single, 1),
         Ayak(NyloLoadout.AYAK, 'G', 3, 10, Area.Single, 0),
+        Tome(NyloLoadout.TOME, 'G', 3, 10, Area.Single, 0),
         Barrage(NyloLoadout.BARRAGE, 'G', 5, 10, Area.Square, 0),
         Dinh(NyloLoadout.DINH, 'M', 5, 1, Area.Bash, 0),
     }
@@ -72,7 +73,7 @@ class NyloCrew(
         mapOf(
             NyloRole.Melee to listOf(Weapon.Scythe, Weapon.Smash, Weapon.Thrust, Weapon.Dinh, Weapon.Blowpipe, Weapon.Ayak, Weapon.Tbow),
             NyloRole.Ranger to listOf(Weapon.Tbow, Weapon.Chins, Weapon.Crossbows, Weapon.Ayak, Weapon.Scythe),
-            NyloRole.Mage to listOf(Weapon.Barrage, Weapon.Crossbows, Weapon.Tbow, Weapon.Scythe),
+            NyloRole.Mage to listOf(Weapon.Barrage, Weapon.Tome, Weapon.Crossbows, Weapon.Tbow, Weapon.Scythe),
         )
 
     /** A bot's last Attack click (its target and the tick), and targets it found it couldn't reach, until when. */
@@ -108,19 +109,39 @@ class NyloCrew(
     private var everyone: List<NyloSolo.Target> = emptyList()
 
     /**
-     * Players' logic: a nylocas that will go off on its own before the room could be done anyway (wave 31 out on
-     * schedule, then cleanup) isn't worth the ticks - unless the room is heading for a stall at the next wave check
-     * and it would still be standing then. The aggressive ones are always worth it.
+     * Players' logic: a nylocas that will go off on its own before the room could be done anyway isn't worth the ticks
+     * - unless the room is heading for a stall at the next wave check and it would still be standing then. A big one
+     * going off leaves two splits with a full life, so it counts as standing that much longer. The aggressive ones are
+     * always worth it. Once every wave is out, the room ends when the last one goes: the crew kills the ones that would
+     * last longest, as many as finishing them sooner than the rest go off on their own pays for.
      */
     private fun spareOnes(all: List<NyloSolo.Target>): Set<Npc> {
-        val wavesLeft = room.wavesSpawned < room.wavesTotal
+        if (room.wavesSpawned >= room.wavesTotal) return cleanupSpare(all)
         val check = room.nextWaveCheck
         val standingAtCheck = all.filter { room.t + room.lifeLeft(it) > check }
-        val stallAhead = wavesLeft && standingAtCheck.size >= room.cap
+        val stallAhead = standingAtCheck.size >= room.cap
         val end = room.lastWaveEta + params.cleanupTicks
-        return all.filter { t ->
-            !t.aggro && room.t + room.lifeLeft(t) <= end && !(stallAhead && t in standingAtCheck)
-        }.mapTo(HashSet()) { it.npc }
+        return all.filter { t -> !t.aggro && gone(t) <= end && !(stallAhead && t in standingAtCheck) }.mapTo(HashSet()) { it.npc }
+    }
+
+    /** The tick a nylocas and anything it leaves are gone if no one touches it. */
+    private fun gone(t: NyloSolo.Target): Int = room.t + room.lifeLeft(t) + if (t.big) LIFE else 0
+
+    private fun cleanupSpare(all: List<NyloSolo.Target>): Set<Npc> {
+        val byEnd = all.sortedByDescending { gone(it) }
+        var work = 0.0
+        var bestK = 0
+        var bestEnd = byEnd.firstOrNull()?.let { gone(it) } ?: return emptySet()
+        for (k in 1..byEnd.size) {
+            val t = byEnd[k - 1]
+            work += if (t.big) BIG_WORK else 1.0
+            val end = maxOf(room.t + work * params.cleanupRate, byEnd.getOrNull(k)?.let { gone(it).toDouble() } ?: 0.0)
+            if (end < bestEnd) {
+                bestEnd = end.toInt()
+                bestK = k
+            }
+        }
+        return byEnd.drop(bestK).filter { !it.aggro }.mapTo(HashSet()) { it.npc }
     }
 
     private fun best(bot: Player, role: NyloRole, wanted: List<NyloSolo.Target>): Plan? {
@@ -199,7 +220,7 @@ class NyloCrew(
         if (v.onPillar) worth *= params.pillarWorth
         if (weapon.area == Area.Scythe && v.big) worth *= params.scytheBig
         worth *= 1.0 + params.youth * room.lifeLeft(v).coerceIn(0, LIFE) / LIFE
-        if (v.npc in spare) worth *= params.spareWorth
+        if (v.npc in spare) worth *= if (room.wavesSpawned >= room.wavesTotal) params.cleanupSpareWorth else params.spareWorth
         return worth
     }
 
@@ -299,6 +320,7 @@ class NyloCrew(
         const val AREA_MAX = 9
         const val LINE_TILES = 3
         const val LIFE = 52
+        const val BIG_WORK = 3.0
         const val PREFIRE_SLACK = 3
         const val LANE_TICKS = 9
         const val LOOKAHEAD_SCALE = 10.0
@@ -372,6 +394,8 @@ data class NyloCrewParams(
     val youth: Double = 3.502,
     val nullCost: Double = 0.869,
     val areaWorth: Double = 0.655,
+    val cleanupRate: Double = 0.9,
+    val cleanupSpareWorth: Double = 0.05,
 ) {
     companion object {
         fun parse(text: String): NyloCrewParams {
@@ -399,6 +423,8 @@ data class NyloCrewParams(
                 dinhMin = int("dinhMin", d.dinhMin),
                 nullCost = num("nullCost", d.nullCost),
                 areaWorth = num("areaWorth", d.areaWorth),
+                cleanupRate = num("cleanupRate", d.cleanupRate),
+                cleanupSpareWorth = num("cleanupSpareWorth", d.cleanupSpareWorth),
             )
         }
     }

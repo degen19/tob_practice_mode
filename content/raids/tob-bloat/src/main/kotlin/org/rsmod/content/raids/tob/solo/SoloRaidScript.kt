@@ -330,18 +330,23 @@ constructor(
         player.mes("A bot trio takes on ${where.label}; you're watching from the doorway (nothing targets you).")
     }
 
-    private fun spawnCrewBot(name: String, role: NyloRole, sets: List<GearSet>, seeking: Boolean): Player? {
-        val bot = bots.spawn(name, EXIT, NyloLoadout.worn(sets), NyloLoadout.pack(role, sets)) ?: return null
+    private fun spawnCrewBot(name: String, role: NyloRole, sets: List<GearSet>, maiden: Boolean): Player? {
+        val extra = if (!maiden) emptyList() else NyloLoadout.SPELL_RUNES + NyloLoadout.SURGE + if (role == NyloRole.Mage) emptyList() else listOf(NyloLoadout.BOOK)
+        val pack = (NyloLoadout.pack(role, sets) + extra).distinct()
+        val bot = bots.spawn(name, EXIT, NyloLoadout.worn(sets), pack) ?: return null
+        val stacks = NyloLoadout.SPELL_RUNES + NyloLoadout.CHINCHOMPAS
         for (slot in 0 until bot.inv.size) {
             val obj = bot.inv[slot] ?: continue
-            val rune = (NyloLoadout.BARRAGE_RUNES + NyloLoadout.CHINCHOMPAS).firstOrNull { it.asRSCM(dev.openrune.rscm.RSCMType.OBJ) == obj.id } ?: continue
+            val rune = stacks.firstOrNull { it.asRSCM(dev.openrune.rscm.RSCMType.OBJ) == obj.id } ?: continue
             bot.inv[slot] = org.rsmod.game.inv.InvObj(rune, RUNES)
         }
-        bot.worn[dev.openrune.util.Wearpos.Quiver.slot] = org.rsmod.game.inv.InvObj(NyloLoadout.BOLTS, RUNES)
+        val ammo = if (maiden) NyloLoadout.RUBY_BOLTS else NyloLoadout.BOLTS
+        bot.worn[dev.openrune.util.Wearpos.Quiver.slot] = org.rsmod.game.inv.InvObj(ammo, RUNES)
         org.rsmod.content.raids.tob.bloat.fillCharges(bot.inv)
-        val arrows = if (seeking) NyloLoadout.SEEKING_ARROWS else NyloLoadout.ARROWS
+        val arrows = if (maiden) NyloLoadout.SEEKING_ARROWS else NyloLoadout.ARROWS
         org.rsmod.api.player.worn.DizanasQuiver.store(bot, arrows.asRSCM(dev.openrune.rscm.RSCMType.OBJ), RUNES)
-        if (role == NyloRole.Mage) org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(bot, "varbit.spellbook", 1)
+        val book = if (role == NyloRole.Mage) ANCIENTS else if (maiden) LUNARS else null
+        book?.let { org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(bot, "varbit.spellbook", it) }
         bot.varMoveSpeed = org.rsmod.game.movement.MoveSpeed.Run
         return bot
     }
@@ -477,6 +482,8 @@ constructor(
         const val HEART_BOOST = 4
         const val HEART_PERCENT = 10
         const val FULL_SPEC = 1000
+        const val ANCIENTS = 1
+        const val LUNARS = 2
         /** Bots keep each style's prayer on at once: the same as flicking the right one with every switch. */
         val OFFENSIVE_PRAYERS = listOf("varbit.prayer_piety", "varbit.prayer_rigour", "varbit.prayer_augury")
         const val WATCH_LINGER = 8

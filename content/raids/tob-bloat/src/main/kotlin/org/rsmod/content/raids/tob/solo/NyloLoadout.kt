@@ -6,8 +6,8 @@ import dev.openrune.util.Wearpos
  * The team's Nylocas gear (the user's trio loadouts): every role melees in Torva / Oathplate with a scythe, ranges in
  * void with a Twisted bow from Dizana's quiver, and carries its own wave weapons - the melee an Obligator, Dinh's bulwark,
  * blowpipe and Eye of Ayak with the Book of the dead; the ranger black chinchompas, Ascension crossbows and the Ayak
- * switch; the mage an ice ancient sceptre (barrage) in Ancestral top, confliction gauntlets and occult, plus the
- * crossbows.
+ * switch; the mage an ice ancient sceptre (barrage) and Zorya's tome in Ancestral top, confliction gauntlets and occult
+ * over its ranged gear, plus the crossbows.
  */
 enum class NyloRole(val style: Char) {
     Mage('G'),
@@ -52,17 +52,30 @@ object NyloLoadout {
     val OBLIGATOR = GearSet(MELEE_ARMOUR + (Wearpos.RightHand to "obj.obligator"))
     val DINH = GearSet(MELEE_ARMOUR + (Wearpos.RightHand to "obj.dinhs_bulwark"))
     val AYAK = GearSet(MELEE_ARMOUR + listOf(Wearpos.RightHand to "obj.eye_of_ayak", Wearpos.LeftHand to "obj.book_of_the_dead"))
-    val BARRAGE = GearSet(MELEE_ARMOUR.filter { (slot, _) -> MAGE_ARMOUR.none { it.first == slot } } + MAGE_ARMOUR + (Wearpos.RightHand to "obj.ancient_sceptre_ice"))
+    /** Barrage in the ranged gear with the magic pieces over it: the highest magic accuracy the team has (as the sim). */
+    val BARRAGE = GearSet(RANGED_ARMOUR.filter { (slot, _) -> MAGE_ARMOUR.none { it.first == slot } } + MAGE_ARMOUR + (Wearpos.RightHand to "obj.ancient_sceptre_ice"))
     val TBOW = GearSet(RANGED_ARMOUR + (Wearpos.RightHand to "obj.twisted_bow"))
     val BLOWPIPE = GearSet(RANGED_ARMOUR + (Wearpos.RightHand to "obj.toxic_blowpipe_loaded"))
     val CHINS = GearSet(RANGED_ARMOUR + (Wearpos.RightHand to "obj.chinchompa_black"))
     val CROSSBOWS = GearSet(RANGED_ARMOUR + (Wearpos.RightHand to "obj.ascension_crossbows"))
     val RALOS = GearSet(RANGED_ARMOUR + (Wearpos.RightHand to "obj.tonalztics_of_ralos_charged"))
+    val TOME = GearSet(RANGED_ARMOUR.filter { (slot, _) -> MAGE_ARMOUR.none { it.first == slot } } + MAGE_ARMOUR + (Wearpos.RightHand to "obj.zoryas_tome"))
+    val ZCB = GearSet(RANGED_ARMOUR + (Wearpos.RightHand to "obj.zaryte_xbow"))
 
     const val BOLTS = "obj.ascension_bolts"
     const val CHINCHOMPAS = "obj.chinchompa_black"
     const val ARROWS = "obj.dragon_arrow"
     const val SEEKING_ARROWS = "obj.seeking_dragon_arrow"
+    const val RUBY_BOLTS = "obj.dragon_bolts_enchanted_ruby"
+    const val BOOK = "obj.book_of_the_dead"
+    const val SURGE = "obj.4dosesurge"
+
+    /** Vengeance, Spellbook Swap, thralls and Death Charge, and the ancients' barrage: every rune any bot casts with. */
+    val SPELL_RUNES =
+        listOf(
+            "obj.astralrune", "obj.earthrune", "obj.lawrune", "obj.cosmicrune", "obj.soulrune", "obj.firerune", "obj.airrune",
+            "obj.waterrune", "obj.bloodrune", "obj.deathrune",
+        )
     const val ICE_BARRAGE = "obj.94_ice_barrage"
     val BARRAGE_RUNES = listOf("obj.waterrune", "obj.bloodrune", "obj.deathrune")
 
@@ -71,15 +84,18 @@ object NyloLoadout {
         when (role) {
             NyloRole.Melee -> listOf(SCYTHE, OBLIGATOR, DINH, BLOWPIPE, AYAK, TBOW)
             NyloRole.Ranger -> listOf(TBOW, CHINS, CROSSBOWS, AYAK, SCYTHE)
-            NyloRole.Mage -> listOf(BARRAGE, CROSSBOWS, TBOW, SCYTHE)
+            NyloRole.Mage -> listOf(BARRAGE, TOME, CROSSBOWS, TBOW, SCYTHE)
         }
 
-    /** At Maiden every role opens with a Twisted bow (seeking arrows) and the Tonalztics spec, then scythes. */
+    /**
+     * At Maiden every role opens with a Twisted bow (seeking arrows) and the Tonalztics spec, then scythes, with a
+     * Zaryte crossbow for its spec; the ranger and melee are on the Lunars with the Book of the dead for thralls.
+     */
     fun maidenSets(role: NyloRole): List<GearSet> =
         when (role) {
-            NyloRole.Melee -> listOf(TBOW, RALOS, SCYTHE, DINH)
-            NyloRole.Ranger -> listOf(TBOW, RALOS, SCYTHE)
-            NyloRole.Mage -> listOf(TBOW, RALOS, BARRAGE, SCYTHE)
+            NyloRole.Melee -> listOf(TBOW, RALOS, SCYTHE, DINH, ZCB)
+            NyloRole.Ranger -> listOf(TBOW, RALOS, SCYTHE, ZCB)
+            NyloRole.Mage -> listOf(TBOW, RALOS, BARRAGE, SCYTHE, ZCB, BLOWPIPE)
         }
 
     /** Worn at the start: the first set plus bolts in the ammo slot. */

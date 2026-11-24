@@ -23,8 +23,9 @@ import kotlin.math.max
  *   worth it;
  * - the scythers each take one of the wave's 1s and 2s the mage doesn't (north first), and a frozen pile close by with
  *   enough hitpoints in it; the melee puts its Dinh's bulwark spec into the crabs once enough are close together;
- * - the ranger spends its second spec on her between procs, the mage its second once the crabs are dealt with, and the
- *   mage comes in to scythe at the end.
+ * - the sim's specs: the mage's Zaryte crossbow spec after its 70s freezes, the ranger's at the 50s, the melee's at the
+ *   30s, each with a surge potion when it's short; the ranger and melee keep Vengeance up and raise a thrall after
+ *   their prefires; the mage comes in to scythe at the end.
  *
  * They fight through the game's own combat; [MaidenCrewParams] holds the choices a search can tune.
  */
@@ -36,12 +37,19 @@ class MaidenCrew(
     private val barrage: Int,
     private val params: MaidenCrewParams = MaidenCrewParams(),
 ) : BotCrew {
-    enum class Move(val set: GearSet, val stance: Int, val spec: Boolean = false) {
+    /** What a bot can throw: its gear, stance (ranged always on rapid) and, for a spec, the energy it costs. */
+    enum class Move(val set: GearSet, val stance: Int, val cost: Int = 0) {
         Tbow(NyloLoadout.TBOW, 1),
-        Ralos(NyloLoadout.RALOS, 1, true),
+        Blowpipe(NyloLoadout.BLOWPIPE, 1),
+        Ralos(NyloLoadout.RALOS, 1, 500),
+        Zcb(NyloLoadout.ZCB, 1, 750),
         Scythe(NyloLoadout.SCYTHE, 1),
-        Dinh(NyloLoadout.DINH, 0, true),
+        Dinh(NyloLoadout.DINH, 0, 500),
         Barrage(NyloLoadout.BARRAGE, 0),
+        ;
+
+        val spec: Boolean
+            get() = cost > 0
     }
 
     private class Plan(val move: Move, val target: Npc)
@@ -75,6 +83,7 @@ class MaidenCrew(
         for ((bot, role) in members) {
             if (!bot.isSlotAssigned || bot.hitpoints <= 0) continue
             noteThrown(bot)
+            if (role != NyloRole.Mage) spells(bot)
             if (bot.actionDelay > now + 1) continue
             val (crab, at) = onCrab[bot] ?: (null to 0)
             if (crab != null && crab.isSlotAssigned && crab.hitpoints > 0 && room.t - at <= CRAB_ORDER_TICKS) continue
@@ -90,16 +99,57 @@ class MaidenCrew(
         if (bot.actionDelay <= at) return
         issued.remove(bot)
         onCrab.remove(bot)
-        if (opened.getOrDefault(bot, 0) < OPENING.size && OPENING[opened.getOrDefault(bot, 0)] == move) opened[bot] = opened.getOrDefault(bot, 0) + 1
+        val opening = opening(members.first { it.first === bot }.second)
+        if (opened.getOrDefault(bot, 0) < opening.size && opening[opened.getOrDefault(bot, 0)] == move) opened[bot] = opened.getOrDefault(bot, 0) + 1
+    }
+
+    /** The sim's prefires: everyone bows and throws the Tonalztics spec; the mage then a blowpipe before bowing on. */
+    private fun opening(role: NyloRole): List<Move> = if (role == NyloRole.Mage) MAGE_OPENING else OPENING
+
+    /** When each bot last swapped spellbooks, raised its thrall, and drank its surge. */
+    private val swappedAt = HashMap<Player, Int>()
+    private val thralled = HashSet<Player>()
+    private val surged = HashSet<Player>()
+
+    /**
+     * The ranger and melee on the Lunars (the sim's DPS spellbook): a thrall once their prefires are out (Spellbook Swap
+     * to the Arceuus, then a greater ghost), and Vengeance whenever it's off cooldown.
+     */
+    private fun spells(bot: Player) {
+        if (opened.getOrDefault(bot, 0) >= OPENING.size && bot !in thralled) {
+            val swapped = swappedAt[bot]
+            if (swapped == null) {
+                bots.spell(bot, SPELLBOOK_SWAP, SWAP_TO_ARCEUUS)
+                swappedAt[bot] = room.t
+            } else if (room.t > swapped) {
+                bots.spell(bot, GREATER_GHOST)
+                thralled += bot
+            }
+            return
+        }
+        if (bot.vars["varbit.vengeance_rebound"] == 0 && bot.vars["varbit.vengeance_timelimit"] == 0 && bot.vars["varbit.spellbook"] == LUNARS) bots.spell(bot, VENGEANCE)
+    }
+
+    /**
+     * A spec on her when there's the energy for it: short of it by no more than a surge potion's quarter, the bot drinks
+     * its surge first (the sim's 'surge' line before a spec).
+     */
+    private fun spec(bot: Player, move: Move): Plan? {
+        val energy = bot.vars["varp.sa_energy"]
+        if (energy >= move.cost) return Plan(move, room.boss)
+        if (bot in surged || energy + SURGE_ENERGY < move.cost) return null
+        if (bots.useItem(bot, NyloLoadout.SURGE.asRSCM(RSCMType.OBJ))) surged += bot
+        return null
     }
 
     private fun plan(bot: Player, role: NyloRole, crabs: List<MaidenSolo.CrabView>, now: Int): Plan? {
         val her = room.boss
         val step = opened.getOrDefault(bot, 0)
-        if (step < OPENING.size && room.phase == 0) {
-            val move = OPENING[step]
-            if (!move.spec || specReady(bot)) return Plan(move, her)
-            opened[bot] = OPENING.size
+        val opening = opening(role)
+        if (step < opening.size && room.phase == 0) {
+            val move = opening[step]
+            if (!move.spec || specReady(bot, move)) return Plan(move, her)
+            opened[bot] = opening.size
         }
         return when (role) {
             NyloRole.Mage -> mage(bot, crabs, now)
@@ -141,7 +191,7 @@ class MaidenCrew(
     private fun scyther(bot: Player, role: NyloRole, crabs: List<MaidenSolo.CrabView>, now: Int): Plan {
         val her = room.boss
         val here = room.real(bot.coords)
-        if (role == NyloRole.Melee && specReady(bot) && room.phase >= params.dinhPhase) {
+        if (role == NyloRole.Melee && specReady(bot, Move.Dinh) && room.phase >= params.dinhPhase) {
             val near = crabs.filter { !it.arrived && dist(here, room.real(it.npc.coords), CRAB_SIZE) <= BASH_RADIUS }
             if (near.size >= params.dinhMin) return Plan(Move.Dinh, near.minBy { it.gap }.npc)
         }
@@ -157,7 +207,7 @@ class MaidenCrew(
         }
         val pile = crabs.filter { !it.arrived && it.frozenUntil > now && (it.npc.hitpoints >= params.pileHp || thawing(it, now)) && dist(here, room.real(it.npc.coords), CRAB_SIZE) <= PILE_REACH }
         pile.maxByOrNull { c -> pile.count { inSquare(it, c) } }?.let { return Plan(Move.Scythe, it.npc) }
-        if (role == NyloRole.Ranger && room.t >= params.rangerSpecAt && specReady(bot)) return Plan(Move.Ralos, her)
+        if (room.phase >= (if (role == NyloRole.Ranger) RANGER_ZCB_PHASE else MELEE_ZCB_PHASE)) spec(bot, Move.Zcb)?.let { return it }
         return Plan(Move.Scythe, her)
     }
 
@@ -198,7 +248,7 @@ class MaidenCrew(
         if (pile != null && (thawing || standing.filter { inSquare(it, pile) }.sumOf { it.npc.hitpoints } >= params.mageKillHp)) return barrage(pile)
         if (nearProc(her)) return hold(bot)
         if (her.hitpoints * 100 <= her.baseHitpointsLvl * params.mageScytheBelow) return Plan(Move.Scythe, her)
-        if (room.t >= params.mageSpecAt && specReady(bot)) return Plan(Move.Ralos, her)
+        if (room.phase >= MAGE_ZCB_PHASE) spec(bot, Move.Zcb)?.let { return it }
         return Plan(Move.Tbow, her)
     }
 
@@ -243,7 +293,7 @@ class MaidenCrew(
         return overlaps(room.real(c.npc.coords), CRAB_SIZE, at.x - 1, at.z - 1, at.x + CRAB_SIZE, at.z + CRAB_SIZE)
     }
 
-    private fun specReady(bot: Player): Boolean = bot.vars["varp.sa_energy"] >= SPEC_ENERGY
+    private fun specReady(bot: Player, move: Move): Boolean = bot.vars["varp.sa_energy"] >= move.cost
 
     private fun act(bot: Player, plan: Plan, now: Int) {
         for ((slot, obj) in plan.move.set.worn) {
@@ -269,10 +319,21 @@ class MaidenCrew(
 
     private companion object {
         val OPENING = listOf(Move.Tbow, Move.Ralos)
+        val MAGE_OPENING = listOf(Move.Tbow, Move.Ralos, Move.Blowpipe)
+        const val SPELLBOOK_SWAP = "component.magic_spellbook:spellbook_swap"
+        const val SWAP_TO_ARCEUUS = 4
+        const val GREATER_GHOST = "component.magic_spellbook:resurrect_greater_ghost"
+        const val VENGEANCE = "component.magic_spellbook:vengeance"
+        const val LUNARS = 2
+        const val SURGE_ENERGY = 250
+
+        /** The sim's trio lists: the mage's ZCB after its 70s freezes, the ranger's at the 50s, the melee's at the 30s. */
+        const val MAGE_ZCB_PHASE = 1
+        const val RANGER_ZCB_PHASE = 2
+        const val MELEE_ZCB_PHASE = 3
         val START_TILES = listOf(CoordGrid(3184, 4445, 0), CoordGrid(3184, 4447, 0), CoordGrid(3184, 4448, 0))
         const val CRAB_SIZE = 2
         const val BASH_RADIUS = 5
-        const val SPEC_ENERGY = 500
         const val PILE_REACH = 3
         val PROCS = listOf(70, 50, 30)
         const val PCT_SCALE = 1000
@@ -292,8 +353,6 @@ data class MaidenCrewParams(
     val pileHp: Int = 40,
     val dinhPhase: Int = 2,
     val dinhMin: Int = 3,
-    val rangerSpecAt: Int = 45,
-    val mageSpecAt: Int = 40,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
@@ -309,8 +368,6 @@ data class MaidenCrewParams(
                 pileHp = int("pileHp", d.pileHp),
                 dinhPhase = int("dinhPhase", d.dinhPhase),
                 dinhMin = int("dinhMin", d.dinhMin),
-                rangerSpecAt = int("rangerSpecAt", d.rangerSpecAt),
-                mageSpecAt = int("mageSpecAt", d.mageSpecAt),
             )
         }
     }

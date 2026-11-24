@@ -158,6 +158,19 @@ constructor(
         return true
     }
 
+    /** Click an item in the inventory with [op] (1: its first option, e.g. Drink). */
+    fun useItem(player: Player, obj: Int, op: Int = 1): Boolean {
+        val slot = (0 until player.inv.size).firstOrNull { player.inv[it]?.id == obj } ?: return false
+        click(player, INVENTORY_ITEMS ushr 16, INVENTORY_ITEMS and 0xFFFF, slot, obj, op)
+        return true
+    }
+
+    /** Click a spell on the spellbook (a self-cast one, e.g. "component.magic_spellbook:vengeance"). */
+    fun spell(player: Player, component: String, op: Int = 1) {
+        val packed = dev.openrune.rscm.RSCM.run { component.asRSCM(dev.openrune.rscm.RSCMType.COMPONENT) }
+        click(player, packed ushr 16, packed and 0xFFFF, op = op)
+    }
+
     fun opLoc(player: Player, loc: Int, at: CoordGrid, op: Int = 1) {
         opLoc.handle(player, OpLocV2(loc, at.x, at.z, false, op, -1))
     }
