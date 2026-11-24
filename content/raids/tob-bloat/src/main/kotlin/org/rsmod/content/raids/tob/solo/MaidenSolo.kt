@@ -40,8 +40,11 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private var throwCooldown = 0
     private var dead = -1
 
-    /** What crabs that reached her healed her, this run. */
+    /** What crabs that reached her healed her, this run, and what her blood did. */
     var healed = 0
+        private set
+
+    var bled = 0
         private set
 
     private class Crab(val npc: Npc, val spot: Int, val born: Int) {
@@ -68,6 +71,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         throwCooldown = 0
         dead = -1
         healed = 0
+        bled = 0
         crabs.clear()
         splats.clear()
         spawns.clear()
@@ -127,8 +131,9 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val count = (CRABS_EACH * party().size).coerceIn(CRABS_EACH, CRAB_SPOTS.size)
         val left = CRAB_SPOTS.indices.toMutableList()
         repeat(count) {
-            var roll = rand(left.sumOf { CRAB_WEIGHTS[it] })
-            val spot = left.first { i -> (roll < CRAB_WEIGHTS[i]).also { roll -= CRAB_WEIGHTS[i] } }
+            val weights = if (UNIFORM_SPAWNS) List(CRAB_WEIGHTS.size) { 1 } else CRAB_WEIGHTS
+            var roll = rand(left.sumOf { weights[it] })
+            val spot = left.first { i -> (roll < weights[i]).also { roll -= weights[i] } }
             left -= spot
             val (x, y) = CRAB_SPOTS[spot]
             val crab = spawn(CRAB, CoordGrid(x, y, 0), hp(CRAB_HP, ENTRY_CRAB_HP))
@@ -296,7 +301,10 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         // she heals exactly what the blood takes from you, as it lands
         val dealt = hurt(p, dmg, source = maiden)
         val hpBefore = p.hitpoints
-        later(1) { healNpc(maiden, minOf(dealt, hpBefore)) }
+        later(1) {
+            bled += minOf(dealt, hpBefore)
+            healNpc(maiden, minOf(dealt, hpBefore))
+        }
         p.statSub("stat.prayer", constant = dmg / 2 + 1, percent = 0)
     }
 
@@ -361,6 +369,19 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     fun crabViews(): List<CrabView> =
         crabs.filter { it.npc.isSlotAssigned && it.npc.hitpoints > 0 && it.leakedAt < 0 }
             .map { CrabView(it.npc, SPOT_NAMES[it.spot], it.born, gap(it.npc), it.npc.vars["varn.freeze_end_clock"], it.arrived) }
+
+    /** Whether her blood (a splat or a spawn's trail) is on [tile] (a real tile). */
+    fun bloody(tile: CoordGrid): Boolean = splats.any { it.tile == tile } || trails.containsKey(tile)
+
+    /** Whether [tile] (a real tile) is under her. */
+    fun under(tile: CoordGrid): Boolean = tile.x in X until X + SIZE && tile.z in Y until Y + SIZE
+
+    /** Whether a player on [tile] (a real tile) can hit her in melee: beside her, not on a corner. */
+    fun besideHer(tile: CoordGrid): Boolean {
+        val gx = maxOf(X - tile.x, tile.x - (X + SIZE - 1), 0)
+        val gz = maxOf(Y - tile.z, tile.z - (Y + SIZE - 1), 0)
+        return maxOf(gx, gz) == 1 && !(gx == 1 && gz == 1)
+    }
 
     val boss: Npc
         get() = maiden
@@ -436,6 +457,9 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                 3173 to 4436, 3177 to 4436, 3181 to 4436, 3185 to 4438, 3185 to 4436,
             )
         val CRAB_WEIGHTS = listOf(44, 66, 110, 109, 107, 59, 79, 107, 109, 104)
+
+        /** `TOB_CRAB_UNIFORM`: every spawn as likely (the sim's draw), for comparing runs with it. */
+        val UNIFORM_SPAWNS = System.getenv("TOB_CRAB_UNIFORM") != null
         val SPOT_NAMES = listOf("N1", "N2", "N3", "N4a", "N4b", "S1", "S2", "S3", "S4a", "S4b")
     }
 }

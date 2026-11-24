@@ -158,10 +158,11 @@ constructor(
         return true
     }
 
-    /** Click an item in the inventory with [op] (1: its first option, e.g. Drink). */
-    fun useItem(player: Player, obj: Int, op: Int = 1): Boolean {
+    /** Click an item in the inventory with its [heldOp] option (1: the first, e.g. Drink; the button ops skip 1 and 5). */
+    fun useItem(player: Player, obj: Int, heldOp: Int = 1): Boolean {
         val slot = (0 until player.inv.size).firstOrNull { player.inv[it]?.id == obj } ?: return false
-        click(player, INVENTORY_ITEMS ushr 16, INVENTORY_ITEMS and 0xFFFF, slot, obj, op)
+        val button = if (heldOp >= 4) heldOp + 2 else heldOp + 1
+        click(player, INVENTORY_ITEMS ushr 16, INVENTORY_ITEMS and 0xFFFF, slot, obj, button)
         return true
     }
 

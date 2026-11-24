@@ -70,13 +70,16 @@ object NyloLoadout {
     const val BOOK = "obj.book_of_the_dead"
     const val SURGE = "obj.4dosesurge"
 
-    /** Vengeance, Spellbook Swap, thralls and Death Charge, and the ancients' barrage: every rune any bot casts with. */
-    val SPELL_RUNES =
-        listOf(
-            "obj.astralrune", "obj.earthrune", "obj.lawrune", "obj.cosmicrune", "obj.soulrune", "obj.firerune", "obj.airrune",
-            "obj.waterrune", "obj.bloodrune", "obj.deathrune",
-        )
+    /** Vengeance, Spellbook Swap, thralls and Death Charge: the runes the ranger and melee cast with. */
+    val LUNAR_RUNES = listOf("obj.astralrune", "obj.earthrune", "obj.lawrune", "obj.cosmicrune", "obj.soulrune", "obj.bloodrune", "obj.deathrune")
+
+    /** The ancients' barrage and rush. */
+    val ANCIENT_RUNES = listOf("obj.waterrune", "obj.bloodrune", "obj.deathrune", "obj.chaosrune")
+
+    /** Every rune any bot carries (in stacks). */
+    val SPELL_RUNES = (LUNAR_RUNES + ANCIENT_RUNES).distinct()
     const val ICE_BARRAGE = "obj.94_ice_barrage"
+    const val ICE_RUSH = "obj.58_ice_rush"
     val BARRAGE_RUNES = listOf("obj.waterrune", "obj.bloodrune", "obj.deathrune")
 
     /** The sets each role can switch into: its first set is what it walks in wearing. */
@@ -93,9 +96,9 @@ object NyloLoadout {
      */
     fun maidenSets(role: NyloRole): List<GearSet> =
         when (role) {
-            NyloRole.Melee -> listOf(TBOW, RALOS, SCYTHE, DINH, ZCB)
+            NyloRole.Melee -> listOf(TBOW, RALOS, SCYTHE, DINH, ZCB, OBLIGATOR)
             NyloRole.Ranger -> listOf(TBOW, RALOS, SCYTHE, ZCB)
-            NyloRole.Mage -> listOf(TBOW, RALOS, BARRAGE, SCYTHE, ZCB, BLOWPIPE)
+            NyloRole.Mage -> listOf(TBOW, RALOS, BARRAGE, SCYTHE, ZCB, BLOWPIPE, TOME)
         }
 
     /** Worn at the start: the first set plus bolts in the ammo slot. */

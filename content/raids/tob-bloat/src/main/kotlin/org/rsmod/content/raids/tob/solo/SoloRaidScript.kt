@@ -285,6 +285,11 @@ constructor(
         spells.getObjSpell(obj)!!.component.packed
     }
 
+    private val rushButton: Int by lazy {
+        val obj = dev.openrune.ServerCacheManager.getItem(NyloLoadout.ICE_RUSH.asRSCM(dev.openrune.rscm.RSCMType.OBJ))!!
+        spells.getObjSpell(obj)!!.component.packed
+    }
+
     private fun startTrios(teams: Int) {
         val where = TobRoom.parse(System.getenv("TOB_TRIO_ROOM") ?: "nylo") ?: TobRoom.NYLOCAS
         for (i in 1..teams) startTrio("$i", where, trioParams.getOrNull(i - 1) ?: "") ?: return
@@ -311,7 +316,7 @@ constructor(
         val members = crew.map { it.second!! to it.first }
         trios[room] =
             when (room) {
-                is MaidenSolo -> MaidenCrew(room, members, bots, d.mapClock, barrageButton, MaidenCrewParams.parse(params))
+                is MaidenSolo -> MaidenCrew(room, members, bots, d.mapClock, barrageButton, rushButton, MaidenCrewParams.parse(params))
                 is NyloSolo -> NyloCrew(room, members, bots, d.mapClock, barrageButton, NyloCrewParams.parse(params))
                 else -> return null
             }
@@ -331,7 +336,7 @@ constructor(
     }
 
     private fun spawnCrewBot(name: String, role: NyloRole, sets: List<GearSet>, maiden: Boolean): Player? {
-        val extra = if (!maiden) emptyList() else NyloLoadout.SPELL_RUNES + NyloLoadout.SURGE + if (role == NyloRole.Mage) emptyList() else listOf(NyloLoadout.BOOK)
+        val extra = if (!maiden) emptyList() else if (role == NyloRole.Mage) NyloLoadout.ANCIENT_RUNES + NyloLoadout.SURGE else NyloLoadout.LUNAR_RUNES + NyloLoadout.SURGE + NyloLoadout.BOOK
         val pack = (NyloLoadout.pack(role, sets) + extra).distinct()
         val bot = bots.spawn(name, EXIT, NyloLoadout.worn(sets), pack) ?: return null
         val stacks = NyloLoadout.SPELL_RUNES + NyloLoadout.CHINCHOMPAS
@@ -380,6 +385,8 @@ constructor(
             p.runEnergy = org.rsmod.api.config.constants.run_max_energy
             val missing = p.statBase("stat.prayer") - p.stat("stat.prayer")
             if (missing > 0) p.statAdd("stat.prayer", missing, 0)
+            val hurt = p.statBase("stat.hitpoints") - p.stat("stat.hitpoints")
+            if (hurt > 0) p.statAdd("stat.hitpoints", hurt, 0)
         }
         trio.tick()
         val linger = if (room in spectators) WATCH_LINGER else 0
