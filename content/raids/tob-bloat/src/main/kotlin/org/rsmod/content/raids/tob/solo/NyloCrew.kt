@@ -74,6 +74,17 @@ class NyloCrew(
 
     private class Plan(val weapon: Weapon, val target: NyloSolo.Target, val victims: List<NyloSolo.Target>, val score: Double)
 
+    /** A Blert attack: on which nylocas, at what age, with which of our weapons (null: one our kits don't carry). */
+    class Step(val role: Char, val key: String, val age: Int, val weapon: Weapon?)
+
+    /** One Blert room: each role's attacks, and where it stood (by wave * [SPOT_STRIDE] + ticks since that wave). */
+    class Copy(val steps: Map<Char, List<Step>>, val spots: Map<Char, Map<Int, CoordGrid>>, val deaths: Map<String, Pair<Int, Boolean>>) {
+        /** A role's attacks, and every split attack of the other roles: a split's colour is the room's roll, not Blert's. */
+        fun splitSteps(role: NyloRole): List<Step> = mine.getOrPut(role) { steps[role.style].orEmpty() + steps.filterKeys { it != role.style }.values.flatten().filter { it.key.count { c -> c == ':' } == 4 } }
+
+        private val mine = HashMap<NyloRole, List<Step>>()
+    }
+
     private val weapons: Map<NyloRole, List<Weapon>> =
         mapOf(
             NyloRole.Melee to listOf(Weapon.Scythe, Weapon.Smash, Weapon.Thrust, Weapon.Dinh, Weapon.Crossbows, Weapon.Ayak, Weapon.Tbow),
@@ -104,12 +115,76 @@ class NyloCrew(
             if (bot.actionDelay > now + 1) continue
             guard(bot)
             noteStuck(bot, now)
-            val plan = setPlay(bot, role) ?: scripted(bot, role) ?: best(bot, role, wanted.filter { bot !in it.nulledBy && !it.doomed })
+            val plan = if (copy != null) copied(bot, role, wanted) else setPlay(bot, role) ?: scripted(bot, role) ?: best(bot, role, wanted.filter { bot !in it.nulledBy && !it.doomed })
             if (TRACING && room.wavesSpawned >= TRACE_FROM && room.bossTick < 0) {
                 println("nylo ${members[0].first.username} t${room.t} $role " + (plan?.let { "${it.weapon} w${it.target.wave}${if (it.target.big) "B" else ""}${it.target.style}:${it.target.npc.hitpoints} x${it.victims.size}" } ?: "prefire"))
             }
-            if (plan == null) prefire(bot, role) else act(bot, plan)
+            if (plan != null) act(bot, plan) else if (copy != null) stand(bot, role) else prefire(bot, role)
         }
+    }
+
+    /* ---- a Blert room, played again */
+
+    /** The Blert room the crew plays ([NyloCrewParams.copy]: its place among `tob/nylo_clone.tsv`'s, -1 none). */
+    private val copy: Copy? = COPIES.getOrNull(params.copy)
+
+    /**
+     * The Blert player's next attack, on the same nylocas (by spawn, a split by its parent) at the same age with our
+     * kit's weapon for it, once it's due; until then a fill from the weights, but only one that's done before the next
+     * attack is due, so the bot is on the Blert tick. A split that came out another colour than Blert's is the attack of
+     * whoever's colour it is. Fills go first on what Blert had dead by now, and never on what Blert let go off.
+     */
+    private fun copied(bot: Player, role: NyloRole, wanted: List<NyloSolo.Target>): Plan? {
+        val copy = copy ?: return null
+        val byKey = everyone.associateBy { it.key }
+        val at = room.t + params.copyLead
+        var due: Pair<Weapon, NyloSolo.Target>? = null
+        var dueAge = Int.MAX_VALUE
+        var soonest = Int.MAX_VALUE
+        for (step in copy.splitSteps(role)) {
+            val target = byKey[step.key] ?: continue
+            val age = at - target.born
+            if (age < step.age) {
+                soonest = minOf(soonest, step.age - age)
+                continue
+            }
+            if (age > step.age + params.copyLate || target.doomed || bot in target.nulledBy) continue
+            val matches = step.weapon?.hits == target.style
+            val weapon = when {
+                step.role == role.style -> if (matches) kitWeapon(role, step.weapon) else null
+                else -> if (!matches) MAIN[role]?.takeIf { it.hits == target.style } else null
+            } ?: continue
+            if (weapon.range <= 1 && !meleeReach(target)) continue
+            if (step.age < dueAge) {
+                due = weapon to target
+                dueAge = step.age
+            }
+        }
+        due?.let { (weapon, target) -> return Plan(weapon, target, victims(weapon, target, everyone, room.real(bot.coords)), Double.MAX_VALUE) }
+        val open = wanted.filter { bot !in it.nulledBy && !it.doomed && copy.deaths[it.key]?.second != false }
+        val late = open.filter { t -> copy.deaths[t.key]?.let { at - t.born >= it.first } == true }
+        val fill = (if (late.isNotEmpty()) best(bot, role, late) else null) ?: best(bot, role, open) ?: return null
+        return fill.takeIf { soonest >= it.weapon.speed - params.copySlack }
+    }
+
+    /** What each role kills its own colour with when Blert's player had another colour in front of them. */
+    private val MAIN = mapOf(NyloRole.Mage to Weapon.Tome, NyloRole.Ranger to Weapon.Crossbows, NyloRole.Melee to Weapon.Smash)
+
+    /** Our kit's weapon for a Blert one: the mage's Ayak is the Tome. */
+    private fun kitWeapon(role: NyloRole, weapon: Weapon?): Weapon? =
+        when {
+            weapon == null -> null
+            weapon == Weapon.Ayak && role == NyloRole.Mage -> Weapon.Tome
+            else -> weapon
+        }
+
+    /** Nothing due and no fill: stand where the Blert player stood this long after the latest wave. */
+    private fun stand(bot: Player, role: NyloRole) {
+        val spots = copy?.spots?.get(role.style) ?: return
+        val dt = room.t + 2 - room.waveSpawnedAt
+        val tile = spots[room.wavesSpawned * SPOT_STRIDE + dt] ?: return
+        val real = CoordGrid(OX + tile.x, OY + tile.z, 0)
+        if (room.real(bot.coords) != real && bot.routeDestination.isEmpty()) bots.walk(bot, room.at(real))
     }
 
     /* ---- what's worth hitting */
@@ -500,6 +575,28 @@ class NyloCrew(
                 }
         }
         const val PLAYBOOK_FILE = "/tob/nylo_playbook.tsv"
+        const val COPY_FILE = "/tob/nylo_clone.tsv"
+        const val SPOT_STRIDE = 1000
+        const val OX = 3264
+        const val OY = 4224
+
+        /** Blert's fastest trio rooms (`tob/nylo_clone.tsv`), fastest first. */
+        val COPIES: List<Copy> by lazy {
+            val text = NyloCrew::class.java.getResourceAsStream(COPY_FILE)?.bufferedReader()?.readText() ?: return@lazy emptyList()
+            val rows = text.lineSequence().filter { it.isNotBlank() && !it.startsWith("#") }.map { it.split('\t') }.toList()
+            rows.groupBy { it[0] }.values.map { raid ->
+                val steps = HashMap<Char, MutableList<Step>>()
+                val spots = HashMap<Char, HashMap<Int, CoordGrid>>()
+                val deaths = HashMap<String, Pair<Int, Boolean>>()
+                for (f in raid) {
+                    val role = f[2][0]
+                    if (f[1] == "D") deaths[f[3]] = f[4].toInt() to (f[5] == "1")
+                    else if (f[1] == "A") steps.getOrPut(role) { ArrayList() } += Step(role, f[3], f[4].toInt(), Weapon.entries.firstOrNull { it.name == f[5] })
+                    else spots.getOrPut(role) { HashMap() }.putIfAbsent(f[3].toInt() * SPOT_STRIDE + f[4].toInt(), CoordGrid(f[5].toInt(), f[6].toInt(), 0))
+                }
+                Copy(steps, spots, deaths)
+            }
+        }
         const val TRACE_FROM = 20
 
         /** The wave the cap goes up on: from then, Blert's guide pops bigs fast so their splits come out early. */
@@ -615,6 +712,10 @@ data class NyloCrewParams(
     val playSpec: Boolean = true,
     val playSwitch: Boolean = true,
     val killFrom: Int = 99,
+    val copy: Int = -1,
+    val copyLate: Int = 3,
+    val copyLead: Int = 2,
+    val copySlack: Int = 0,
 ) {
     companion object {
         fun parse(text: String): NyloCrewParams {
@@ -671,6 +772,10 @@ data class NyloCrewParams(
                 playSpec = num("playSpec", if (d.playSpec) 1.0 else 0.0) != 0.0,
                 playSwitch = num("playSwitch", if (d.playSwitch) 1.0 else 0.0) != 0.0,
                 killFrom = int("killFrom", d.killFrom),
+                copy = int("copy", d.copy),
+                copyLate = int("copyLate", d.copyLate),
+                copyLead = int("copyLead", d.copyLead),
+                copySlack = int("copySlack", d.copySlack),
             )
         }
     }

@@ -56,7 +56,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             get() = y + 1
     }
 
-    private inner class Nylo(val npc: Npc, val born: Int, val big: Boolean, val lane: String?, rot: String, var aggro: Boolean, var pillar: Pillar?, val wave: Int, val spawnTile: CoordGrid? = null) {
+    private inner class Nylo(val npc: Npc, val born: Int, val big: Boolean, val lane: String?, rot: String, var aggro: Boolean, var pillar: Pillar?, val wave: Int, val key: String, val spawnTile: CoordGrid? = null) {
         val rot = rot
         var style = rot[0]
         var fighting = false
@@ -185,7 +185,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             val dealt = if (right && p !in n.nulledBy) hit.damage else 0
             if (dealt > 0) n.inbound += intArrayOf(t, dealt)
             doom(n)
-            if (HIT_TRACE) println("nyloq t$t w${n.wave}${if (n.big) "B" else ""}${n.style} ${hit.damage} hp ${npc.hitpoints} pend ${n.pending(t) - dealt} by ${p?.username} wep ${p?.worn?.get(3)?.id} mag ${hit.type}")
+            if (HIT_TRACE) println("nyloq ${owner.username} ${n.key} t$t w${n.wave}${if (n.big) "B" else ""}${n.style} ${hit.damage} hp ${npc.hitpoints} pend ${n.pending(t) - dealt} by ${p?.username} wep ${p?.worn?.get(3)?.id} mag ${hit.type}")
             hit.queueTag = if (right) dealt + 1 else WRONG_AT_THROW
             return
         }
@@ -275,16 +275,16 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         val npc = spawn(typeOf(s.big, false, first), CoordGrid(OX + s.x, OY + s.y, 0), if (s.big) hp(BIG_HP, ENTRY_BIG_HP) else hp(SMALL_HP, ENTRY_SMALL_HP))
         npc.moveRestrict = dev.openrune.types.MoveRestrict.BlockedNormal
         val pillar = if (s.target == "A") null else pillars.first { it.name == s.target }
-        nylos += Nylo(npc, t, s.big, s.lane, s.rot, s.target == "A", pillar, wave, CoordGrid(OX + s.x, OY + s.y, 0))
+        nylos += Nylo(npc, t, s.big, s.lane, s.rot, s.target == "A", pillar, wave, "w$wave:${s.x}:${s.y}:${if (s.big) "B" else "s"}", CoordGrid(OX + s.x, OY + s.y, 0))
     }
 
-    private fun split(at: CoordGrid) {
+    private fun split(at: CoordGrid, parent: String) {
         for (i in 0 until 2) {
             val style = "MRG"[rand(3)]
             val c = CoordGrid(at.x + i, at.z + i, 0)
             val npc = spawn(typeOf(false, false, style), c, hp(SMALL_HP, ENTRY_SMALL_HP))
             npc.moveRestrict = dev.openrune.types.MoveRestrict.BlockedNormal
-            val n = Nylo(npc, t, false, null, style.toString(), false, nearestPillar(c), wave)
+            val n = Nylo(npc, t, false, null, style.toString(), false, nearestPillar(c), wave, "$parent:$i")
             n.style = style
             nylos += n
         }
@@ -327,14 +327,14 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             if (n.diedAt < 0) {
                 n.diedAt = t
                 if (n.labelAt != Int.MIN_VALUE) npc.say("")
-                if (FATE_TRACE) println("nylofate ${owner.username} t$t w${n.wave} ${if (n.big) "big" else if (n.lane == null) "split" else "small"} killed age $age${n.spawnTile?.let { " @${it.x - OX},${it.z - OY}" } ?: ""}")
+                if (FATE_TRACE) println("nylofate ${owner.username} t$t w${n.wave} ${if (n.big) "big" else if (n.lane == null) "split" else "small"} killed age $age${n.spawnTile?.let { " @${it.x - OX},${it.z - OY}" } ?: ""} key ${n.key}")
                 npc.routeDestination.clear()
                 gfx(NyloLooks.deathGfx(n.style), here)
                 if (n.big) {
                     dying += Int.MAX_VALUE
                     later(BIG_DEATH) {
                         dying.remove(Int.MAX_VALUE)
-                        split(here)
+                        split(here, n.key)
                     }
                 } else {
                     dying += t + SMALL_DEATH
@@ -348,7 +348,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         if (age >= life) {
             if (n.exploding < 0) {
                 n.exploding = t
-                if (FATE_TRACE) println("nylofate ${owner.username} t$t w${n.wave} ${if (n.big) "big" else if (n.lane == null) "split" else "small"} expired age $age${n.spawnTile?.let { " @${it.x - OX},${it.z - OY}" } ?: ""}")
+                if (FATE_TRACE) println("nylofate ${owner.username} t$t w${n.wave} ${if (n.big) "big" else if (n.lane == null) "split" else "small"} expired age $age${n.spawnTile?.let { " @${it.x - OX},${it.z - OY}" } ?: ""} key ${n.key}")
                 npc.routeDestination.clear()
                 npc.anim(NyloLooks.detonateSeq(n.style))
                 gfx(NyloLooks.detonateGfx(n.style), here)
@@ -357,7 +357,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             }
             if (t - n.exploding >= (if (n.big) BIG_BOOM_TICKS else DETONATE_TICKS)) {
                 despawn(npc)
-                if (n.big) split(here)
+                if (n.big) split(here, n.key)
             }
             return
         }
@@ -614,12 +614,15 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         })
     }
 
-    /** A nylocas as a bot sees it ([spawnTile]: the real tile a wave nylocas came in on, null for a split). */
-    class Target(val npc: Npc, val style: Char, val big: Boolean, val born: Int, val aggro: Boolean, val wave: Int, val onPillar: Boolean, val nulledBy: Set<Player>, val doomed: Boolean, val spawnTile: CoordGrid?)
+    /**
+     * A nylocas as a bot sees it ([spawnTile]: the real tile a wave nylocas came in on, null for a split; [key]: `wWAVE:X:Z:B|s`
+     * from its spawn, a split its parent's key and `:0` or `:1`, as Blert's timelines name them).
+     */
+    class Target(val npc: Npc, val style: Char, val big: Boolean, val born: Int, val aggro: Boolean, val wave: Int, val onPillar: Boolean, val nulledBy: Set<Player>, val doomed: Boolean, val spawnTile: CoordGrid?, val key: String)
 
     fun targets(): List<Target> =
         nylos.filter { it.npc.isSlotAssigned && it.npc.hitpoints > 0 && it.exploding < 0 && it.nulledBy.size < party().size }
-            .map { Target(it.npc, it.style, it.big, it.born, it.aggro, it.wave, it.biting, it.nulledBy, it.pending(t) >= it.npc.hitpoints, it.spawnTile) }
+            .map { Target(it.npc, it.style, it.big, it.born, it.aggro, it.wave, it.biting, it.nulledBy, it.pending(t) >= it.npc.hitpoints, it.spawnTile, it.key) }
 
     /** The tick Vasilias drops in (-1 until the last nylocas is gone), and the waves spawned so far. */
     val bossTick: Int
@@ -633,6 +636,10 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
 
     val wavesTotal: Int
         get() = WAVES.size
+
+    /** The tick the latest wave came in. */
+    val waveSpawnedAt: Int
+        get() = lastWaveAt
 
     /** What counts toward the cap now, and the cap the next wave checks against. */
     val roomAlive: Int
