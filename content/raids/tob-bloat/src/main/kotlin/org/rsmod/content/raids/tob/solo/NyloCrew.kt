@@ -143,7 +143,28 @@ class NyloCrew(
     /** The tick a nylocas and anything it leaves are gone if no one touches it. */
     private fun gone(t: NyloSolo.Target): Int = room.t + room.lifeLeft(t) + if (t.big) LIFE else 0
 
-    private fun cleanupSpare(all: List<NyloSolo.Target>): Set<Npc> {
+    private fun cleanupSpare(all: List<NyloSolo.Target>): Set<Npc> = if (params.goalGrid) goalSpare(all) else bestEndSpare(all)
+
+    /**
+     * Teams aim at the Vasilias times on the room's 4-tick grid (2:52.8, 2:55.2, ...): he drops 16 to 19 ticks after the
+     * last nylocas goes, so a goal leaves a deadline for that. Anything that goes off on its own by the deadline of the
+     * earliest goal the crew can still make (killing everything that wouldn't, at [NyloCrewParams.cleanupRate] ticks a
+     * kill) is left alone; the rest is killed.
+     */
+    private fun goalSpare(all: List<NyloSolo.Target>): Set<Npc> {
+        if (all.isEmpty()) return emptySet()
+        var goal = Math.floorDiv(room.t + BOSS_LEAD + GRID - 1, GRID) * GRID
+        repeat(GOALS_TRIED) {
+            val deadline = goal - BOSS_LEAD
+            val must = all.filter { gone(it) > deadline || it.aggro }
+            val work = must.sumOf { if (it.big) BIG_WORK else 1.0 }
+            if (room.t + work * params.cleanupRate <= deadline) return all.filter { it !in must }.mapTo(HashSet()) { it.npc }
+            goal += GRID
+        }
+        return emptySet()
+    }
+
+    private fun bestEndSpare(all: List<NyloSolo.Target>): Set<Npc> {
         val byEnd = all.sortedByDescending { gone(it) }
         var work = 0.0
         var bestK = 0
@@ -400,6 +421,11 @@ class NyloCrew(
 
         /** The wave the cap goes up on: from then, Blert's guide pops bigs fast so their splits come out early. */
         const val POST_CAP = 20
+
+        /** Vasilias drops this many ticks after the last nylocas goes, at the least (the next wave tick, then 4 cycles). */
+        const val BOSS_LEAD = 16
+        const val GRID = 4
+        const val GOALS_TRIED = 12
         const val LATE_WAVE = 28
         const val BIG_WORK = 3.0
         const val PREFIRE_SLACK = 3
@@ -494,6 +520,7 @@ data class NyloCrewParams(
     val cleanAreaFrom: Int = 99,
     val scriptBigs: Boolean = false,
     val scriptGuard: Boolean = true,
+    val goalGrid: Boolean = true,
 ) {
     companion object {
         fun parse(text: String): NyloCrewParams {
@@ -540,6 +567,7 @@ data class NyloCrewParams(
                 cleanAreaFrom = int("cleanAreaFrom", d.cleanAreaFrom),
                 scriptBigs = num("scriptBigs", if (d.scriptBigs) 1.0 else 0.0) != 0.0,
                 scriptGuard = num("scriptGuard", if (d.scriptGuard) 1.0 else 0.0) != 0.0,
+                goalGrid = num("goalGrid", if (d.goalGrid) 1.0 else 0.0) != 0.0,
             )
         }
     }
