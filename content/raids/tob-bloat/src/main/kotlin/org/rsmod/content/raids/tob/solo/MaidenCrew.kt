@@ -18,10 +18,10 @@ import kotlin.math.max
  *
  * - everyone opens with a Twisted bow from range and the Tonalztics of Ralos spec, then the ranger and melee scythe her
  *   for the rest of the room while the mage keeps bowing her from range;
- * - at each proc the mage holds its barrage for the crabs to clump as they close in on her (Blert: they stand frozen a
- *   couple of tiles off her east side), casts where it catches the most, re-freezes any about to thaw, and barrages a
- *   frozen pile with enough hitpoints left in it;
- * - the scythers leave her for a crab nobody froze that is about to reach her, and for a frozen pile close by with
+ * - the mage plays the sim's trio procedure: it stands for each proc so its barrage is ready on the spawn, freezes the
+ *   wave plan's 1s and 2s, then the 3s once clumped and the 4s as they walk into them, then barrages a frozen pile
+ *   worth it;
+ * - the scythers each take one of the wave's 1s and 2s the mage doesn't (north first), and a frozen pile close by with
  *   enough hitpoints in it; the melee puts its Dinh's bulwark spec into the crabs once enough are close together;
  * - the ranger spends its second spec on her between procs, the mage its second once the crabs are dealt with, and the
  *   mage comes in to scythe at the end.
@@ -50,11 +50,8 @@ class MaidenCrew(
     private val opened = HashMap<Player, Int>()
     private val issued = HashMap<Player, Pair<Move, Int>>()
 
-    /** A crab a scyther is on its way to (no one else's), until when. */
-    private val claimed = HashMap<Npc, Pair<Player, Int>>()
-
-    /** The crab the mage last froze around, until its barrage has landed. */
-    private var freezing: Pair<CoordGrid, Int>? = null
+    /** A bot's order on a crab, kept until it goes off (or the crab goes, or it's stale): a wave plan's pick is used once. */
+    private val onCrab = HashMap<Player, Pair<Npc, Int>>()
 
     private val procAt = ArrayList<Int>()
     private var phaseSeen = 0
@@ -75,12 +72,13 @@ class MaidenCrew(
             phaseSeen++
             procAt += room.t
         }
-        claimed.entries.removeIf { (npc, claim) -> !npc.isSlotAssigned || npc.hitpoints <= 0 || claim.second < room.t }
-        freezing = freezing?.takeIf { it.second >= room.t }
         for ((bot, role) in members) {
             if (!bot.isSlotAssigned || bot.hitpoints <= 0) continue
             noteThrown(bot)
             if (bot.actionDelay > now + 1) continue
+            val (crab, at) = onCrab[bot] ?: (null to 0)
+            if (crab != null && crab.isSlotAssigned && crab.hitpoints > 0 && room.t - at <= CRAB_ORDER_TICKS) continue
+            onCrab.remove(bot)
             val plan = plan(bot, role, crabs, now) ?: continue
             act(bot, plan, now)
         }
@@ -91,6 +89,7 @@ class MaidenCrew(
         val (move, at) = issued[bot] ?: return
         if (bot.actionDelay <= at) return
         issued.remove(bot)
+        onCrab.remove(bot)
         if (opened.getOrDefault(bot, 0) < OPENING.size && OPENING[opened.getOrDefault(bot, 0)] == move) opened[bot] = opened.getOrDefault(bot, 0) + 1
     }
 
@@ -108,18 +107,53 @@ class MaidenCrew(
         }
     }
 
+    /**
+     * The sim's trio plan for a wave (its `planOf`, from the trio guide): the mage freezes two of the 1s and 2s - all
+     * four out: S1 and S2; no S1 or N1: the S2 (it thaws into the clump); else one 1 (S1 before N1) and one 2 (S2 before
+     * N2) - and the DPS take the rest, north first, one each.
+     */
+    private class WavePlan(val freeze: List<String>, val dps: List<String>) {
+        val done = HashSet<String>()
+    }
+
+    private val plans = HashMap<Int, WavePlan>()
+
+    private fun planOf(wave: Int, crabs: List<MaidenSolo.CrabView>): WavePlan =
+        plans.getOrPut(wave) {
+            val here = { id: String -> crabs.any { it.born == wave && it.spot == id } }
+            val out = listOf("S1", "N1", "S2", "N2").filter(here)
+            val freeze =
+                when {
+                    out.size == 4 -> listOf("S1", "S2")
+                    !here("S1") && !here("N1") && here("S2") -> listOf("S2") + listOfNotNull("N2".takeIf(here))
+                    else -> {
+                        val ones = listOf("S1", "N1").filter(here)
+                        val twos = listOf("S2", "N2").filter(here)
+                        if (ones.isNotEmpty()) listOf(ones.first()) + twos.take(1) else twos
+                    }
+                }
+            WavePlan(freeze, listOf("N1", "N2", "S1", "S2").filter { it in out && it !in freeze })
+        }
+
+    private fun crabOf(crabs: List<MaidenSolo.CrabView>, wave: Int, id: String): MaidenSolo.CrabView? =
+        crabs.firstOrNull { it.born == wave && it.spot == id && !it.arrived }
+
     private fun scyther(bot: Player, role: NyloRole, crabs: List<MaidenSolo.CrabView>, now: Int): Plan {
         val her = room.boss
-        val loose = crabs.filter { !it.arrived && it.frozenUntil <= now && !aboutToFreeze(it) }
         val here = room.real(bot.coords)
         if (role == NyloRole.Melee && specReady(bot) && room.phase >= params.dinhPhase) {
             val near = crabs.filter { !it.arrived && dist(here, room.real(it.npc.coords), CRAB_SIZE) <= BASH_RADIUS }
             if (near.size >= params.dinhMin) return Plan(Move.Dinh, near.minBy { it.gap }.npc)
         }
-        val leaking = loose.filter { it.gap <= params.crabGap && it.gap - 1 >= toHit(here, it) && claimed[it.npc]?.first.let { c -> c == null || c == bot } }
-        leaking.minByOrNull { it.gap }?.let {
-            claimed[it.npc] = bot to room.t + CLAIM_TICKS
-            return Plan(Move.Scythe, it.npc)
+        val slot = if (role == NyloRole.Ranger) 0 else 1
+        for (wave in crabs.map { it.born }.distinct().sortedDescending()) {
+            val plan = planOf(wave, crabs)
+            val id = plan.dps.getOrNull(slot)?.takeIf { it !in plan.done } ?: continue
+            val c = crabOf(crabs, wave, id)
+            if (c == null || c.frozenUntil > now) continue
+            if (c.gap > params.crabGap || c.gap - 1 < toHit(here, c)) continue
+            plan.done += id
+            return Plan(Move.Scythe, c.npc)
         }
         val pile = crabs.filter { !it.arrived && it.frozenUntil > now && (it.npc.hitpoints >= params.pileHp || thawing(it, now)) && dist(here, room.real(it.npc.coords), CRAB_SIZE) <= PILE_REACH }
         pile.maxByOrNull { c -> pile.count { inSquare(it, c) } }?.let { return Plan(Move.Scythe, it.npc) }
@@ -127,27 +161,75 @@ class MaidenCrew(
         return Plan(Move.Scythe, her)
     }
 
+    /**
+     * The sim's trio mage: it stops attacking when she's close to her next proc so its barrage is ready on the spawn,
+     * freezes the wave plan's 1s and 2s, then the 3s once they've clumped and the 4s once they walk into the frozen 3s
+     * (waiting a tick at a time for a clump), then barrages a frozen pile worth it, else bows her.
+     */
     private fun mage(bot: Player, crabs: List<MaidenSolo.CrabView>, now: Int): Plan? {
         val her = room.boss
-        val walking = crabs.filter { !it.arrived && it.frozenUntil <= now + params.refreezeTicks }
-        val close = walking.filter { it.gap <= params.clumpGap || it.gap - 1 <= params.mustFreeze }
-        if (close.isNotEmpty()) {
-            val primary = close.maxBy { c -> walking.filter { inSquare(it, c) }.sumOf { urgency(it) } }
-            freezing = room.real(primary.npc.coords) to room.t + FREEZE_FLIGHT
-            return Plan(Move.Barrage, primary.npc)
-        }
-        if (walking.any { it.gap <= params.clumpGap + params.holdTicks }) {
-            bot.clearInteractionRoute()
-            issued.remove(bot)
-            return null
+        for (wave in crabs.map { it.born }.distinct().sortedDescending()) {
+            val plan = planOf(wave, crabs)
+            for (id in plan.freeze) {
+                if (id in plan.done) continue
+                val c = crabOf(crabs, wave, id)
+                if (c == null || c.frozenUntil > now) {
+                    plan.done += id
+                    continue
+                }
+                plan.done += id
+                return barrage(c)
+            }
+            for (group in CLUMPS) {
+                if (group.name in plan.done) continue
+                val mine = crabs.filter { it.born == wave && !it.arrived && it.spot in group.spots && it.frozenUntil <= now }
+                if (mine.isEmpty()) {
+                    plan.done += group.name
+                    continue
+                }
+                if (!clumped(mine, crabs, wave, group, now)) return hold(bot)
+                plan.done += group.name
+                return barrage(mine.maxBy { c -> mine.count { inSquare(it, c) } })
+            }
         }
         val standing = crabs.filter { !it.arrived }
         val pile = standing.maxByOrNull { c -> standing.filter { inSquare(it, c) }.sumOf { it.npc.hitpoints } }
         val thawing = standing.any { thawing(it, now) }
-        if (pile != null && (thawing || standing.filter { inSquare(it, pile) }.sumOf { it.npc.hitpoints } >= params.mageKillHp)) return Plan(Move.Barrage, pile.npc)
+        if (pile != null && (thawing || standing.filter { inSquare(it, pile) }.sumOf { it.npc.hitpoints } >= params.mageKillHp)) return barrage(pile)
+        if (nearProc(her)) return hold(bot)
         if (her.hitpoints * 100 <= her.baseHitpointsLvl * params.mageScytheBelow) return Plan(Move.Scythe, her)
         if (room.t >= params.mageSpecAt && specReady(bot)) return Plan(Move.Ralos, her)
         return Plan(Move.Tbow, her)
+    }
+
+    private class Clump(val name: String, val spots: Set<String>, val lone: Int)
+
+    /**
+     * A clump is ready when one of it reaches her next tick, when all of it stands in one 3x3, or (a lone crab) on the
+     * usual tick after the proc; the 4s go into the frozen 3s.
+     */
+    private fun clumped(mine: List<MaidenSolo.CrabView>, crabs: List<MaidenSolo.CrabView>, wave: Int, group: Clump, now: Int): Boolean {
+        if (mine.any { it.gap <= 2 }) return true
+        if (group.name == "4s") {
+            val threes = crabs.filter { it.born == wave && it.spot in THREES && it.frozenUntil > now }
+            if (threes.isNotEmpty()) return mine.any { c -> threes.any { inSquare(c, it) } }
+        }
+        if (mine.size == 1) return room.t >= wave + group.lone
+        return mine.all { c -> mine.all { inSquare(it, c) } }
+    }
+
+    private fun barrage(c: MaidenSolo.CrabView): Plan = Plan(Move.Barrage, c.npc)
+
+    private fun hold(bot: Player): Plan? {
+        bot.clearInteractionRoute()
+        issued.remove(bot)
+        return null
+    }
+
+    /** Within the sim's trio stand margin (1.5% of her hitpoints) of her next proc. */
+    private fun nearProc(her: Npc): Boolean {
+        val next = PROCS.getOrNull(room.phase) ?: return false
+        return her.hitpoints * PCT_SCALE <= her.baseHitpointsLvl * (next * PCT_SCALE / 100 + params.standPermille)
     }
 
     /** Ticks until a scythe swung from [here] lands on the crab: the run to it (two tiles a tick), then the swing. */
@@ -155,15 +237,6 @@ class MaidenCrew(
 
     /** A frozen crab that walks on soon: whoever can reach it finishes it first. */
     private fun thawing(c: MaidenSolo.CrabView, now: Int): Boolean = c.frozenUntil > now && c.frozenUntil - now <= params.thawTicks
-
-    /** The crab closest to reaching her counts most: a crab one tile out is worth far more than one at its spawn. */
-    private fun urgency(c: MaidenSolo.CrabView): Double = 1.0 / (1 + c.gap)
-
-    private fun aboutToFreeze(c: MaidenSolo.CrabView): Boolean {
-        val (at, _) = freezing ?: return false
-        val tile = room.real(c.npc.coords)
-        return overlaps(tile, CRAB_SIZE, at.x - 1, at.z - 1, at.x + CRAB_SIZE, at.z + CRAB_SIZE)
-    }
 
     private fun inSquare(c: MaidenSolo.CrabView, primary: MaidenSolo.CrabView): Boolean {
         val at = room.real(primary.npc.coords)
@@ -183,6 +256,7 @@ class MaidenCrew(
         if (same && plan.move != Move.Barrage) return
         if (plan.move == Move.Barrage) bots.cast(bot, plan.target, barrage) else bots.attack(bot, plan.target)
         issued[bot] = plan.move to max(now, bot.actionDelay)
+        if (plan.target !== room.boss) onCrab[bot] = plan.target to room.t
     }
 
     private fun current(bot: Player): Npc? = (bot.interaction as? InteractionNpc)?.target
@@ -199,27 +273,27 @@ class MaidenCrew(
         const val CRAB_SIZE = 2
         const val BASH_RADIUS = 5
         const val SPEC_ENERGY = 500
-        const val CLAIM_TICKS = 4
         const val PILE_REACH = 3
-        const val FREEZE_FLIGHT = 3
+        val PROCS = listOf(70, 50, 30)
+        const val PCT_SCALE = 1000
+        val THREES = setOf("N3", "S3")
+        val CLUMPS = listOf(Clump("3s", THREES, 11), Clump("4s", setOf("N4a", "N4b", "S4a", "S4b"), 16))
+        const val CRAB_ORDER_TICKS = 6
     }
 }
 
 /** The Maiden crew's choices (see [MaidenCrew]); `parse` reads `name=value,...` and keeps the default for the rest. */
 data class MaidenCrewParams(
-    val crabGap: Int = 4,
-    val clumpGap: Int = 3,
-    val mustFreeze: Int = 10,
-    val thawTicks: Int = 0,
-    val holdTicks: Int = 0,
-    val mageKillHp: Int = 144,
-    val mageScytheBelow: Int = 32,
-    val refreezeTicks: Int = 2,
-    val pileHp: Int = 0,
-    val dinhPhase: Int = 1,
-    val dinhMin: Int = 5,
-    val rangerSpecAt: Int = 29,
-    val mageSpecAt: Int = 120,
+    val crabGap: Int = 8,
+    val standPermille: Int = 15,
+    val thawTicks: Int = 6,
+    val mageKillHp: Int = 45,
+    val mageScytheBelow: Int = 30,
+    val pileHp: Int = 40,
+    val dinhPhase: Int = 2,
+    val dinhMin: Int = 3,
+    val rangerSpecAt: Int = 45,
+    val mageSpecAt: Int = 40,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
@@ -228,13 +302,10 @@ data class MaidenCrewParams(
             fun int(name: String, default: Int) = values[name]?.toDoubleOrNull()?.toInt() ?: default
             return MaidenCrewParams(
                 crabGap = int("crabGap", d.crabGap),
-                clumpGap = int("clumpGap", d.clumpGap),
-                mustFreeze = int("mustFreeze", d.mustFreeze),
+                standPermille = int("standPermille", d.standPermille),
                 thawTicks = int("thawTicks", d.thawTicks),
-                holdTicks = int("holdTicks", d.holdTicks),
                 mageKillHp = int("mageKillHp", d.mageKillHp),
                 mageScytheBelow = int("mageScytheBelow", d.mageScytheBelow),
-                refreezeTicks = int("refreezeTicks", d.refreezeTicks),
                 pileHp = int("pileHp", d.pileHp),
                 dinhPhase = int("dinhPhase", d.dinhPhase),
                 dinhMin = int("dinhMin", d.dinhMin),

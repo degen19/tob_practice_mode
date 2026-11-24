@@ -44,7 +44,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     var healed = 0
         private set
 
-    private class Crab(val npc: Npc, val spot: Int) {
+    private class Crab(val npc: Npc, val spot: Int, val born: Int) {
         var arrived = false
         var leakedAt = -1
     }
@@ -134,7 +134,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             val crab = spawn(CRAB, CoordGrid(x, y, 0), hp(CRAB_HP, ENTRY_CRAB_HP))
             // the Nylocas Matomenos wiki: a freeze can't miss them from an accurate enough caster
             crab.vars["varn.freeze_guaranteed"] = FREEZE_SURE_ON_ROLL
-            crabs += Crab(crab, spot)
+            crabs += Crab(crab, spot, t)
         }
     }
 
@@ -355,12 +355,12 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         }
     }
 
-    /** A crab as a bot sees it: its spawn, tiles from her, the clock its freeze ends on, and whether it's melting in. */
-    class CrabView(val npc: Npc, val spot: String, val gap: Int, val frozenUntil: Int, val arrived: Boolean)
+    /** A crab as a bot sees it: its spawn and proc tick, tiles from her, the clock its freeze ends on, whether it's melting in. */
+    class CrabView(val npc: Npc, val spot: String, val born: Int, val gap: Int, val frozenUntil: Int, val arrived: Boolean)
 
     fun crabViews(): List<CrabView> =
         crabs.filter { it.npc.isSlotAssigned && it.npc.hitpoints > 0 && it.leakedAt < 0 }
-            .map { CrabView(it.npc, SPOT_NAMES[it.spot], gap(it.npc), it.npc.vars["varn.freeze_end_clock"], it.arrived) }
+            .map { CrabView(it.npc, SPOT_NAMES[it.spot], it.born, gap(it.npc), it.npc.vars["varn.freeze_end_clock"], it.arrived) }
 
     val boss: Npc
         get() = maiden
