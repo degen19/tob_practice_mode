@@ -101,7 +101,7 @@ constructor(
             }
         }
         onCommand("tob") {
-            desc = "Theatre of Blood, solo: ::tob maiden | bloat | nylo | sote | xarpus | verzik | stop"
+            desc = "Theatre of Blood, solo: ::tob maiden | bloat | nylo | sote | xarpus | verzik | stop | watch (a bot trio's Nylocas)"
             invalidArgs = "Usage: ::tob <room> | stop"
             cheat { tob() }
         }
@@ -136,6 +136,7 @@ constructor(
             "map" -> raids.byOwner[player.username]?.let { dumpMap(it) }
             "mode" -> raids.switchMode(player)
             "start" -> raids.byOwner[player.username]?.start()
+            "watch" -> watch(player)
             "auto" -> if (!auto.remove(player)) { auto += player; player.mes("Autopilot on.") } else player.mes("Autopilot off.")
             "hp" -> raids.byOwner[player.username]?.autoTarget()?.let { it.hitpoints = args.getOrNull(1)?.toIntOrNull() ?: it.hitpoints }
             else -> {
@@ -282,19 +283,41 @@ constructor(
 
     private fun startTrios(teams: Int) {
         for (i in 1..teams) {
-            val crew = NyloRole.entries.map { role -> role to spawnNyloBot("${role.name}$i", role) }
-            if (crew.any { it.second == null }) return logger.warn { "nylo trio $i: no room for its bots" }
-            val owner = crew[0].second!!
-            auto += owner
-            travel(owner, TobRoom.NYLOCAS)
-            val room = raids.byOwner[owner.username] as? NyloSolo ?: continue
-            for ((_, bot) in crew.drop(1)) {
-                room.helpers += bot!!
-                org.rsmod.game.entity.util.PathingEntityCommon.telejump(bot, d.collision, room.at(room.entry))
-            }
-            val params = trioParams.getOrNull(i - 1)?.let(NyloCrewParams::parse) ?: NyloCrewParams()
-            trios[room] = NyloCrew(room, crew.map { it.second!! to it.first }, bots, d.mapClock, barrageButton, params)
+            startTrio("$i", trioParams.getOrNull(i - 1)?.let(NyloCrewParams::parse) ?: NyloCrewParams()) ?: return
         }
+    }
+
+    /** A bot trio in a fresh Nylocas room (bots named Mage[tag], Ranger[tag], Melee[tag]); null if they can't all log in. */
+    private fun startTrio(tag: String, params: NyloCrewParams): NyloSolo? {
+        val crew = NyloRole.entries.map { role -> role to spawnNyloBot("${role.name}$tag", role) }
+        if (crew.any { it.second == null }) {
+            for ((_, bot) in crew) bot?.let(bots::remove)
+            logger.warn { "nylo trio $tag: no room for its bots" }
+            return null
+        }
+        val owner = crew[0].second!!
+        auto += owner
+        for ((_, bot) in crew) raids.undying += bot!!
+        travel(owner, TobRoom.NYLOCAS)
+        val room = raids.byOwner[owner.username] as? NyloSolo ?: return null
+        for ((_, bot) in crew.drop(1)) {
+            room.helpers += bot!!
+            org.rsmod.game.entity.util.PathingEntityCommon.telejump(bot, d.collision, room.at(room.entry))
+        }
+        trios[room] = NyloCrew(room, crew.map { it.second!! to it.first }, bots, d.mapClock, barrageButton, params)
+        return room
+    }
+
+    /** `::tob watch`: a bot trio runs the Nylocas waves and you watch from the room's doorway (nothing targets you). */
+    private val spectators = HashMap<SoloRoom, MutableList<Player>>()
+    private var watchRuns = 0
+
+    private fun watch(player: Player) {
+        if (raids.forPlayer(player) != null || spectators.values.any { player in it }) return player.mes("You're already in the Theatre.")
+        val room = startTrio("w${++watchRuns}", NyloCrewParams()) ?: return player.mes("No room for a bot trio right now.")
+        spectators.getOrPut(room) { ArrayList() } += player
+        protectedAccess.launch(player) { telejump(room.at(room.entry), TeleportType.Exempt) }
+        player.mes("A bot trio takes on the Nylocas; you're watching from the doorway. It ends when Vasilias drops in.")
     }
 
     private fun spawnNyloBot(name: String, role: NyloRole): Player? {
@@ -324,13 +347,22 @@ constructor(
         }
         for (p in listOf(room.owner) + room.helpers) if (p in bots.all) p.runEnergy = org.rsmod.api.config.constants.run_max_energy
         trio.tick()
-        if (nylo.bossTick >= 0 && room.t >= nylo.bossTick) {
+        val linger = if (room in spectators) WATCH_LINGER else 0
+        if (nylo.bossTick >= 0 && room.t >= nylo.bossTick + linger) {
             logger.info { "nylo trio ${room.owner.username}: Vasilias at room tick ${nylo.bossTick} (${raidTime(nylo.bossTick)}), waves ${nylo.wavesSpawned}, stalls ${nylo.stalls}, pillars ${nylo.pillarsStanding}" }
             trios.remove(room)
             auto.remove(room.owner)
             val crew = listOf(room.owner) + room.helpers
             close(room)
-            for (p in crew) bots.remove(p)
+            for (p in crew) {
+                raids.undying -= p
+                bots.remove(p)
+            }
+            for (p in spectators.remove(room) ?: emptyList()) {
+                if (!p.isSlotAssigned) continue
+                p.mes("The bots got Vasilias out at ${raidTime(nylo.bossTick)} (${nylo.stalls} stalls).")
+                protectedAccess.launch(p) { telejump(EXIT, TeleportType.Exempt) }
+            }
         }
     }
 
@@ -411,6 +443,7 @@ constructor(
             listOf("npc.nylocas_boss_spawning", "npc.nylocas_boss_melee", "npc.nylocas_boss_ranged", "npc.nylocas_boss_magic", "npc.tob_xarpus_combat",
                 "npc.tob_xarpus_static", "npc.tob_xarpus_feeding", "npc.verzik_phase2")
         const val RUNES = 100_000
+        const val WATCH_LINGER = 8
         val SELF_TEST_GEAR =
             listOf(
                 dev.openrune.util.Wearpos.Hat.slot to "obj.torva_helm",

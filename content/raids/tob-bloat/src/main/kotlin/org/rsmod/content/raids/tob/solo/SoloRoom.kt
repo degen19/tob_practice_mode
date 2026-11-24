@@ -61,8 +61,9 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     fun real(c: CoordGrid): CoordGrid = CoordGrid(c.x - copyBase.x + origin.x, c.z - copyBase.z + origin.z, c.level)
 
     fun contains(c: CoordGrid): Boolean {
-        val r = real(c)
-        return r.x in id.minX..id.maxX && r.z in id.minY..id.maxY
+        val x = c.x - copyBase.x + origin.x
+        val z = c.z - copyBase.z + origin.z
+        return x in id.minX..id.maxX && z in id.minY..id.maxY
     }
 
     /** The player is in this room's copy and alive. */

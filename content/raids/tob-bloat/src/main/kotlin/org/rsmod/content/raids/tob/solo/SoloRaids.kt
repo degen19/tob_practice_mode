@@ -6,6 +6,7 @@ import jakarta.inject.Singleton
 import org.rsmod.api.death.PlayerDeathOverrideHook
 import org.rsmod.api.player.deathResetTimers
 import org.rsmod.api.player.disablePrayers
+import org.rsmod.api.player.stat.baseHitpointsLvl
 import org.rsmod.api.player.stat.statRestoreAll
 import org.rsmod.api.instances.InstanceManager
 import org.rsmod.api.npc.hit.NpcHitLandHook
@@ -83,6 +84,9 @@ constructor(
 class SoloRaids {
     val byOwner = HashMap<String, SoloRoom>()
 
+    /** Bot teammates: a death just tops them back up (they don't eat), so a bot run never resets the room. */
+    val undying = HashSet<Player>()
+
     /** Players playing Entry mode (by username); everyone else plays Normal mode. */
     private val entryMode = HashSet<String>()
 
@@ -142,6 +146,10 @@ class SoloFloor @Inject constructor(private val raids: SoloRaids) : NpcHitpoints
 class SoloDeath @Inject constructor(private val raids: SoloRaids) : PlayerDeathOverrideHook {
     override suspend fun ProtectedAccess.override(): Boolean {
         val room = raids.forPlayer(player) ?: return false
+        if (player in raids.undying) {
+            player.statMap.setCurrentLevel("stat.hitpoints", player.baseHitpointsLvl.toByte())
+            return true
+        }
         if (org.rsmod.api.player.PracticeSettings.noDeaths) {
             player.statMap.setCurrentLevel("stat.hitpoints", 1.toByte())
             return true
