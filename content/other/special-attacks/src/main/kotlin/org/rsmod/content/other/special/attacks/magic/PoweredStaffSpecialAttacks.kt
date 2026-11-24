@@ -8,6 +8,7 @@ import org.rsmod.api.combat.manager.CombatChargeManager
 import org.rsmod.api.npc.stat.statDrain
 import org.rsmod.api.obj.charges.ObjChargeManager
 import org.rsmod.api.obj.charges.ObjChargeManager.Companion.isFailure
+import org.rsmod.api.player.cheat.adminMaxHit
 import org.rsmod.api.player.protect.ProtectedAccess
 import org.rsmod.api.player.stat.magicLvl
 import org.rsmod.api.player.stat.statDrain
@@ -168,7 +169,7 @@ constructor(
             val (serverDelay, clientDelay) = proj.durations
             target.spotanim("spotanim.dawnbringer_impact_spec", delay = clientDelay)
 
-            val damage = random.of(PULSATE_MIN, PULSATE_MAX)
+            val damage = if (player.adminMaxHit) PULSATE_MAX else random.of(PULSATE_MIN, PULSATE_MAX)
             manager.giveCombatXp(this, target, attack, damage)
             manager.queueMagicHit(this, target, damage, clientDelay, serverDelay)
             manager.continueCombat(this, target)

@@ -42,7 +42,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     private class Wave(val stall: Int, vararg val spawns: Spawn)
 
     private inner class Pillar(val name: String, val x: Int, val y: Int) {
-        var hp = pillarHp
+        var hp = 0
         var shaking = false
         var npc: Npc? = null
         var loc: LocInfo? = null
@@ -67,8 +67,13 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             get() = if (big) 2 else 1
     }
 
+    /**
+     * Pillars have more hitpoints the fewer people there are: the cache's 130 (Entry 155) with five, half again per
+     * player fewer (solo 390). Unknown in the game's numbers; set so the most pillar contact Blert shows a raid of that size
+     * taking (solos about 276 nylocas attacks on a pillar, duos 225, trios 193, at 0-2 a hit) still leaves it up.
+     */
     private val pillarHp: Int
-        get() = if (entryMode) ENTRY_PILLAR_HP else PILLAR_HP
+        get() = (if (entryMode) ENTRY_PILLAR_HP else PILLAR_HP) * (PILLAR_SCALE_BASE + (MAX_PARTY - (1 + helpers.size).coerceIn(1, MAX_PARTY))) / PILLAR_SCALE_BASE
 
     private val pillars = listOf(Pillar("SW", OX + 25, OY + 18), Pillar("NW", OX + 25, OY + 29), Pillar("SE", OX + 36, OY + 18), Pillar("NE", OX + 36, OY + 29))
     private val nylos = ArrayList<Nylo>()
@@ -82,6 +87,9 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         private set
     private var bossAt = -1
     private var boss: Npc? = null
+
+    /** Who Vasilias goes for: no one until someone attacks him (he wanders until then). */
+    private var bossTarget: Player? = null
     private var bossStyle = 'M'
     private var formAt = 0
     private var bossNext = 0
@@ -98,6 +106,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         lastWaveAt = 0
         bossAt = -1
         boss = null
+        bossTarget = null
         bossDead = -1
         allDown = false
         val standing = findLocs(PILLAR_PRISTINE)
@@ -107,6 +116,21 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             p.npc = spawn(PILLAR_NPC, CoordGrid(p.x, p.y, 0), pillarHp)
             p.loc = standing.firstOrNull { (c, _) -> c.x == p.x && c.z == p.y }?.second
             if (p.loc == null) logger.warn { "nylocas: no support loc at ${p.x}, ${p.y}" }
+        }
+    }
+
+    override fun onStart() {
+        scalePillars()
+    }
+
+    /** The room's pillars at the hitpoints for who's in it (they spawn before a team's last members are in). */
+    private fun scalePillars() {
+        for (p in pillars) {
+            p.hp = pillarHp
+            p.npc?.let {
+                it.baseHitpointsLvl = pillarHp
+                it.hitpoints = pillarHp
+            }
         }
     }
 
@@ -133,10 +157,23 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     }
 
     /** The wrong style heals Vasilias (the purple heal splat) and comes back at you. */
+    /**
+     * A hit on Vasilias is judged by his colour when it was queued: one thrown at the right colour lands as damage
+     * even if he changes before it lands, and one thrown at the wrong colour heals him and comes back.
+     */
+    override fun queued(npc: Npc, hit: org.rsmod.game.hit.HitBuilder) {
+        if (npc !== boss || bossDead >= 0) return
+        if (bossStyle != '-') hit.queueTag = if (rightStyle(hit.type)) TAG_RIGHT else TAG_WRONG
+        if (bossTarget == null) bossTarget = attacker(hit)
+    }
+
+    private fun rightStyle(type: HitType): Boolean = type == HitType.Typeless || type == styleType(bossStyle)
+
     override fun healedByHits(npc: Npc, hit: Hit): Boolean {
         if (npc !== boss || bossDead >= 0 || bossStyle == '-') return false
-        if (hit.type == HitType.Typeless || hit.type == styleType(bossStyle)) return false
-        inside()?.let { hurt(it, hit.damage, source = npc) }
+        if (hit.queueTag == TAG_RIGHT) return false
+        if (hit.queueTag != TAG_WRONG && rightStyle(hit.type)) return false
+        (attacker(hit) ?: inside())?.let { hurt(it, hit.damage, source = npc) }
         return true
     }
 
@@ -164,7 +201,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         nylos.removeAll { !it.npc.isSlotAssigned }
         cleanupEnd()
         pillarsTick()
-        bossTick(p)
+        bossTick(bossTarget?.takeIf { it in party })
     }
 
     /* ---- waves */
@@ -318,8 +355,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             n.aggro = true
             return
         }
-        val pd = boxDist(here.x, here.z, pillar.x - n.size + 1, pillar.y - n.size + 1, pillar.x + 2, pillar.y + 2)
-        if (pd > 1) {
+        if (!beside(here, n.size, pillar)) {
             npc.walk(at(stepToward(here, CoordGrid(pillar.cx, pillar.cy, 0), n.size)))
             return
         }
@@ -357,12 +393,26 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             else -> CoordGrid(OX + 37, here.z, 0)
         }
 
-    /** The game's NPC step: diagonally toward the target, else along whichever axis is free. */
+    /**
+     * The game's NPC step: diagonally toward the target, else along whichever axis is free; failing those, the free step
+     * that gets it closest (a big one leaving a lane, whose straight step would clip the lane wall, slides off it).
+     */
     private fun stepToward(from: CoordGrid, to: CoordGrid, size: Int): CoordGrid {
         val dx = sign(to.x - from.x)
         val dy = sign(to.z - from.z)
         val opts = listOf(CoordGrid(from.x + dx, from.z + dy, 0), CoordGrid(from.x + dx, from.z, 0), CoordGrid(from.x, from.z + dy, 0))
-        return opts.firstOrNull { it != from && free(it, size) } ?: from
+        opts.firstOrNull { it != from && free(it, size) }?.let { return it }
+        val here = chebyshev(from, to)
+        return (-1..1).flatMap { x -> (-1..1).map { z -> CoordGrid(from.x + x, from.z + z, 0) } }
+            .filter { it != from && free(it, size) && chebyshev(it, to) <= here }
+            .minByOrNull { chebyshev(it, to) * 2 + abs(it.x - to.x) + abs(it.z - to.z) } ?: from
+    }
+
+    /** A nylocas of [size] at [c] shares a side with [pillar] (none bite it from a corner). */
+    private fun beside(c: CoordGrid, size: Int, pillar: Pillar): Boolean {
+        val acrossX = c.x + size - 1 >= pillar.x && c.x <= pillar.x + 2
+        val acrossZ = c.z + size - 1 >= pillar.y && c.z <= pillar.y + 2
+        return (acrossX && (c.z + size == pillar.y || c.z == pillar.y + 3)) || (acrossZ && (c.x + size == pillar.x || c.x == pillar.x + 3))
     }
 
     /** Where a nylocas of [size] stands to bite [pc]: its south-west tile, with the player straight beside it (no diagonals). */
@@ -467,7 +517,11 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             form("MRG".filter { it != bossStyle }[rand(2)])
             bossNext = if (bossStyle == 'M') t + MELEE_FIRST else maxOf(t + RANGED_FIRST, bossLast + RANGED_GAP)
         }
-        if (bossStyle == '-' || p == null) return
+        if (bossStyle == '-') return
+        if (p == null) {
+            wander(b)
+            return
+        }
         val here = real(b.coords)
         val pc = real(p.coords)
         val dist = boxDist(pc.x, pc.z, here.x, here.z, here.x + BOSS_SIZE - 1, here.z + BOSS_SIZE - 1)
@@ -486,9 +540,17 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         val roll = rand(0, BOSS_MAX)
         val prayer = prayerFor(bossStyle)
         later(delay) {
-            val q = inside() ?: return@later
-            hurt(q, if (prays(q, prayer)) roll / 4 else roll, source = b)
+            if (p !in party()) return@later
+            hurt(p, if (prays(p, prayer)) roll / 4 else roll, source = b)
         }
+    }
+
+    /** No one has attacked him yet: now and then he takes a step or two about the floor. */
+    private fun wander(b: Npc) {
+        if (frozen(b) || !b.routeDestination.isEmpty() || !chance(WANDER_CHANCE)) return
+        val here = real(b.coords)
+        val to = CoordGrid(here.x + rand(-WANDER_RANGE, WANDER_RANGE), here.z + rand(-WANDER_RANGE, WANDER_RANGE), 0)
+        if (to != here && free(to, BOSS_SIZE)) b.walk(at(to))
     }
 
     private fun form(s: Char) {
@@ -625,6 +687,8 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val PILLAR_COLLAPSE_TICKS = 4
         /** The cache's pillar hitpoints (normal, Entry); how they scale with the party isn't known yet. */
         const val PILLAR_HP = 130
+        const val MAX_PARTY = 5
+        const val PILLAR_SCALE_BASE = 2
         val WEST_EAST_LANE_Z = 4248..4249
         val WEST_LANE_X = 3281..3289
         val EAST_LANE_X = 3302..3310
@@ -643,6 +707,10 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val BOSS_X = 3293
         const val BOSS_Y = 4246
         const val BOSS_SIZE = 4
+        const val TAG_RIGHT = 1
+        const val TAG_WRONG = 2
+        const val WANDER_CHANCE = 0.125
+        const val WANDER_RANGE = 2
         const val BOSS_HP = 1875
         const val BOSS_CYCLES = 5
         const val BOSS_DROP = 2

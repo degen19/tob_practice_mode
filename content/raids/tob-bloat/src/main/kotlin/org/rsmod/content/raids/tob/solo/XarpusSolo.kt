@@ -79,8 +79,9 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         // every hitsplat from the quarter he's staring at comes back: 50-75, raised by 40% of the boost his exhumed
         // heals gave him (wiki), so a scythe's three splats are three spits back
         if (phase == 3 && hit.isFromPlayer) {
-            val p = inside()
-            if (p != null && quarter(real(p.coords)) == gaze) {
+            val p = attacker(hit) ?: inside()
+            val seen = if (hit.queueTag == 0) p != null && quarter(real(p.coords)) == gaze else hit.queueTag == SEEN
+            if (p != null && seen) {
                 lastSpitBack = t
                 val boost = (hp - BASE_HP).coerceAtLeast(0).toDouble() / BASE_HP
                 p.spotanim("spotanim.tob_xarpus_acidsplash")
@@ -88,6 +89,13 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             }
         }
         return hit.damage
+    }
+
+    /** An attack thrown while he isn't looking the thrower's way doesn't come back, even if he turns before it lands. */
+    override fun queued(npc: Npc, hit: org.rsmod.game.hit.HitBuilder) {
+        if (npc !== xarpus || phase != 3) return
+        val p = attacker(hit) ?: return
+        hit.queueTag = if (quarter(real(p.coords)) == gaze) SEEN else UNSEEN
     }
 
     override fun step() {
@@ -339,6 +347,8 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private companion object {
         const val X = 3168
         const val Y = 4385
+        const val SEEN = 1
+        const val UNSEEN = 2
         const val COMBAT = "npc.tob_xarpus_combat"
         const val STATIC = "npc.tob_xarpus_static"
         const val FEEDING = "npc.tob_xarpus_feeding"

@@ -4,3 +4,47 @@ id = "npc.tob_bloat"
 inherit = "npc.tob_bloat"
 [npc.params]
 "param.undead" = 1
+
+# Sotetseg's Defence can't be taken below 100.
+[[npc]]
+id = "npc.tob_sotetseg_combat"
+inherit = "npc.tob_sotetseg_combat"
+[npc.params]
+"param.min_defence" = 100
+
+[[npc]]
+id = "npc.tob_sotetseg_noncombat"
+inherit = "npc.tob_sotetseg_noncombat"
+[npc.params]
+"param.min_defence" = 100
+
+# Verzik's Defence can't be lowered in any phase (a floor above any of her levels).
+[[npc]]
+id = "npc.verzik_phase1"
+inherit = "npc.verzik_phase1"
+[npc.params]
+"param.min_defence" = 1000
+
+[[npc]]
+id = "npc.verzik_phase1_to2_transition"
+inherit = "npc.verzik_phase1_to2_transition"
+[npc.params]
+"param.min_defence" = 1000
+
+[[npc]]
+id = "npc.verzik_phase2"
+inherit = "npc.verzik_phase2"
+[npc.params]
+"param.min_defence" = 1000
+
+[[npc]]
+id = "npc.verzik_phase2_to3_transition"
+inherit = "npc.verzik_phase2_to3_transition"
+[npc.params]
+"param.min_defence" = 1000
+
+[[npc]]
+id = "npc.verzik_phase3"
+inherit = "npc.verzik_phase3"
+[npc.params]
+"param.min_defence" = 1000

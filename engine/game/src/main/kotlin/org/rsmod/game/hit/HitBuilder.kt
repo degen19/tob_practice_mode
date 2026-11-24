@@ -30,6 +30,9 @@ public class HitBuilder(
 
     public var forceMaxHitmark: Boolean = false
 
+    /** Carried to the built [Hit]: lets content note how things stood when the hit was queued. */
+    public var queueTag: Int = 0
+
     public fun isRighthandObj(type: ItemServerType): Boolean = type.id == righthandType
 
     public fun isSecondaryObj(type: ItemServerType): Boolean = type.id == secondaryType
@@ -48,6 +51,7 @@ public class HitBuilder(
             sourceUid = sourceUid,
             righthandObj = righthandType,
             secondaryObj = secondaryType,
+            queueTag = queueTag,
         )
     }
 

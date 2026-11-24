@@ -15,6 +15,8 @@ public data class Hit(
     private val sourceUid: Int?,
     private val righthandObj: Int?,
     private val secondaryObj: Int?,
+    /** Set by whoever queued the hit (via [HitBuilder.queueTag]) for its own use when it lands; 0 when unset. */
+    public val queueTag: Int = 0,
 ) {
     public val damage: Int
         get() = hitmark.damage

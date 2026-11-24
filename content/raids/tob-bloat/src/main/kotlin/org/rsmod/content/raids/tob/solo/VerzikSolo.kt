@@ -75,6 +75,9 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private val redGoal = HashMap<Npc, CoordGrid>()
     private val redHeals = ArrayList<Pair<Int, Npc>>()
     private var p2Killed = false
+
+    /** P2: damage thrown at her that hasn't landed yet (a hit counts against the hitpoints she had when it was thrown). */
+    private var p2Pending = 0
     private var summoning = -1
     private var athanatos: Npc? = null
     private var athanatosNext = 0
@@ -95,7 +98,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private val crawlers = ArrayList<Crawler>()
     private val redCrabs = ArrayList<Npc>()
 
-    private inner class Web(val npc: Npc, val born: Int, val holding: Boolean)
+    /** A web: the NPC you're held by (it has no model of its own) and the web you see on its tile. */
+    private inner class Web(val npc: Npc, val born: Int, val holding: Boolean, val look: LocInfo)
 
     private val webs = ArrayList<Web>()
     private var webBlock = 0
@@ -122,6 +126,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         redCrabs.clear()
         redHeals.clear()
         p2Killed = false
+        p2Pending = 0
         redBorn.clear()
         redHome.clear()
         redGoal.clear()
@@ -194,9 +199,11 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             return if (hit.type == styleType(c.style)) hit.damage else 0
         }
         if (npc !== verzik) return null
+        if (phase == 2 && hit.damage > 0) p2Pending = (p2Pending - hit.damage).coerceAtLeast(0)
+        if (phase == 2 && hit.queueTag == LETHAL && dead < 0 && !invulnerable) p2Killed = true
         if (dead >= 0 || invulnerable || phase == 0 || phase == 12 || phase == 23) return 0
         if (phase == 1) {
-            val dawn = hit.righthandType()?.let { it.internalName == DAWNBRINGER } == true
+            val dawn = hit.righthandType()?.id == DAWNBRINGER.asRSCM(dev.openrune.rscm.RSCMType.OBJ)
             if (dawn && hit.damage >= DAWN_SPEC_MIN) return hit.damage
             return when (hit.type) {
                 HitType.Melee -> minOf(hit.damage, P1_MELEE_CAP)
@@ -215,7 +222,22 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
      * red appears) and the live recording (first attack 12 ticks after the summon; the pop and its heal splat on the same
      * tick, 4 after her last attack).
      */
-    override fun healedByHits(npc: Npc, hit: Hit): Boolean = npc === verzik && phase == 2 && summoning >= 0 && t - 1 - summoning in 1..SHIELD_TICKS
+    /** She can't be attacked while she charges a yellow (her powerblast). */
+    override fun attackable(npc: Npc): Boolean = !(npc === verzik && yellow != null)
+
+    override fun healedByHits(npc: Npc, hit: Hit): Boolean = npc === verzik && phase == 2 && shielded()
+
+    private fun shielded(): Boolean = summoning >= 0 && t - 1 - summoning in 1..SHIELD_TICKS
+
+    /**
+     * P2 ends on the hit that would have killed her when it was thrown: a red's heal landing between the swing and the
+     * hit still shows, but she goes down.
+     */
+    override fun queued(npc: Npc, hit: org.rsmod.game.hit.HitBuilder) {
+        if (npc !== verzik || phase != 2 || shielded() || hit.damage <= 0) return
+        p2Pending += hit.damage
+        if (p2Pending >= npc.hitpoints) hit.queueTag = LETHAL
+    }
 
         private fun poisoned(hit: Hit): Boolean {
         val name = hit.righthandType()?.name?.lowercase() ?: return false
@@ -263,7 +285,9 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             v.hitpoints = 0
             v.anim("seq.verzik_phase1_death")
             for (p in pillars) collapse(p)
-            owner.inv.objs.indexOfFirst { it?.let { o -> ServerCacheManager.getItem(o.id)?.internalName == DAWNBRINGER } == true }.takeIf { it >= 0 }?.let { owner.inv[it] = null }
+            for (p in party()) takeDawnbringer(p)
+            dawnOnFloor?.let { d.objRepo.del(it) }
+            dawnOnFloor = null
             mes("Verzik Vitur's shield breaks!")
             return
         }
@@ -357,6 +381,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private fun p2(v: Npc) {
         if (v.hitpoints <= 1 || p2Killed) {
             p2Killed = false
+            p2Pending = 0
             redHeals.clear()
             phase = 23
             phaseAt = t
@@ -619,12 +644,14 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val since = t - phaseAt
         if (since == T23_AT) {
             despawn(v)
-            verzik = spawn(T23, CoordGrid(P3_X, P3_Y, 0), null)
+            // the transition form plays her rise (4 ticks); P3 itself comes in standing, free to turn and attack
+            val tv = spawn(T23, CoordGrid(P3_X, P3_Y, 0), null)
+            tv.anim("seq.verzik_phase3_spawn")
+            verzik = tv
         }
         if (since == T23_TICKS) {
             verzik?.let { despawn(it) }
             val nv = spawn(P3, CoordGrid(P3_X, P3_Y, 0), hp(P3_HP, entryHp(1600)))
-            later(1) { if (nv.isSlotAssigned) nv.anim("seq.verzik_phase3_spawn") }
             verzik = nv
             phase = 3
             phaseAt = t
@@ -647,7 +674,10 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             tornado = null
             for (c in crawlers) despawn(c.npc)
             crawlers.clear()
-            for (w in webs) despawn(w.npc)
+            for (w in webs) {
+                despawn(w.npc)
+                delLoc(w.look)
+            }
             webs.clear()
             return
         }
@@ -797,7 +827,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val q = inside()
         val holding = q != null && real(q.coords) == tile
         val n = spawn(WEB, tile, WEB_HP)
-        webs += Web(n, t, holding)
+        webs += Web(n, t, holding, loc(WEB_LOOK, tile, shape = LocShape.CentrepieceStraight))
         if (holding && q != null) {
             q.frozen = true
             q.routeDestination.clear()
@@ -820,6 +850,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                     }
                 }
                 if (n.isSlotAssigned) despawn(n)
+                delLoc(w.look)
                 it.remove()
             }
         }
@@ -1026,6 +1057,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val ATHANATOS = "npc.tob_verzik_phase2_armourednylocas"
         const val RED = "npc.tob_verzik_phase2_bloodnylocas"
         const val WEB = "npc.verzik_web_npc"
+        const val WEB_LOOK = "loc.verzik_webspin_loc"
         const val TORNADO = "npc.tob_verzik_creeper"
         const val THRONE = "loc.tob_dungeon_verzik_throne_empty"
         const val THRONE_TRANSFORMING = "loc.tob_dungeon_verzik_throne_transforming"
@@ -1036,6 +1068,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val TORNADO_DESPAWN_SEQ = "seq.tob_shadow_projectile_despawn"
         const val TORNADO_DESPAWN_TICKS = 1
         const val DAWNBRINGER = "obj.verzik_special_weapon"
+        const val LETHAL = 1
         val CENTRE = CoordGrid(3167, 4315, 0)
         const val P1_X = 3166
         const val P1_Y = 4323

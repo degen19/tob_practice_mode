@@ -265,6 +265,21 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     /** Whether one of this room's NPCs can be attacked right now. */
     open fun attackable(npc: Npc): Boolean = true
 
+    /**
+     * A hit on one of this room's NPCs is being queued: a room can note how things stand now in [hit]'s queue tag, for
+     * [land]/[healedByHits] to go by when it lands (what counts is the moment it was thrown, not when it lands).
+     */
+    open fun queued(npc: Npc, hit: org.rsmod.game.hit.HitBuilder) {}
+
+    /** The player [hit] came from, if any, while they're still in the room's party. */
+    fun attacker(hit: Hit): Player? = if (hit.isFromPlayer) hit.resolvePlayerSource(d.players)?.takeIf { it in party() } else null
+
+    fun attacker(hit: org.rsmod.game.hit.HitBuilder): Player? {
+        if (!hit.isFromPlayer) return null
+        val uid = hit.sourceUid ?: return null
+        return org.rsmod.game.entity.player.PlayerUid(uid).resolve(d.players)?.takeIf { it in party() }
+    }
+
     /** Whether hits on one of this room's NPCs heal it right now instead of hurting it. */
     open fun healedByHits(npc: Npc, hit: Hit): Boolean = false
 

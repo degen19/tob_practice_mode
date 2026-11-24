@@ -105,6 +105,9 @@ constructor(
             invalidArgs = "Usage: ::tob <room> | stop"
             cheat { tob() }
         }
+        for (type in QUEUE_WATCHED) {
+            onEvent<org.rsmod.api.npc.events.NpcHitEvents.Modify>(type.asRSCM(RSCMType.NPC).toLong()) { raids.forNpc(npc)?.queued(npc, hit) }
+        }
         for (loc in ROOM_LOCS) onOpLoc1(loc) { roomLoc(loc, it.loc.coords, 1) }
         onOpLoc1(PASSAGE) { passage(it.loc.coords) }
         onOpLoc2(PASSAGE) { passage(it.loc.coords) }
@@ -403,6 +406,10 @@ constructor(
         const val CHEST = "loc.tob_midway_chest_closed"
         const val NPC_VIEW = 32
         const val SELF_TEST_AT = 30
+        /** NPCs whose hits are judged by how things stood when they were thrown (Vasilias's colour, Xarpus's gaze, a P2 kill). */
+        val QUEUE_WATCHED =
+            listOf("npc.nylocas_boss_spawning", "npc.nylocas_boss_melee", "npc.nylocas_boss_ranged", "npc.nylocas_boss_magic", "npc.tob_xarpus_combat",
+                "npc.tob_xarpus_static", "npc.tob_xarpus_feeding", "npc.verzik_phase2")
         const val RUNES = 100_000
         val SELF_TEST_GEAR =
             listOf(

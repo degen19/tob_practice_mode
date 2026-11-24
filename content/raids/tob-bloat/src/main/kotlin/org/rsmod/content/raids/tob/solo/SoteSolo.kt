@@ -23,13 +23,13 @@ import org.rsmod.map.CoordGrid
  * - At 66.6% and 33.3% the maze: she goes still, and 3 ticks later you're taken to the Shadow Realm - you're the chosen
  *   one in a solo. The path is lit under you; walk it (or not - nothing hurts you there but the realm itself, 1-3
  *   every 7 ticks) and leave by the portal at the top. Above, only the tile you stand on below glows.
- * - Normal mode solo: someone has to run the maze above for it to clear, so the portal puts you back at its start
+ * - A solo (Entry stats too: they change hitpoints, not the maze): someone has to run the maze above for it to
+ *   clear, so the portal puts you back at its start
  *   and you run it as if you weren't chosen: the path isn't shown (players screenshot it below) and each tick on a
  *   tile off it hurts (the sim's maze hit for your hitpoints, 16 to 22, never more than you have). She wakes (Defence back to full, attacking at once) at the start of
  *   the next 4-tick cycle once you're off the top: off on a 4, she's attackable on the 1 after.
  *   Back on the maze after reaching the top holds her (she wakes only with nobody on it as a cycle ends). Past the
  *   third row a red tornado follows the path from its start at walking pace and hurts 30-40 in its 3x3 each tick.
- * - Entry mode: the portal puts you back where the maze caught you and that's it - she wakes on the next 1.
  * - The maze procs on the landing of the hit that brings her to the threshold; you're held still until the
  *   teleport 3 ticks later. Every 11th orb (melees don't count, mazes don't reset it) is the death ball.
  */
@@ -54,8 +54,6 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     private var under = false
     private var crossed = -1
 
-    /** Where the maze caught you: in Entry mode the portal below brings you back to it, and that's the maze done. */
-    private var caughtAt = RETURN
     private val lit = ArrayList<LocInfo>()
 
     /** The maze's path in walking order (column, row), and the tornado that follows it once someone is past row 3. */
@@ -254,7 +252,6 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         maze = roll()
         paintFloor(DARK)
         // everyone is held where they stand until the teleport
-        caughtAt = inside()?.let { real(it.coords).takeIf { c -> c.level == 0 } } ?: RETURN
         inside()?.let {
             it.anim("seq.human_teleport_other_impact")
             it.frozen = true
@@ -323,15 +320,16 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         val onMaze = x in 0 until W && y in 0 until H
         // every tick on a wrong tile: the sim's maze hit for your hitpoints, never more than you have (so it can be tick-eaten)
         if (onMaze && !m[x][y]) hurt(p, minOf(org.rsmod.content.raids.tob.bloat.sote.SoteEngine.mazeDmg(p.hitpoints), p.hitpoints))
-        if (!entryMode) tornadoTick(p, onMaze && y >= TORNADO_ROW)
+        tornadoTick(p, onMaze && y >= TORNADO_ROW)
         if (crossed >= 0) {
             // she wakes at the start of the next 4-tick cycle (instance tick 1) once you're off the top, and only if
             // nobody is on the maze as the cycle ends: someone back on it holds her
-            if (!onMaze && now - crossed >= (if (entryMode) WAKE_ENTRY else WAKE) && instanceTick == WAKE_TICK) endMaze(quiet = false)
+            if (!onMaze && now - crossed >= WAKE && instanceTick == WAKE_TICK) endMaze(quiet = false)
             return
         }
         if (here.z >= OVER_Y + H) {
             crossed = now
+            logger.info { "sotetseg maze: ${owner.username} off the top at t$t, clock $now, instance tick $instanceTick" }
             if (WAKE == 0 && instanceTick == WAKE_TICK) endMaze(quiet = false)
         }
     }
@@ -367,9 +365,8 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     override suspend fun opLoc(name: String, at: CoordGrid, op: Int, access: ProtectedAccess): Boolean {
         if (name != "loc.tob_sotetseg_darkrealm_exit") return false
         if (maze == null) return true
-        jump(access.player, this.at(if (entryMode) caughtAt else RETURN))
+        jump(access.player, this.at(RETURN))
         under = false
-        if (entryMode) crossed = now
         return true
     }
 
@@ -395,6 +392,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     }
 
     private fun endMaze(quiet: Boolean) {
+        logger.info { "sotetseg maze: done at t$t, clock $now, instance tick $instanceTick" }
         tornado?.let { despawn(it) }
         tornado = null
         for (l in lit) delLoc(l)
@@ -480,7 +478,6 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val WAKE = 0
         const val WAKE_TICK = 1
         const val WAKE_CYCLE = 4
-        const val WAKE_ENTRY = 1
         const val TORNADO = "npc.tob_sotetseg_creeper"
         const val TORNADO_ROW = 3
         const val TORNADO_MIN = 30
