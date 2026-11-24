@@ -15,7 +15,8 @@ import org.rsmod.plugin.scripts.ScriptContext
 
 /**
  * The rotten potato: the practice switches ([PracticeSettings]) on its right-click. Settings lists them all (deaths,
- * NPC hitpoints, supplies, infinite prayer, always max hit, infinite special attack) and stays open while you flip
+ * NPC hitpoints, supplies, infinite prayer, always max hit, infinite special attack, Nylo wave numbers and death
+ * indicators) and stays open while you flip
  * them; Toggle deaths, Toggle NPC HP and Toggle supplies flip theirs straight away (any time, mid-fight too). Restart room puts you back outside the
  * barrier with the room as it was (Verzik: in the middle before P1, the Dawnbringer on the floor).
  */
@@ -45,6 +46,8 @@ class RottenPotatoScript @Inject constructor(private val solo: SoloRaids) : Plug
                     "Infinite prayer: ${onOff(s.infinitePrayer)}",
                     "Always max hit: ${onOff(s.alwaysMaxHit)}",
                     "Infinite special attack: ${onOff(s.infiniteSpec)}",
+                    "Nylo wave numbers: ${onOff(s.nyloWaveLabels)}",
+                    "Nylo death indicators: ${onOff(s.nyloDeathIndicators)}",
                     "Done",
                 )
             when (choice) {
@@ -54,6 +57,8 @@ class RottenPotatoScript @Inject constructor(private val solo: SoloRaids) : Plug
                 3 -> s.infinitePrayer = !s.infinitePrayer
                 4 -> s.alwaysMaxHit = !s.alwaysMaxHit
                 5 -> s.infiniteSpec = !s.infiniteSpec
+                6 -> s.nyloWaveLabels = !s.nyloWaveLabels
+                7 -> s.nyloDeathIndicators = !s.nyloDeathIndicators
                 else -> {
                     ifClose()
                     return

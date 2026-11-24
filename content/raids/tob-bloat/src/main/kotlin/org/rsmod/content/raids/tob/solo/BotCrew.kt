@@ -9,6 +9,10 @@ interface BotCrew {
     /** Where each bot stands (in order) on the room's first tick. */
     fun starts(): List<CoordGrid>
 
+    /** The bots wait outside and pass the barrier as players do (else they're put on [starts] as the room begins). */
+    val walksIn: Boolean
+        get() = false
+
     fun tick()
 
     /** Anything a bot does before the room starts (outside it, as a team would), after it's potted up. */

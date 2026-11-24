@@ -39,6 +39,9 @@ class NyloCrew(
 ) : BotCrew {
     override fun starts(): List<CoordGrid> = members.map { room.autoStart }
 
+    override val walksIn: Boolean
+        get() = true
+
     override fun doneAt(): Int = room.bossTick
 
     override fun summary(): String =
@@ -62,11 +65,12 @@ class NyloCrew(
         Tome(NyloLoadout.TOME, 'G', 3, 10, Area.Single, 0),
         Barrage(NyloLoadout.BARRAGE, 'G', 5, 10, Area.Square, 0),
         Dinh(NyloLoadout.DINH, 'M', 5, 1, Area.Bash, 0),
+        Claws(NyloLoadout.CLAWS, 'M', 4, 1, Area.Single, 1),
     }
 
     enum class Area { Single, Square, Line, Scythe, Bash }
 
-    class Play(val role: Char, val firstAge: Int, val deathAge: Int, val special: Weapon?, val specialAge: Int)
+    class Play(val role: Char, val firstAge: Int, val deathAge: Int, val special: Weapon?, val specialRole: Char, val specialAge: Int)
 
     private class Plan(val weapon: Weapon, val target: NyloSolo.Target, val victims: List<NyloSolo.Target>, val score: Double)
 
@@ -198,7 +202,7 @@ class NyloCrew(
                 if (weapon.range <= 1 && !meleeReach(target)) continue
                 if (unreachable.containsKey(bot to target.npc)) continue
                 val holder = claimed[target.npc]?.first
-                if (holder != null && holder != bot && !target.big && weapon.area == Area.Single) continue
+                if (holder != null && holder != bot && !(target.big && overdue(target))) continue
                 val victims = victims(weapon, target, wanted, here)
                 if (weapon == Weapon.Dinh && victims.size < params.dinhMin) continue
                 if (weapon == Weapon.Scythe && !target.big && victims.size < 2) continue
@@ -275,6 +279,7 @@ class NyloCrew(
         playOf(v)?.let { play ->
             if (play.role != role.style) worth *= params.bookOther
             else if (room.t - v.born >= play.firstAge - params.bookLead) worth *= params.bookWorth
+            if (room.t - v.born >= play.deathAge - params.overdueLead) worth *= params.overdue
         }
         if (v.big && splitsWouldStall()) worth *= params.bigBeforeCheck
         else if (v.big && room.wavesSpawned >= POST_CAP) worth *= params.postCapBig
@@ -319,19 +324,43 @@ class NyloCrew(
         return null
     }
 
-    /** Blert's set plays: the barrages on wave 1, 11 and 21's mage nylocas, the Shield Bash on wave 26 and 29's big south melee. */
+    /**
+     * Blert's set plays, each the job of one role: the mage's barrages on waves 1, 11 and 21, the ranger's scythe on
+     * wave 12's west pair and wave 22's west big, a claw spec on wave 12's south big (mage) and wave 20's west big
+     * (ranger, scythe without the energy), the melee's Shield Bash on waves 26 and 29's south big.
+     */
     private fun setPlay(bot: Player, role: NyloRole): Plan? {
         if (!params.setPlays) return null
         val here = room.real(bot.coords)
         for (target in everyone) {
             if (bot in target.nulledBy || target.doomed) continue
             val play = playOf(target) ?: continue
-            if (play.role != role.style) continue
-            val weapon = play.special?.takeIf { it in weapons.getValue(role) && room.t - target.born >= play.specialAge } ?: continue
-            if (weapon == Weapon.Dinh && (bot.vars["varp.sa_energy"] < DINH_ENERGY || !meleeReach(target))) continue
+            if (play.specialRole != role.style || room.t - target.born < play.specialAge) continue
+            val holder = claimed[target.npc]?.first
+            if (holder != null && holder != bot) continue
+            var weapon = play.special ?: continue
+            if (!playing(weapon)) continue
+            if (weapon.range <= 1 && !meleeReach(target)) continue
+            val energy = bot.vars["varp.sa_energy"]
+            if (weapon == Weapon.Dinh && energy < DINH_ENERGY) continue
+            if (weapon == Weapon.Claws && energy < CLAW_ENERGY) weapon = Weapon.Scythe
             return Plan(weapon, target, victims(weapon, target, everyone, here), Double.MAX_VALUE)
         }
         return null
+    }
+
+    /** Which kinds of set play the crew makes (a search can drop any). */
+    private fun playing(weapon: Weapon): Boolean =
+        when (weapon) {
+            Weapon.Barrage -> params.playBarrage
+            Weapon.Dinh, Weapon.Claws -> params.playSpec
+            else -> params.playSwitch
+        }
+
+    /** A big still up past the age Blert's trios have it dead by: anyone may help finish it. */
+    private fun overdue(t: NyloSolo.Target): Boolean {
+        val play = playOf(t) ?: return room.t - t.born >= OVERDUE_AGE
+        return room.t - t.born >= play.deathAge
     }
 
     /** When the script starts on it: Blert's first hit (less a lead), or with [NyloCrewParams.bookDeath] that many ticks before Blert's death age. */
@@ -427,9 +456,9 @@ class NyloCrew(
             if (bot.worn[slot.slot]?.id != id) bots.equip(bot, slot.slot, id)
         }
         if (plan.weapon != Weapon.Barrage) VarPlayerIntMapSetter.set(bot, "varp.com_mode", plan.weapon.stance)
-        if (plan.weapon == Weapon.Dinh) VarPlayerIntMapSetter.set(bot, "varp.sa_attack", 1)
+        if (plan.weapon == Weapon.Dinh || plan.weapon == Weapon.Claws) VarPlayerIntMapSetter.set(bot, "varp.sa_attack", 1)
         val npc = plan.target.npc
-        if (!plan.target.big && plan.weapon.area == Area.Single) claimed[npc] = bot to room.t + plan.weapon.speed
+        claimed[npc] = bot to room.t + plan.weapon.speed
         if (current(bot) == npc && plan.weapon != Weapon.Barrage) return
         if (plan.weapon == Weapon.Barrage) bots.cast(bot, npc, barrage) else bots.attack(bot, npc)
         lastClick[bot] = npc to room.t
@@ -463,9 +492,11 @@ class NyloCrew(
                     val special = when (f.getOrNull(7)) {
                         "barrage" -> Weapon.Barrage
                         "dinh" -> Weapon.Dinh
+                        "claw" -> Weapon.Claws
+                        "scythe" -> Weapon.Scythe
                         else -> null
                     }
-                    "${f[0]}:${f[1]}:${f[2]}:${f[3]}" to Play(f[4][0], f[5].toInt(), f[6].toInt(), special, f.getOrNull(8)?.toInt() ?: 0)
+                    "${f[0]}:${f[1]}:${f[2]}:${f[3]}" to Play(f[4][0], f[5].toInt(), f[6].toInt(), special, f.getOrNull(8)?.firstOrNull() ?: f[4][0], f.getOrNull(9)?.toInt() ?: 0)
                 }
         }
         const val PLAYBOOK_FILE = "/tob/nylo_playbook.tsv"
@@ -487,6 +518,8 @@ class NyloCrew(
         const val BASH_RADIUS = 5
         const val BASH_MAX = 10
         const val DINH_ENERGY = 500
+        const val CLAW_ENERGY = 500
+        const val OVERDUE_AGE = 15
         val STAND_X = 3290..3301
         val STAND_Z = 4243..4254
         val STUCK_AFTER = 2..3
@@ -576,6 +609,11 @@ data class NyloCrewParams(
     val mageOff: Double = 0.3,
     val scriptYield: Boolean = true,
     val setPlays: Boolean = true,
+    val overdue: Double = 3.0,
+    val overdueLead: Int = 2,
+    val playBarrage: Boolean = true,
+    val playSpec: Boolean = true,
+    val playSwitch: Boolean = true,
 ) {
     companion object {
         fun parse(text: String): NyloCrewParams {
@@ -626,6 +664,11 @@ data class NyloCrewParams(
                 mageOff = num("mageOff", d.mageOff),
                 scriptYield = num("scriptYield", if (d.scriptYield) 1.0 else 0.0) != 0.0,
                 setPlays = num("setPlays", if (d.setPlays) 1.0 else 0.0) != 0.0,
+                overdue = num("overdue", d.overdue),
+                overdueLead = int("overdueLead", d.overdueLead),
+                playBarrage = num("playBarrage", if (d.playBarrage) 1.0 else 0.0) != 0.0,
+                playSpec = num("playSpec", if (d.playSpec) 1.0 else 0.0) != 0.0,
+                playSwitch = num("playSwitch", if (d.playSwitch) 1.0 else 0.0) != 0.0,
             )
         }
     }

@@ -50,6 +50,7 @@ object NyloLoadout {
 
     val SCYTHE = GearSet(MELEE_ARMOUR + (Wearpos.RightHand to "obj.scythe_of_vitur"))
     val OBLIGATOR = GearSet(MELEE_ARMOUR + (Wearpos.RightHand to "obj.obligator"))
+    val CLAWS = GearSet(MELEE_ARMOUR + (Wearpos.RightHand to "obj.dragon_claws"))
     val DINH = GearSet(MELEE_ARMOUR + (Wearpos.RightHand to "obj.dinhs_bulwark"))
     val AYAK = GearSet(MELEE_ARMOUR + listOf(Wearpos.RightHand to "obj.eye_of_ayak", Wearpos.LeftHand to "obj.book_of_the_dead"))
     /** Barrage in the ranged gear with the magic pieces over it: the highest magic accuracy the team has (as the sim). */
@@ -86,8 +87,8 @@ object NyloLoadout {
     fun sets(role: NyloRole): List<GearSet> =
         when (role) {
             NyloRole.Melee -> listOf(SCYTHE, OBLIGATOR, DINH, CROSSBOWS, AYAK, TBOW)
-            NyloRole.Ranger -> listOf(TBOW, CHINS, CROSSBOWS, AYAK, SCYTHE)
-            NyloRole.Mage -> listOf(BARRAGE, TOME, CROSSBOWS, TBOW, SCYTHE)
+            NyloRole.Ranger -> listOf(TBOW, CHINS, CROSSBOWS, AYAK, SCYTHE, CLAWS)
+            NyloRole.Mage -> listOf(BARRAGE, TOME, CROSSBOWS, TBOW, SCYTHE, CLAWS)
         }
 
     /**

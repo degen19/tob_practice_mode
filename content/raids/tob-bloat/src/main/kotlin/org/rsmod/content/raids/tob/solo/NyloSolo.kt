@@ -2,6 +2,7 @@ package org.rsmod.content.raids.tob.solo
 
 import org.rsmod.api.instances.InstanceSession
 import org.rsmod.api.npc.showHealth
+import org.rsmod.api.player.PracticeSettings
 import org.rsmod.api.player.clearInteractionRoute
 import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
@@ -71,6 +72,8 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             return inbound.sumOf { it[1] }
         }
         var biting = false
+        var hidden = false
+        var labelAt = Int.MIN_VALUE
         val size: Int
             get() = if (big) 2 else 1
     }
@@ -181,6 +184,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             val right = hit.type == HitType.Typeless || hit.type == styleType(n.style)
             val dealt = if (right && p !in n.nulledBy) hit.damage else 0
             if (dealt > 0) n.inbound += intArrayOf(t, dealt)
+            doom(n)
             if (HIT_TRACE) println("nyloq t$t w${n.wave}${if (n.big) "B" else ""}${n.style} ${hit.damage} hp ${npc.hitpoints} pend ${n.pending(t) - dealt} by ${p?.username} wep ${p?.worn?.get(3)?.id} mag ${hit.type}")
             hit.queueTag = if (right) dealt + 1 else WRONG_AT_THROW
             return
@@ -286,6 +290,26 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         }
     }
 
+    /** Its look: its colour (and fighting stance), or nothing at all while Nylo Death Indicators has it marked dead. */
+    private fun look(n: Nylo) = transmog(n.npc, if (n.hidden) (if (n.big) HIDDEN_BIG else HIDDEN_SMALL) else typeOf(n.big, n.fighting, n.style))
+
+    /** Nylo Death Indicators: gone for everyone the moment an attack that kills it is thrown, back if that never lands. */
+    private fun doom(n: Nylo) {
+        if (n.npc.hitpoints <= 0) return
+        val doomed = PracticeSettings.nyloDeathIndicators && n.pending(t) >= n.npc.hitpoints
+        if (doomed == n.hidden) return
+        n.hidden = doomed
+        look(n)
+        if (!doomed) label(n)
+    }
+
+    /** Nyloer: its wave over it in its colour, `s` and the wave it split out on for a split. */
+    private fun label(n: Nylo) {
+        if (!PracticeSettings.nyloWaveLabels || n.hidden) return
+        n.npc.say("<col=${LABEL_COLOURS.getValue(n.style)}>${if (n.lane == null) "s" else ""}${n.wave}</col>")
+        n.labelAt = t
+    }
+
     private fun nearestPillar(c: CoordGrid): Pillar? = pillars.filter { it.up }.minByOrNull { abs(it.cx - c.x) + abs(it.cy - c.z) }
 
     /* ---- one nylocas's tick */
@@ -295,11 +319,13 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         if (!npc.isSlotAssigned) return
         val age = t - n.born
         val here = real(npc.coords)
+        doom(n)
         // killed: a big one splits as it goes
         if (npc.hitpoints <= 0) {
             if (n.diedAt < 0) {
                 n.diedAt = t
-                if (FATE_TRACE) println("nylofate ${owner.username} t$t w${n.wave} ${if (n.big) "big" else if (n.lane == null) "split" else "small"} killed age $age")
+                if (n.labelAt != Int.MIN_VALUE) npc.say("")
+                if (FATE_TRACE) println("nylofate ${owner.username} t$t w${n.wave} ${if (n.big) "big" else if (n.lane == null) "split" else "small"} killed age $age${n.spawnTile?.let { " @${it.x - OX},${it.z - OY}" } ?: ""}")
                 npc.routeDestination.clear()
                 gfx(NyloLooks.deathGfx(n.style), here)
                 if (n.big) {
@@ -320,7 +346,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         if (age >= life) {
             if (n.exploding < 0) {
                 n.exploding = t
-                if (FATE_TRACE) println("nylofate ${owner.username} t$t w${n.wave} ${if (n.big) "big" else if (n.lane == null) "split" else "small"} expired age $age")
+                if (FATE_TRACE) println("nylofate ${owner.username} t$t w${n.wave} ${if (n.big) "big" else if (n.lane == null) "split" else "small"} expired age $age${n.spawnTile?.let { " @${it.x - OX},${it.z - OY}" } ?: ""}")
                 npc.routeDestination.clear()
                 npc.anim(NyloLooks.detonateSeq(n.style))
                 gfx(NyloLooks.detonateGfx(n.style), here)
@@ -333,6 +359,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             }
             return
         }
+        if (t - n.labelAt >= LABEL_TICKS) label(n)
         // flickers: halfway down the lane, 2 ticks later, and once more at 26 ticks old (Blert)
         if (n.rot.length >= 3 && n.lane != null) {
             val s = when (age) {
@@ -343,7 +370,8 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             }
             if (s != null && s != n.style) {
                 n.style = s
-                transmog(npc, typeOf(n.big, n.fighting, s))
+                look(n)
+                label(n)
             }
         }
         if (frozen(npc)) return
@@ -355,7 +383,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         }
         if (n.aggro && !n.fighting) {
             n.fighting = true
-            transmog(npc, typeOf(n.big, true, n.style))
+            look(n)
         }
         if (n.aggro) {
             val p = party.minByOrNull { q -> real(q.coords).let { c -> chebyshev(here, c) } } ?: return
@@ -700,6 +728,12 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val FLICK_1 = 5
         const val FLICK_2 = 7
         const val FLICK_3 = 26
+        const val LABEL_TICKS = 4
+        val LABEL_COLOURS = mapOf('M' to "ffffff", 'R' to "00ff00", 'G' to "00ffff")
+
+        /** Multi-NPCs that show nothing to a player who hasn't touched their quest: a 1x1 and a 2x2. */
+        const val HIDDEN_SMALL = "npc.myarm_multi_walk0"
+        const val HIDDEN_BIG = "npc.dt2_hazeel_vault"
         const val LANE_TICKS = 14
         const val PILLAR_NPC = "npc.tob_nylocas_support"
         const val PILLAR_PRISTINE = "loc.tob_nylocas_support_pristine"

@@ -363,6 +363,7 @@ constructor(
         bot.statBoost("stat.ranged", RANGING_BOOST, RANGING_PERCENT)
         bot.statBoost("stat.magic", HEART_BOOST, HEART_PERCENT)
         org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(bot, "varp.sa_energy", FULL_SPEC)
+        org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(bot, "varbit.dizanas_quiver_ammo_save", QUIVER_ASSEMBLER)
         for (unlock in PRAYER_UNLOCKS) org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(bot, unlock, 1)
         for (prayer in OFFENSIVE_PRAYERS) org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(bot, prayer, 1)
         bot.syncPrayerOverrides()
@@ -372,8 +373,10 @@ constructor(
     private fun trioTick(room: SoloRoom, trio: BotCrew) {
         val crew = listOf(room.owner) + room.helpers
         if (room.t < 0) {
+            if (d.mapClock.cycle - room.builtAt < 4) return
+            if (trio.walksIn) return walkIn(room, trio, crew)
             // entering on the right tick (Blert: wave 1 on room tick 4, Vasilias on a multiple of 4)
-            if (d.mapClock.cycle - room.builtAt < 4 || room.instanceTick != TRIO_START_TICK) return
+            if (room.instanceTick != TRIO_START_TICK) return
             for ((p, at) in crew.zip(trio.starts())) org.rsmod.game.entity.util.PathingEntityCommon.telejump(p, d.collision, room.at(at))
             for (p in crew) {
                 if (p !in bots.all) continue
@@ -397,10 +400,12 @@ constructor(
         if (done >= 0 && room.t >= done + linger) {
             logger.info { "${room.id.name.lowercase()} trio ${room.owner.username}: ${trio.summary()}" }
             trios.remove(room)
+            readied.remove(room)
             auto.remove(room.owner)
             close(room)
             for (p in crew) {
                 raids.undying -= p
+                SoloBarrier.noAsk -= p
                 bots.remove(p)
             }
             for (p in spectators.remove(room) ?: emptyList()) {
@@ -409,6 +414,24 @@ constructor(
                 protectedAccess.launch(p) { telejump(EXIT, TeleportType.Exempt) }
             }
         }
+    }
+
+    /** Crews whose bots have potted up outside the barrier. */
+    private val readied = HashSet<SoloRoom>()
+
+    /** Potted up outside, the bots click Pass on the barrier together on the tick a team goes in (wave 1 on room tick 4). */
+    private fun walkIn(room: SoloRoom, trio: BotCrew, crew: List<Player>) {
+        val team = crew.filter { it in bots.all }
+        if (readied.add(room)) {
+            for (p in team) {
+                potUp(p)
+                trio.prepare(p)
+                SoloBarrier.noAsk += p
+            }
+        }
+        if (room.instanceTick != Math.floorMod(TRIO_START_TICK - CLICK_LEAD, INSTANCE_CYCLE)) return
+        val (tile, barrier) = room.findLocs(BARRIER).minByOrNull { (at, _) -> maxOf(kotlin.math.abs(at.x - room.entry.x), kotlin.math.abs(at.z - room.entry.z)) } ?: return
+        for (p in team) bots.opLoc(p, barrier.id, room.at(tile))
     }
 
     /** Tests: the server plays the room's owner - starts the room, attacks what the room says, walks out when clear. */
@@ -505,6 +528,14 @@ constructor(
         /** Maxed raiders have the scroll prayers: Zeal over Piety (as the sim's melee). */
         val PRAYER_UNLOCKS = listOf("varbit.prayer_zeal_unlocked", "varbit.prayer_deadeye_unlocked", "varbit.prayer_mystic_vigour_unlocked")
         const val WATCH_LINGER = 8
+
+        /** Dizana's quiver set to save ammo as an assembler does: none lands on the floor. */
+        const val QUIVER_ASSEMBLER = 2
+        const val BARRIER = "loc.tob_arena_barrier"
+
+        /** A Pass click is handled the tick after it's sent: the bots click a tick before the room should start. */
+        const val CLICK_LEAD = 1
+        const val INSTANCE_CYCLE = 4
         val SELF_TEST_GEAR =
             listOf(
                 dev.openrune.util.Wearpos.Hat.slot to "obj.torva_helm",
@@ -530,13 +561,16 @@ constructor(
 
 /** Pass on a barrier in a solo room (the barrier handler hands over here). */
 object SoloBarrier {
+    /** Bots, who go in without the "ready to fight?" question. */
+    val noAsk = HashSet<Player>()
+
     suspend fun pass(access: ProtectedAccess, room: SoloRoom, barrier: Bounds) {
         with(access) {
             val here = room.real(player.coords)
             val inside = room.inArena(here)
             if (!inside) {
                 if (room.cleared) return mes("The room is clear: head on.")
-                if (room.t < 0) {
+                if (room.t < 0 && player !in noAsk) {
                     val choice = chatMenu("Is your party ready to fight?", "Yes, let's begin.", "No, don't start yet.")
                     if (choice != 0) return
                     SoloRespawn.save(player)
