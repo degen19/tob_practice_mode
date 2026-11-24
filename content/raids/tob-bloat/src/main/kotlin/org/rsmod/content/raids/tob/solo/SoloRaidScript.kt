@@ -372,8 +372,8 @@ constructor(
     private fun trioTick(room: SoloRoom, trio: BotCrew) {
         val crew = listOf(room.owner) + room.helpers
         if (room.t < 0) {
-            // as a Yes clicked on the timer's 4: the room's first tick comes on its 2
-            if (d.mapClock.cycle - room.builtAt < 4 || room.instanceTick != 1) return
+            // entering on the right tick (Blert: wave 1 on room tick 4, Vasilias on a multiple of 4)
+            if (d.mapClock.cycle - room.builtAt < 4 || room.instanceTick != TRIO_START_TICK) return
             for ((p, at) in crew.zip(trio.starts())) org.rsmod.game.entity.util.PathingEntityCommon.telejump(p, d.collision, room.at(at))
             for (p in crew) {
                 if (p !in bots.all) continue
@@ -499,6 +499,7 @@ constructor(
         const val ANCIENTS = 1
         const val LUNARS = 2
         /** Bots keep each style's prayer on at once: the same as flicking the right one with every switch. */
+        val TRIO_START_TICK = System.getenv("TOB_TRIO_START")?.toIntOrNull() ?: 0
         val OFFENSIVE_PRAYERS = listOf("varbit.prayer_piety", "varbit.prayer_rigour", "varbit.prayer_augury")
 
         /** Maxed raiders have the scroll prayers: Zeal over Piety (as the sim's melee). */
