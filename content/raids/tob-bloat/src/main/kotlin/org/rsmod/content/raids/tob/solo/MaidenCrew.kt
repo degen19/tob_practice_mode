@@ -106,24 +106,34 @@ class MaidenCrew(
     /** The sim's prefires: everyone bows and throws the Tonalztics spec; the mage then a blowpipe before bowing on. */
     private fun opening(role: NyloRole): List<Move> = if (role == NyloRole.Mage) MAGE_OPENING else OPENING
 
-    /** When each bot last swapped spellbooks, raised its thrall, and drank its surge. */
+    /** When each bot swapped spellbooks in the room (if it had to), raised its thrall, and drank its surge. */
     private val swappedAt = HashMap<Player, Int>()
     private val thralled = HashSet<Player>()
     private val surged = HashSet<Player>()
 
     /**
-     * The ranger and melee on the Lunars (the sim's DPS spellbook): a thrall once their prefires are out (Spellbook Swap
-     * to the Arceuus, then a greater ghost), and Vengeance whenever it's off cooldown.
+     * The ranger and melee walk in prevenged, with Death Charge up and already swapped to the Arceuus (a Spellbook Swap
+     * is a stall, so teams do all three before the room): after their prefires they raise a greater ghost, which puts
+     * them back on the Lunars, then keep Vengeance up. Without the swap they swap first.
      */
+    override fun prepare(bot: Player) {
+        if (members.first { it.first === bot }.second == NyloRole.Mage) return
+        VarPlayerIntMapSetter.set(bot, "varbit.vengeance_rebound", 1)
+        VarPlayerIntMapSetter.set(bot, "varbit.death_charge_scroll_used", 1)
+        VarPlayerIntMapSetter.set(bot, "varbit.death_charge_charges", DEATH_CHARGES)
+        VarPlayerIntMapSetter.set(bot, "varbit.arceuus_death_charge_active", 1)
+        VarPlayerIntMapSetter.set(bot, "varbit.spellbook", ARCEUUS)
+        VarPlayerIntMapSetter.set(bot, "varbit.spellbook_swap_book", 1)
+    }
+
     private fun spells(bot: Player) {
         if (opened.getOrDefault(bot, 0) >= OPENING.size && bot !in thralled) {
-            val swapped = swappedAt[bot]
-            if (swapped == null) {
-                bots.spell(bot, SPELLBOOK_SWAP, SWAP_TO_ARCEUUS)
-                swappedAt[bot] = room.t
-            } else if (room.t > swapped) {
+            if (bot.vars["varbit.spellbook"] == ARCEUUS) {
                 bots.spell(bot, GREATER_GHOST)
                 thralled += bot
+            } else if (swappedAt[bot] == null) {
+                bots.spell(bot, SPELLBOOK_SWAP, SWAP_TO_ARCEUUS)
+                swappedAt[bot] = room.t
             }
             return
         }
@@ -325,6 +335,8 @@ class MaidenCrew(
         const val GREATER_GHOST = "component.magic_spellbook:resurrect_greater_ghost"
         const val VENGEANCE = "component.magic_spellbook:vengeance"
         const val LUNARS = 2
+        const val ARCEUUS = 3
+        const val DEATH_CHARGES = 2
         const val SURGE_ENERGY = 250
 
         /** The sim's trio lists: the mage's ZCB after its 70s freezes, the ranger's at the 50s, the melee's at the 30s. */

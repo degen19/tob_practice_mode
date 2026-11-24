@@ -11,6 +11,9 @@ interface BotCrew {
 
     fun tick()
 
+    /** Anything a bot does before the room starts (outside it, as a team would), after it's potted up. */
+    fun prepare(bot: org.rsmod.game.entity.Player) {}
+
     /** The room tick the run ended on, -1 while it's still going. */
     fun doneAt(): Int
 

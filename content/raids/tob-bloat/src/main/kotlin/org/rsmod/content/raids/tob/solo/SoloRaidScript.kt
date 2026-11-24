@@ -367,7 +367,11 @@ constructor(
             // as a Yes clicked on the timer's 4: the room's first tick comes on its 2
             if (d.mapClock.cycle - room.builtAt < 4 || room.instanceTick != 1) return
             for ((p, at) in crew.zip(trio.starts())) org.rsmod.game.entity.util.PathingEntityCommon.telejump(p, d.collision, room.at(at))
-            for (p in crew) if (p in bots.all) potUp(p)
+            for (p in crew) {
+                if (p !in bots.all) continue
+                potUp(p)
+                trio.prepare(p)
+            }
             room.start()
             return
         }
