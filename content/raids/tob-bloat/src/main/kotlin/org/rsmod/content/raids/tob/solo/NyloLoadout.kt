@@ -85,7 +85,7 @@ object NyloLoadout {
     /** The sets each role can switch into: its first set is what it walks in wearing. */
     fun sets(role: NyloRole): List<GearSet> =
         when (role) {
-            NyloRole.Melee -> listOf(SCYTHE, OBLIGATOR, DINH, BLOWPIPE, AYAK, TBOW)
+            NyloRole.Melee -> listOf(SCYTHE, OBLIGATOR, DINH, CROSSBOWS, AYAK, TBOW)
             NyloRole.Ranger -> listOf(TBOW, CHINS, CROSSBOWS, AYAK, SCYTHE)
             NyloRole.Mage -> listOf(BARRAGE, TOME, CROSSBOWS, TBOW, SCYTHE)
         }

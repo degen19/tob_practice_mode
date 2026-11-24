@@ -51,7 +51,7 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     var cleared = false
         protected set
 
-    private val npcs = ArrayList<Npc>()
+    protected val npcs = ArrayList<Npc>()
     private val locs = ArrayList<LocInfo>()
 
     fun at(x: Int, y: Int, level: Int = id.level): CoordGrid = CoordGrid(copyBase.x + x - origin.x, copyBase.z + y - origin.z, level)

@@ -164,7 +164,6 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         if (hit.queueTag > 0) n.inbound.firstOrNull { it[1] == hit.queueTag - 1 }?.let { n.inbound.remove(it) }
         if (hit.type == HitType.Typeless) return hit.damage
         val p = attacker(hit) ?: return hit.damage
-        // judged by its colour when the attack was thrown (a flicker turning before it lands doesn't change that)
         val wrong = if (hit.queueTag != 0) hit.queueTag == WRONG_AT_THROW else hit.type != styleType(n.style)
         if (wrong && n.nulledBy.add(p)) nulls++
         if (p !in n.nulledBy) return hit.damage
@@ -172,7 +171,6 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         return 0
     }
 
-    /** The wrong style heals Vasilias (the purple heal splat) and comes back at you. */
     /**
      * A hit on Vasilias is judged by his colour when it was queued: one thrown at the right colour lands as damage
      * even if he changes before it lands, and one thrown at the wrong colour heals him and comes back.
@@ -183,6 +181,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             val right = hit.type == HitType.Typeless || hit.type == styleType(n.style)
             val dealt = if (right && p !in n.nulledBy) hit.damage else 0
             if (dealt > 0) n.inbound += intArrayOf(t, dealt)
+            if (HIT_TRACE) println("nyloq t$t w${n.wave}${if (n.big) "B" else ""}${n.style} ${hit.damage} hp ${npc.hitpoints} pend ${n.pending(t) - dealt} by ${p?.username} wep ${p?.worn?.get(3)?.id} mag ${hit.type}")
             hit.queueTag = if (right) dealt + 1 else WRONG_AT_THROW
             return
         }
@@ -231,7 +230,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
 
     /** Vasilias comes on the 5th cycle counting the one the last nylocas despawns in (Blert: 16-19 ticks later). */
     private fun cleanupEnd() {
-        if (wave < WAVES.size || bossAt >= 0 || nylos.isNotEmpty()) return
+        if (wave < WAVES.size || bossAt >= 0 || nylos.isNotEmpty() || Int.MAX_VALUE in dying) return
         recordEvent(122, "\"nyloWave\":{\"wave\":$wave,\"nylosAlive\":0,\"roomCap\":$CAP_LATE}")
         bossAt = t + Math.floorMod(WAVE_TICK - instanceTick, CYCLE) + CYCLE * (BOSS_CYCLES - 1)
         logger.info { "nylocas: last one gone at t$t, Vasilias at t$bossAt" }
@@ -326,7 +325,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
                 npc.anim(NyloLooks.detonateSeq(n.style))
                 gfx(NyloLooks.detonateGfx(n.style), here)
                 val max = if (n.big) BIG_BOOM else SMALL_BOOM
-                for (q in party) if (boxDist(real(q.coords).x, real(q.coords).z, here.x, here.z, here.x + n.size - 1, here.z + n.size - 1) <= 1) hurt(q, rand(0, max), source = npc)
+                for (q in party) if (boxDist(real(q.coords).x, real(q.coords).z, here.x, here.z, here.x + n.size - 1, here.z + n.size - 1) <= 1) hurt(q, rand(0, max), source = npc).also { if (FATE_TRACE) println("nyloboom ${q.username} t$t w${n.wave} $it") }
             }
             if (t - n.exploding >= (if (n.big) BIG_BOOM_TICKS else DETONATE_TICKS)) {
                 despawn(npc)
@@ -334,11 +333,12 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             }
             return
         }
-        // flickers: halfway down the lane, then 2 ticks later
-        if (n.rot.length == 3 && n.lane != null) {
+        // flickers: halfway down the lane, 2 ticks later, and once more at 26 ticks old (Blert)
+        if (n.rot.length >= 3 && n.lane != null) {
             val s = when (age) {
                 FLICK_1 -> n.rot[1]
                 FLICK_2 -> n.rot[2]
+                FLICK_3 -> n.rot.getOrNull(3)
                 else -> null
             }
             if (s != null && s != n.style) {
@@ -408,7 +408,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
                 else -> 2
             }
         val prayer = prayerFor(n.style)
-        later(delay) { if (p in party()) hurt(p, roll, prayer = prayer, source = n.npc) }
+        later(delay) { if (p in party()) hurt(p, roll, prayer = prayer, source = n.npc).also { if (FATE_TRACE) println("nylobite ${p.username} t$t w${n.wave}${n.style} $it") } }
     }
 
     private fun laneEnd(lane: String, here: CoordGrid): CoordGrid =
@@ -511,6 +511,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         if (bossAt < 0 || t < bossAt) return
         if (t == bossAt) {
             recordEvent(123, "\"nyloBoss\":{}")
+            if (FATE_TRACE) for (o in npcs) if (o.isSlotAssigned && pillars.none { it.npc === o }) println("nyloleft ${owner.username} t$t ${o.visType.id} ${real(o.coords)} hp ${o.hitpoints}")
             val b = spawn(BOSS_SPAWNING, CoordGrid(BOSS_X, BOSS_Y, 0), hp(BOSS_HP, entryHp(1800)))
             b.anim(NyloLooks.BOSS_SPAWN)
             boss = b
@@ -583,7 +584,6 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         })
     }
 
-    /** A live nylocas as a bot sees it: its style now, size, when it came and whether it hunts players. */
     /** A nylocas as a bot sees it ([spawnTile]: the real tile a wave nylocas came in on, null for a split). */
     class Target(val npc: Npc, val style: Char, val big: Boolean, val born: Int, val aggro: Boolean, val wave: Int, val onPillar: Boolean, val nulledBy: Set<Player>, val doomed: Boolean, val spawnTile: CoordGrid?)
 
@@ -636,7 +636,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         val out = ArrayList<Incoming>()
         var at = nextWaveCheck
         for (i in wave until minOf(WAVES.size, wave + count)) {
-            for (s in WAVES[i].spawns) out += Incoming(i + 1, at, s.lane, s.big, s.rot.last(), s.target == "A")
+            for (s in WAVES[i].spawns) out += Incoming(i + 1, at, s.lane, s.big, s.rot[minOf(2, s.rot.length - 1)], s.target == "A")
             at += WAVES[i].stall.coerceAtLeast(CYCLE)
         }
         return out
@@ -699,6 +699,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val SHIELDED = "spotanim.tob_nylocas_shielded"
         const val FLICK_1 = 5
         const val FLICK_2 = 7
+        const val FLICK_3 = 26
         const val LANE_TICKS = 14
         const val PILLAR_NPC = "npc.tob_nylocas_support"
         const val PILLAR_PRISTINE = "loc.tob_nylocas_support_pristine"
@@ -760,22 +761,22 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             W(8, S("E", 45, 24, true, "M", "A"), S("S", 32, 9, false, "R", "SE"), S("S", 31, 9, false, "M", "SW"), S("W", 17, 25, false, "R", "NW"), S("W", 17, 24, false, "G", "A")),
             W(8, S("E", 45, 24, true, "R", "A"), S("S", 32, 9, false, "G", "SE"), S("S", 31, 9, false, "R", "SW"), S("W", 17, 25, false, "G", "NW"), S("W", 17, 24, false, "M", "A")),
             W(8, S("E", 46, 25, false, "G", "A"), S("E", 46, 24, false, "R", "NE"), S("S", 31, 9, true, "G", "SW"), S("W", 17, 25, false, "M", "NW"), S("W", 17, 24, false, "R", "A")),
-            W(4, S("E", 46, 24, false, "GMR", "NE"), S("S", 31, 9, false, "MGR", "SW"), S("W", 17, 25, false, "RGR", "NW")),
-            W(12, S("E", 45, 24, true, "GMG", "NE"), S("S", 31, 9, true, "GMG", "SE"), S("W", 17, 24, true, "GMG", "SW")),
-            W(8, S("E", 45, 24, true, "RGR", "NW"), S("S", 31, 9, true, "RGR", "SW"), S("W", 17, 24, true, "RGR", "A")),
-            W(12, S("E", 45, 24, true, "GMG", "A"), S("S", 31, 9, true, "GMG", "SE"), S("W", 17, 24, true, "GMG", "NE")),
+            W(4, S("E", 46, 24, false, "GMR", "NE"), S("S", 31, 9, false, "MGRG", "SW"), S("W", 17, 25, false, "RGRG", "NW")),
+            W(12, S("E", 45, 24, true, "GMG", "NE"), S("S", 31, 9, true, "GMGM", "SE"), S("W", 17, 24, true, "GMGM", "SW")),
+            W(8, S("E", 45, 24, true, "RGRG", "NW"), S("S", 31, 9, true, "RGRG", "SW"), S("W", 17, 24, true, "RGR", "A")),
+            W(12, S("E", 45, 24, true, "GMG", "A"), S("S", 31, 9, true, "GMGM", "SE"), S("W", 17, 24, true, "GMGM", "NE")),
             W(16, S("E", 45, 24, true, "MRM", "NE"), S("S", 31, 9, true, "GRM", "A"), S("W", 17, 24, true, "MRM", "NW")),
-            W(8, S("E", 46, 25, false, "RMR", "NE"), S("E", 46, 24, false, "RMR", "A"), S("S", 32, 9, false, "MGM", "SE"), S("S", 31, 9, false, "MRM", "A"), S("W", 17, 25, false, "GRG", "NW"), S("W", 17, 24, false, "GMR", "SW")),
-            W(12, S("E", 45, 24, true, "GRM", "A"), S("S", 32, 9, false, "RGM", "SE"), S("S", 31, 9, false, "GRM", "SW"), S("W", 17, 24, true, "MRM", "SW")),
-            W(8, S("E", 45, 24, true, "GRM", "NE"), S("S", 31, 9, true, "RGM", "A"), S("W", 17, 25, false, "GRM", "NW"), S("W", 17, 24, false, "RGR", "SW")),
+            W(8, S("E", 46, 25, false, "RMRM", "NE"), S("E", 46, 24, false, "RMR", "A"), S("S", 32, 9, false, "MGMR", "SE"), S("S", 31, 9, false, "MRMR", "A"), S("W", 17, 25, false, "GRGM", "NW"), S("W", 17, 24, false, "GMRG", "SW")),
+            W(12, S("E", 45, 24, true, "GRM", "A"), S("S", 32, 9, false, "RGMG", "SE"), S("S", 31, 9, false, "GRMG", "SW"), S("W", 17, 24, true, "MRM", "SW")),
+            W(8, S("E", 45, 24, true, "GRM", "NE"), S("S", 31, 9, true, "RGM", "A"), S("W", 17, 25, false, "GRMR", "NW"), S("W", 17, 24, false, "RGRM", "SW")),
             W(8, S("E", 45, 24, true, "M", "A"), S("S", 31, 9, true, "G", "A"), S("W", 17, 24, true, "RGM", "A")),
-            W(8, S("E", 45, 24, true, "GMG", "SE"), S("S", 31, 9, true, "R", "SW"), S("W", 17, 24, true, "M", "A")),
-            W(4, S("E", 45, 24, true, "G", "NE"), S("S", 31, 9, true, "MGM", "SW"), S("W", 17, 24, true, "G", "A")),
-            W(8, S("E", 45, 24, true, "GMG", "SE"), S("S", 31, 9, true, "MGR", "A"), S("W", 17, 24, true, "G", "NW")),
-            W(4, S("E", 46, 25, false, "GMG", "NE"), S("E", 46, 24, false, "RGM", "SE"), S("S", 32, 9, false, "MRM", "SE"), S("S", 31, 9, false, "GMR", "SW"), S("W", 17, 25, false, "MGM", "NW"), S("W", 17, 24, false, "RMG", "A")),
-            W(4, S("E", 46, 25, false, "GRM", "NE"), S("E", 46, 24, false, "RMG", "A"), S("S", 31, 9, true, "M", "SE"), S("W", 17, 25, false, "MRG", "A"), S("W", 17, 24, false, "RMR", "SW")),
-            W(4, S("E", 45, 24, true, "G", "A"), S("S", 32, 9, false, "MRM", "SE"), S("S", 31, 9, false, "MRM", "SW"), S("W", 17, 24, true, "RMR", "SW")),
-            W(0, S("E", 46, 25, false, "GRG", "NE"), S("E", 46, 24, false, "RMR", "SE"), S("S", 32, 9, false, "MGR", "SE"), S("S", 31, 9, false, "GMR", "SW"), S("W", 17, 25, false, "MRG", "NW"), S("W", 17, 24, false, "RGR", "SW")),
+            W(8, S("E", 45, 24, true, "GMGM", "SE"), S("S", 31, 9, true, "R", "SW"), S("W", 17, 24, true, "M", "A")),
+            W(4, S("E", 45, 24, true, "G", "NE"), S("S", 31, 9, true, "MGMR", "SW"), S("W", 17, 24, true, "G", "A")),
+            W(8, S("E", 45, 24, true, "GMGM", "SE"), S("S", 31, 9, true, "MGR", "A"), S("W", 17, 24, true, "G", "NW")),
+            W(4, S("E", 46, 25, false, "GMGM", "NE"), S("E", 46, 24, false, "RGMR", "SE"), S("S", 32, 9, false, "MRMG", "SE"), S("S", 31, 9, false, "GMRG", "SW"), S("W", 17, 25, false, "MGMR", "NW"), S("W", 17, 24, false, "RMGM", "A")),
+            W(4, S("E", 46, 25, false, "GRM", "NE"), S("E", 46, 24, false, "RMGM", "A"), S("S", 31, 9, true, "M", "SE"), S("W", 17, 25, false, "MRGR", "A"), S("W", 17, 24, false, "RMRM", "SW")),
+            W(4, S("E", 46, 24, true, "G", "A"), S("S", 32, 9, false, "MRM", "SE"), S("S", 31, 9, false, "GRMG", "SW"), S("W", 17, 24, true, "RMR", "SW")),
+            W(0, S("E", 46, 25, false, "GRGR", "NE"), S("E", 46, 24, false, "RMR", "SE"), S("S", 32, 9, false, "MGR", "SE"), S("S", 31, 9, false, "GMR", "SW"), S("W", 17, 25, false, "MRG", "NW"), S("W", 17, 24, false, "RMR", "SW")),
             )
 
         @Suppress("FunctionName")

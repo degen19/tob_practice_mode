@@ -55,7 +55,6 @@ class NyloCrew(
         Scythe(NyloLoadout.SCYTHE, 'M', 5, 1, Area.Scythe, 1),
         Smash(NyloLoadout.OBLIGATOR, 'M', 3, 1, Area.Single, 2),
         Thrust(NyloLoadout.OBLIGATOR, 'M', 5, 1, Area.Line, 0),
-        Blowpipe(NyloLoadout.BLOWPIPE, 'R', 2, 5, Area.Single, 1),
         Tbow(NyloLoadout.TBOW, 'R', 5, 10, Area.Single, 1),
         Chins(NyloLoadout.CHINS, 'R', 3, 9, Area.Square, 1),
         Crossbows(NyloLoadout.CROSSBOWS, 'R', 2, 7, Area.Single, 1),
@@ -67,15 +66,15 @@ class NyloCrew(
 
     enum class Area { Single, Square, Line, Scythe, Bash }
 
-    class Play(val role: Char, val firstAge: Int, val deathAge: Int)
+    class Play(val role: Char, val firstAge: Int, val deathAge: Int, val special: Weapon?, val specialAge: Int)
 
     private class Plan(val weapon: Weapon, val target: NyloSolo.Target, val victims: List<NyloSolo.Target>, val score: Double)
 
     private val weapons: Map<NyloRole, List<Weapon>> =
         mapOf(
-            NyloRole.Melee to listOf(Weapon.Scythe, Weapon.Smash, Weapon.Thrust, Weapon.Dinh, Weapon.Blowpipe, Weapon.Ayak, Weapon.Tbow),
-            NyloRole.Ranger to listOf(Weapon.Tbow, Weapon.Chins, Weapon.Crossbows, Weapon.Ayak, Weapon.Scythe),
-            NyloRole.Mage to listOf(Weapon.Barrage, Weapon.Tome, Weapon.Crossbows, Weapon.Tbow, Weapon.Scythe),
+            NyloRole.Melee to listOf(Weapon.Scythe, Weapon.Smash, Weapon.Thrust, Weapon.Dinh, Weapon.Crossbows, Weapon.Ayak, Weapon.Tbow),
+            NyloRole.Ranger to listOf(Weapon.Tbow, Weapon.Chins, Weapon.Crossbows, Weapon.Ayak),
+            NyloRole.Mage to listOf(Weapon.Barrage, Weapon.Tome, Weapon.Crossbows, Weapon.Tbow),
         )
 
     /** A bot's last Attack click (its target and the tick), and targets it found it couldn't reach, until when. */
@@ -99,8 +98,9 @@ class NyloCrew(
         for ((bot, role) in members) {
             if (!bot.isSlotAssigned || bot.hitpoints <= 0) continue
             if (bot.actionDelay > now + 1) continue
+            guard(bot)
             noteStuck(bot, now)
-            val plan = scripted(bot, role) ?: best(bot, role, wanted.filter { bot !in it.nulledBy && !it.doomed })
+            val plan = setPlay(bot, role) ?: scripted(bot, role) ?: best(bot, role, wanted.filter { bot !in it.nulledBy && !it.doomed })
             if (TRACING && room.wavesSpawned >= TRACE_FROM && room.bossTick < 0) {
                 println("nylo ${members[0].first.username} t${room.t} $role " + (plan?.let { "${it.weapon} w${it.target.wave}${if (it.target.big) "B" else ""}${it.target.style}:${it.target.npc.hitpoints} x${it.victims.size}" } ?: "prefire"))
             }
@@ -131,11 +131,16 @@ class NyloCrew(
      */
     private fun mustKill(t: NyloSolo.Target): Boolean = (t.big && t.wave >= POST_CAP) || t.wave >= LATE_WAVE
 
+    /** The room is heading for a stall at the next wave check: the script gives way to clearing the count. */
+    private var stalling = false
+
     private fun spareFrom(all: List<NyloSolo.Target>): Set<Npc> {
+        stalling = false
         if (room.wavesSpawned >= room.wavesTotal) return cleanupSpare(all)
         val check = room.nextWaveCheck
         val standingAtCheck = all.filter { room.t + room.lifeLeft(it) > check }
         val stallAhead = standingAtCheck.size >= room.cap
+        stalling = stallAhead
         val end = room.lastWaveEta + params.cleanupTicks
         return all.filter { t -> !t.aggro && gone(t) <= end && !(stallAhead && t in standingAtCheck) }.mapTo(HashSet()) { it.npc }
     }
@@ -196,8 +201,9 @@ class NyloCrew(
                 if (holder != null && holder != bot && !target.big && weapon.area == Area.Single) continue
                 val victims = victims(weapon, target, wanted, here)
                 if (weapon == Weapon.Dinh && victims.size < params.dinhMin) continue
+                if (weapon == Weapon.Scythe && !target.big && victims.size < 2) continue
                 val nulls = nulled(bot, weapon, target, here)
-                if (params.keepBigs && nulls.any { it.big }) continue
+                if ((params.keepBigs || weapon == Weapon.Dinh) && nulls.any { it.big }) continue
                 if (weapon.area == Area.Square && room.wavesSpawned >= params.cleanAreaFrom && nulls.isNotEmpty()) continue
                 val score = score(bot, role, weapon, target, victims, nulls, here)
                 if (best == null || score > best.score) best = Plan(weapon, target, victims, score)
@@ -209,7 +215,8 @@ class NyloCrew(
     private fun victims(weapon: Weapon, target: NyloSolo.Target, wanted: List<NyloSolo.Target>, from: CoordGrid): List<NyloSolo.Target> {
         val at = room.real(target.npc.coords)
         return when (weapon.area) {
-            Area.Single, Area.Scythe -> listOf(target)
+            Area.Single -> listOf(target)
+            Area.Scythe -> listOf(target) + arc(at, from).let { tiles -> wanted.filter { o -> o !== target && o.style == 'M' && tiles.any { overlaps(room.real(o.npc.coords), size(o), it.x, it.z, it.x, it.z) } } }
             Area.Bash -> listOf(target) + wanted.filter { it !== target && it.style == 'M' && dist(from, room.real(it.npc.coords), size(it)) <= BASH_RADIUS }.take(BASH_MAX - 1)
             Area.Square -> wanted.filter { it.style == weapon.hits && overlaps(room.real(it.npc.coords), size(it), at.x - 1, at.z - 1, at.x + size(target), at.z + size(target)) }.take(AREA_MAX)
             Area.Line -> {
@@ -235,15 +242,23 @@ class NyloCrew(
                 val dz = Integer.signum(at.z - from.z)
                 val tiles =
                     if (weapon.area == Area.Line) (1 until LINE_TILES).map { CoordGrid(at.x + dx * it, at.z + if (dx != 0) 0 else dz * it, 0) }
-                    else listOf(CoordGrid(at.x + dz, at.z + dx, 0), CoordGrid(at.x - dz, at.z - dx, 0))
+                    else arc(at, from)
                 others.filter { o -> tiles.any { overlaps(room.real(o.npc.coords), size(o), it.x, it.z, it.x, it.z) } }
             }
         }
     }
 
+    /** A scythe's two side tiles across the swing at [at], swung from [from]. */
+    private fun arc(at: CoordGrid, from: CoordGrid): List<CoordGrid> {
+        val dx = Integer.signum(at.x - from.x)
+        val dz = Integer.signum(at.z - from.z)
+        return listOf(CoordGrid(at.x + dz, at.z + dx, 0), CoordGrid(at.x - dz, at.z - dx, 0))
+    }
+
     private fun score(bot: Player, role: NyloRole, weapon: Weapon, target: NyloSolo.Target, victims: List<NyloSolo.Target>, nulls: List<NyloSolo.Target>, here: CoordGrid): Double {
         var value = victims.sumOf { worth(role, weapon, it) }
         if (target.style == role.style) value *= params.ownColour
+        else if (role == NyloRole.Mage) value *= params.mageOff
         if (weapon.area == Area.Square) value *= params.areaWorth
         value -= params.nullCost * nulls.sumOf { worth(role, Weapon.Ayak, it) }
         if (value <= 0.0) return value
@@ -278,7 +293,7 @@ class NyloCrew(
      * first, with whichever of its weapons scores best on it; everything else (splits, the rest) goes on the scoring.
      */
     private fun scripted(bot: Player, role: NyloRole): Plan? {
-        if (!params.script) return null
+        if (!params.script || (stalling && params.scriptYield)) return null
         val here = room.real(bot.coords)
         val mine =
             everyone.filter { t ->
@@ -294,11 +309,27 @@ class NyloCrew(
                 if (weapon.range <= 1 && !meleeReach(target)) continue
                 if (weapon == Weapon.Barrage && room.wavesSpawned >= params.barrageTo) continue
                 val victims = victims(weapon, target, everyone, here)
+                if (weapon == Weapon.Scythe && !target.big && victims.size < 2) continue
                 val nulls = nulled(bot, weapon, target, here)
                 val score = score(bot, role, weapon, target, victims, nulls, here)
                 if (best == null || score > best.score) best = Plan(weapon, target, victims, score)
             }
             if (best != null) return best
+        }
+        return null
+    }
+
+    /** Blert's set plays: the barrages on wave 1, 11 and 21's mage nylocas, the Shield Bash on wave 26 and 29's big south melee. */
+    private fun setPlay(bot: Player, role: NyloRole): Plan? {
+        if (!params.setPlays) return null
+        val here = room.real(bot.coords)
+        for (target in everyone) {
+            if (bot in target.nulledBy || target.doomed) continue
+            val play = playOf(target) ?: continue
+            if (play.role != role.style) continue
+            val weapon = play.special?.takeIf { it in weapons.getValue(role) && room.t - target.born >= play.specialAge } ?: continue
+            if (weapon == Weapon.Dinh && (bot.vars["varp.sa_energy"] < DINH_ENERGY || !meleeReach(target))) continue
+            return Plan(weapon, target, victims(weapon, target, everyone, here), Double.MAX_VALUE)
         }
         return null
     }
@@ -367,6 +398,19 @@ class NyloCrew(
         return overlaps(at, size(t), STAND_X.first - 1, STAND_Z.first - 1, STAND_X.last + 1, STAND_Z.last + 1)
     }
 
+    /** Protect from the style of the nearest aggressive nylocas coming for this bot (the closest player is its target). */
+    private fun guard(bot: Player) {
+        val here = room.real(bot.coords)
+        val near = everyone.filter { it.aggro && targetOf(it) === bot }.minByOrNull { dist(here, room.real(it.npc.coords), size(it)) } ?: return
+        val prayer = PROTECT.getValue(near.style)
+        if (bot.vars[prayer] != 1) bots.pray(bot, prayer)
+    }
+
+    private fun targetOf(t: NyloSolo.Target): Player? {
+        val at = room.real(t.npc.coords)
+        return members.map { it.first }.filter { it.isSlotAssigned }.minByOrNull { chebyshev(room.real(it.coords), at) }
+    }
+
     /** A click that got nowhere (no fight under way, no swing since): the bot couldn't reach it, so it looks elsewhere. */
     private fun noteStuck(bot: Player, now: Int) {
         val (npc, at) = lastClick[bot] ?: return
@@ -406,6 +450,7 @@ class NyloCrew(
 
     private companion object {
         const val AREA_MAX = 9
+        val PROTECT = mapOf('M' to "varbit.prayer_protectfrommelee", 'R' to "varbit.prayer_protectfrommissiles", 'G' to "varbit.prayer_protectfrommagic")
         const val LINE_TILES = 3
         const val LIFE = 52
         val TRACING = System.getenv("TOB_TRIO_TRACE") != null
@@ -414,7 +459,14 @@ class NyloCrew(
         val PLAYBOOK: Map<String, Play> by lazy {
             val text = NyloCrew::class.java.getResourceAsStream(PLAYBOOK_FILE)?.bufferedReader()?.readText() ?: return@lazy emptyMap()
             text.lineSequence().filter { it.isNotBlank() && !it.startsWith("#") }.map { it.split('\t') }
-                .associate { f -> "${f[0]}:${f[1]}:${f[2]}:${f[3]}" to Play(f[4][0], f[5].toInt(), f[6].toInt()) }
+                .associate { f ->
+                    val special = when (f.getOrNull(7)) {
+                        "barrage" -> Weapon.Barrage
+                        "dinh" -> Weapon.Dinh
+                        else -> null
+                    }
+                    "${f[0]}:${f[1]}:${f[2]}:${f[3]}" to Play(f[4][0], f[5].toInt(), f[6].toInt(), special, f.getOrNull(8)?.toInt() ?: 0)
+                }
         }
         const val PLAYBOOK_FILE = "/tob/nylo_playbook.tsv"
         const val TRACE_FROM = 20
@@ -496,15 +548,15 @@ data class NyloCrewParams(
     val walkCost: Double = 0.986,
     val lookahead: Double = 3.631,
     val lookaheadTicks: Int = 1,
-    val dinhWave: Int = 25,
-    val dinhMin: Int = 5,
+    val dinhWave: Int = 20,
+    val dinhMin: Int = 3,
     val youth: Double = 4.0,
     val nullCost: Double = 0.0,
     val areaWorth: Double = 1.234,
     val cleanupRate: Double = 1.412,
     val cleanupSpareWorth: Double = 0.0,
     val postCapBig: Double = 1.0,
-    val lanes: Boolean = false,
+    val lanes: Boolean = true,
     val mustKill: Boolean = false,
     val keepBigs: Boolean = false,
     val bookWorth: Double = 1.0,
@@ -521,6 +573,9 @@ data class NyloCrewParams(
     val scriptBigs: Boolean = false,
     val scriptGuard: Boolean = true,
     val goalGrid: Boolean = true,
+    val mageOff: Double = 0.3,
+    val scriptYield: Boolean = true,
+    val setPlays: Boolean = true,
 ) {
     companion object {
         fun parse(text: String): NyloCrewParams {
@@ -568,6 +623,9 @@ data class NyloCrewParams(
                 scriptBigs = num("scriptBigs", if (d.scriptBigs) 1.0 else 0.0) != 0.0,
                 scriptGuard = num("scriptGuard", if (d.scriptGuard) 1.0 else 0.0) != 0.0,
                 goalGrid = num("goalGrid", if (d.goalGrid) 1.0 else 0.0) != 0.0,
+                mageOff = num("mageOff", d.mageOff),
+                scriptYield = num("scriptYield", if (d.scriptYield) 1.0 else 0.0) != 0.0,
+                setPlays = num("setPlays", if (d.setPlays) 1.0 else 0.0) != 0.0,
             )
         }
     }
