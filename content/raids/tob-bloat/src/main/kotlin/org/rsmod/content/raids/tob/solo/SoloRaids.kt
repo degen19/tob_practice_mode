@@ -77,6 +77,7 @@ constructor(
     val raids: SoloRaids,
     val players: PlayerList,
     val eventBus: org.rsmod.events.EventBus,
+    val bonuses: org.rsmod.api.player.bonus.WornBonuses,
 )
 
 /** Every live solo room, by owner. */

@@ -128,8 +128,8 @@ class MaidenCrew(
         "Maiden dead at room tick ${room.deadAt} (${raidTime(room.deadAt)}), procs at ${procAt.joinToString("/")}, crabs leaked ${room.leaked}, healed ${room.healed}, bled ${room.bled}"
 
     override fun prepare(bot: Player) {
-        if (crew.first { it.player === bot }.role == NyloRole.Mage) return
         VarPlayerIntMapSetter.set(bot, "varbit.vengeance_rebound", 1)
+        if (crew.first { it.player === bot }.role == NyloRole.Mage) return
         VarPlayerIntMapSetter.set(bot, "varbit.death_charge_scroll_used", 1)
         VarPlayerIntMapSetter.set(bot, "varbit.death_charge_charges", DEATH_CHARGES)
         VarPlayerIntMapSetter.set(bot, "varbit.arceuus_death_charge_active", 1)
@@ -156,9 +156,10 @@ class MaidenCrew(
         snapshot()
         inflight.removeAll { it.land < t }
         for (b in crew) thrown(b)
+        val flinching = herAttack()
         for (b in crew) {
             val p = b.player
-            if (!p.isSlotAssigned || p.hitpoints <= 0) continue
+            if (!p.isSlotAssigned || p.hitpoints <= 0 || p in flinching) continue
             if (b.role != NyloRole.Mage) spells(b)
             if (dodge(b)) continue
             val o = b.order
@@ -174,6 +175,49 @@ class MaidenCrew(
                 continue
             }
             decide(b)
+        }
+    }
+
+    /**
+     * Her next attack, as the sim has it: it goes at whoever is closest to her centre, so when someone with Vengeance up
+     * isn't, the ones in front without it flinch two tiles out on her attack tick - if that puts the Vengeance player in
+     * front of them all. Her target flicks a crossbow and quiver on for the tick, so her drain goes on Ranged.
+     */
+    private fun herAttack(): Set<Player> {
+        if (!room.attacksNext) return emptySet()
+        val party = room.party()
+        if (party.isEmpty()) return emptySet()
+        val bots = crew.associateBy { it.player }
+        val near = party.withIndex().map { (i, p) -> Triple(p, room.centreDist(room.real(p.coords)), i) }.sortedWith(compareBy({ it.second }, { it.third }))
+        var target = near.first().first
+        val flinching = HashSet<Player>()
+        for ((k, q) in near.withIndex()) {
+            if (q.first.vars["varbit.vengeance_rebound"] != 1) continue
+            val before = near.subList(0, k)
+            if (before.any { b -> b.first !in bots || !(q.second < b.second + FLINCH || (q.second == b.second + FLINCH && q.third < b.third)) }) break
+            before.forEach { flinching += it.first }
+            target = q.first
+            break
+        }
+        for (p in flinching) flinch(p)
+        val tank = bots[target]
+        if (tank != null && tank.player.actionDelay > clock.cycle) flick(tank.player)
+        if (flinching.isNotEmpty()) trace { "t$t her attack: ${tank?.role ?: target.username}, flinching ${flinching.mapNotNull { bots[it]?.role }}" }
+        return flinching
+    }
+
+    private fun flinch(p: Player) {
+        val here = room.real(p.coords)
+        val dx = Integer.signum(here.x - room.centre.x).takeIf { it != 0 } ?: 1
+        val dz = Integer.signum(here.z - room.centre.z)
+        VarPlayerIntMapSetter.set(p, "varp.option_run", 1)
+        bots.walk(p, room.at(CoordGrid(here.x + dx * FLINCH, here.z + dz * FLINCH, here.level)))
+    }
+
+    private fun flick(p: Player) {
+        for ((slot, obj) in FLICK) {
+            val id = obj.asRSCM(RSCMType.OBJ)
+            if (p.worn[slot.slot]?.id != id) bots.equip(p, slot.slot, id)
         }
     }
 
@@ -206,10 +250,11 @@ class MaidenCrew(
      * swings from anywhere.
      */
     private fun position(b: Bot) {
-        if (b.dps == null || b.order != null) return
+        if (b.order != null) return
+        if (b.dps == null || latestWave() == null) return toHer(b)
         val due = b.next
         if (due <= t) return
-        val c = ownCrab(b, due) ?: nextCrab(b, due) ?: return
+        val c = ownCrab(b, due) ?: nextCrab(b, due) ?: return toHer(b)
         var x = c.x
         var y = c.y
         for (k in t + 1..due) {
@@ -228,6 +273,19 @@ class MaidenCrew(
         val dest = CoordGrid(sx + ROOM_X, ROOM_Y - sy, here.level)
         if (room.bloody(dest)) return
         trace { "t$t ${b.role} moves to $sx,$sy for ${c.key} (swing t$due)" }
+        bots.walk(b.player, room.at(dest))
+    }
+
+    /** A melee swing on her next (the sim has them on their spot by then): beside her during the cooldown. */
+    private fun toHer(b: Bot) {
+        if (atkOf(b.raw()).style != 'm' || b.raw() != "scythe") return
+        val here = room.real(b.player.coords)
+        if (room.besideHer(here)) return
+        val dest =
+            (-REACH..REACH).flatMap { dx -> (-REACH..REACH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
+                .filter { room.besideHer(it) && room.inArena(it) && !room.under(it) && !room.bloody(it) }
+                .minByOrNull { maxOf(abs(it.x - here.x), abs(it.z - here.z)) } ?: return
+        trace { "t$t ${b.role} moves beside her to ${dest.x - ROOM_X},${ROOM_Y - dest.z} (swing t${b.next})" }
         bots.walk(b.player, room.at(dest))
     }
 
@@ -355,6 +413,10 @@ class MaidenCrew(
                 swappedAt[p] = t
             }
             return
+        }
+        if (p in thralled && p.vars["varbit.spellbook"] == ARCEUUS) {
+            VarPlayerIntMapSetter.set(p, "varbit.spellbook_swap_book", 0)
+            VarPlayerIntMapSetter.set(p, "varbit.spellbook", LUNARS)
         }
         if (p.vars["varbit.vengeance_rebound"] == 0 && p.vars["varbit.vengeance_timelimit"] == 0 && p.vars["varbit.spellbook"] == LUNARS) bots.spell(p, VENGEANCE)
     }
@@ -1168,6 +1230,9 @@ class MaidenCrew(
         const val W_PILE = 0.3
         const val W_S2 = 1.2
         const val ORDER_TICKS = 6
+        const val FLINCH = 2
+        const val REACH = 8
+        val FLICK = listOf(dev.openrune.util.Wearpos.RightHand to "obj.zaryte_xbow", dev.openrune.util.Wearpos.Back to "obj.dizanas_quiver_infinite")
         const val WALK_TICKS = 3
         const val TALLIED = 4
         const val OBL_REACH = 3

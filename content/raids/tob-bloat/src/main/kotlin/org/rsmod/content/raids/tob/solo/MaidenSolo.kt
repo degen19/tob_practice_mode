@@ -17,7 +17,7 @@ import kotlin.math.min
  * The Maiden of Sugadinti (trio-and-under numbers: 2625 hitpoints, crabs 75, blood spawns 90), for the owner and any
  * bots raiding with them: each attack goes at one of the party at random.
  *
- * - She attacks every 10 ticks from tick 9: Blackstorm at you (36 + 3.5 per crab that reached her; Protect from Magic
+ * - She attacks every 10 ticks from tick 9, at whoever is closest to her centre (ties to the first in the party): Blackstorm at you (36 + 3.5 per crab that reached her; Protect from Magic
  *   halves it; half the time it drains the stat you're attacking with), or blood splats - one on your tile and two more
  *   in a 5x5 round you - after which she can't throw blood for her next two attacks.
  * - A splat hurts and heals her while you stand on it (10 + 2 per crab) and drains prayer; when it dries there's a
@@ -109,7 +109,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         }
         val party = party()
         phases()
-        if (party.isNotEmpty() && t >= FIRST_ATTACK && (t - FIRST_ATTACK) % ATTACK_EVERY == 0) attack(party[rand(party.size)])
+        if (party.isNotEmpty() && t >= FIRST_ATTACK && (t - FIRST_ATTACK) % ATTACK_EVERY == 0) attack(target(party))
         crabs()
         splats(party)
         bloodSpawns()
@@ -135,10 +135,11 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private fun spawnCrabs() {
         val count = (CRABS_EACH * party().size).coerceIn(CRABS_EACH, CRAB_SPOTS.size)
         val left = CRAB_SPOTS.indices.toMutableList()
-        repeat(count) {
+        val forced = FORCED_SPAWNS?.getOrNull(phase - 1)
+        repeat(forced?.size ?: count) { k ->
             val weights = if (UNIFORM_SPAWNS) List(CRAB_WEIGHTS.size) { 1 } else CRAB_WEIGHTS
             var roll = rand(left.sumOf { weights[it] })
-            val spot = left.first { i -> (roll < weights[i]).also { roll -= weights[i] } }
+            val spot = forced?.get(k) ?: left.first { i -> (roll < weights[i]).also { roll -= weights[i] } }
             left -= spot
             val (x, y) = CRAB_SPOTS[spot]
             val crab = spawn(CRAB, CoordGrid(x, y, 0), hp(CRAB_HP, ENTRY_CRAB_HP))
@@ -213,6 +214,18 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
 
     /* ---- her attacks */
 
+    /** Whether her next step is an attack (as a bot sees it between ticks). */
+    val attacksNext: Boolean
+        get() = t >= FIRST_ATTACK && (t - FIRST_ATTACK) % ATTACK_EVERY == 0
+
+    /** Her centre tile (real), and tiles from it: 3 is the red ring round her, 4 orange and so on. */
+    val centre: CoordGrid
+        get() = CoordGrid(X + CENTRE, Y + CENTRE, 0)
+
+    fun centreDist(at: CoordGrid): Int = maxOf(kotlin.math.abs(at.x - centre.x), kotlin.math.abs(at.z - centre.z))
+
+    private fun target(party: List<Player>): Player = party.withIndex().minWith(compareBy({ centreDist(real(it.value.coords)) }, { it.index })).value
+
     private fun attack(p: Player) {
         maiden.facePlayer(p)
         if (throwCooldown == 0 && chance(THROW_CHANCE)) {
@@ -231,25 +244,27 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val lands = hitDelay - 1
         val max = floor(BASE_MAX + PER_LEAK * leaks).toInt()
         val roll = rand(0, max)
+        // the drain is set on her attack tick, by the gear worn then (players flick a crossbow and quiver on for it)
+        val drained = if (chance(0.5)) drainStats(p) else emptyList()
         later(lands) {
             val q = p.takeIf { it in party() } ?: return@later
             val dmg = if (prays(q, "magic")) roll / 2 else roll
             hurt(q, dmg, source = maiden)
-            if (dmg > 0 && chance(0.5)) drain(q, (dmg + 1) / 5)
+            if (dmg > 0) for (stat in drained) q.statSub(stat, constant = (dmg + 1) / 5, percent = 0)
         }
     }
 
-    /** Her drain goes on the stat you're attacking with (your weapon's style). */
-    private fun drain(p: Player, amount: Int) {
-        if (amount <= 0) return
-        val weapon = p.worn[3]?.let { dev.openrune.ServerCacheManager.getItem(it.id)?.name?.lowercase() } ?: ""
-        val stats =
-            when {
-                RANGED_WORDS.any { weapon.contains(it) } -> listOf("stat.ranged")
-                MAGIC_WORDS.any { weapon.contains(it) } -> listOf("stat.magic")
-                else -> listOf("stat.attack", "stat.strength")
-            }
-        for (s in stats) p.statSub(s, constant = amount, percent = 0)
+    /** Her drain goes on the combat stats of the target's highest accuracy bonus. */
+    private fun drainStats(p: Player): List<String> {
+        val b = d.bonuses
+        val melee = maxOf(b.offensiveStabBonus(p), b.offensiveSlashBonus(p), b.offensiveCrushBonus(p))
+        val ranged = b.offensiveRangedBonus(p)
+        val magic = b.offensiveMagicBonus(p)
+        return when {
+            ranged >= melee && ranged >= magic -> listOf("stat.ranged")
+            magic >= melee -> listOf("stat.magic")
+            else -> listOf("stat.attack", "stat.strength")
+        }
     }
 
     private fun throwBlood(p: Player) {
@@ -416,6 +431,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val X = 3162
         const val Y = 4444
         const val SIZE = 6
+        const val CENTRE = 3
         const val HP = 2625
         val PHASES = listOf("npc.tob_maiden_100", "npc.tob_maiden_70", "npc.tob_maiden_50", "npc.tob_maiden_30")
         const val DYING_B = "npc.tob_maiden_dying_b"
@@ -455,8 +471,6 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val CRAB_DEATH = "seq.elemental_death"
         val SPLAT_GFX = listOf("spotanim.maiden_lingering_blood", "spotanim.maiden_lingering_blood_sw", "spotanim.maiden_lingering_blood_nw", "spotanim.maiden_lingering_blood_ne")
         const val TRAIL = "loc.tob_maiden_blood"
-        val RANGED_WORDS = listOf("bow", "chinchompa", "blowpipe", "dart", "knife", "javelin", "thrownaxe", "ballista", "eclipse atlatl")
-        val MAGIC_WORDS = listOf("staff", "wand", "sceptre", "trident", "shadow", "sanguinesti", "harmonised", "nightmare", "ayak", "kodai")
 
         /** Blert's ten crab spawns (N1-N4 outer, S1-S4 outer), and how often each came in Blert's 50 fastest trios. */
         val CRAB_SPOTS =
@@ -469,6 +483,9 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         /** `TOB_CRAB_UNIFORM`: every spawn as likely (the sim's draw), for comparing runs with it. */
         val UNIFORM_SPAWNS = System.getenv("TOB_CRAB_UNIFORM") != null
         val TALLY = System.getenv("TOB_TRIO_TRACE") != null
+
+        /** `TOB_CRAB_SPAWNS` (tests, e.g. from a sim run): each wave's spots, `N2,N3,N4a,S1,S4a,S4b;...` - 70s;50s;30s. */
+        val FORCED_SPAWNS: List<List<Int>>? by lazy { System.getenv("TOB_CRAB_SPAWNS")?.split(';')?.map { w -> w.split(',').map { SPOT_NAMES.indexOf(it.trim()) } } }
         val SPOT_NAMES = listOf("N1", "N2", "N3", "N4a", "N4b", "S1", "S2", "S3", "S4a", "S4b")
     }
 }
