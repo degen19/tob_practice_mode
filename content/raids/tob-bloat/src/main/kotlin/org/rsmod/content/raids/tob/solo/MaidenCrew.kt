@@ -19,10 +19,10 @@ import kotlin.math.max
  * - everyone opens with a Twisted bow from range and the Tonalztics of Ralos spec, then the ranger and melee scythe her
  *   for the rest of the room while the mage keeps bowing her from range;
  * - the mage plays the sim's trio procedure: it stands for each proc so its barrage is ready on the spawn, freezes the
- *   wave plan's 1s and 2s, then the 3s once clumped and the 4s as they walk into them, then barrages a frozen pile
- *   worth it;
- * - the scythers each take one of the wave's 1s and 2s the mage doesn't (north first), and a frozen pile close by with
- *   enough hitpoints in it; the melee puts its Dinh's bulwark spec into the crabs once enough are close together;
+ *   wave plan's 1s and 2s, then the 3s once clumped and the 4s as they walk into them, then barrages a pile only if
+ *   it would leak before the next proc's barrages could take it (the sim's pile worth);
+ * - the scythers each take one of the wave's 1s and 2s the mage doesn't (north first), and are otherwise on her; the
+ *   melee puts its Dinh's bulwark spec into the crabs once enough are close together;
  * - the sim's specs: the mage's Zaryte crossbow spec after its 70s freezes, the ranger's at the 50s, the melee's at the
  *   30s, each with a surge potion when it's short; the ranger and melee keep Vengeance up and raise a thrall after
  *   their prefires; the mage comes in to scythe at the end.
@@ -215,8 +215,6 @@ class MaidenCrew(
             plan.done += id
             return Plan(Move.Scythe, c.npc)
         }
-        val pile = crabs.filter { !it.arrived && it.frozenUntil > now && (it.npc.hitpoints >= params.pileHp || thawing(it, now)) && dist(here, room.real(it.npc.coords), CRAB_SIZE) <= PILE_REACH }
-        pile.maxByOrNull { c -> pile.count { inSquare(it, c) } }?.let { return Plan(Move.Scythe, it.npc) }
         if (room.phase >= (if (role == NyloRole.Ranger) RANGER_ZCB_PHASE else MELEE_ZCB_PHASE)) spec(bot, Move.Zcb)?.let { return it }
         return Plan(Move.Scythe, her)
     }
@@ -252,10 +250,9 @@ class MaidenCrew(
                 return barrage(mine.maxBy { c -> mine.count { inSquare(it, c) } })
             }
         }
-        val standing = crabs.filter { !it.arrived }
-        val pile = standing.maxByOrNull { c -> standing.filter { inSquare(it, c) }.sumOf { it.npc.hitpoints } }
-        val thawing = standing.any { thawing(it, now) }
-        if (pile != null && (thawing || standing.filter { inSquare(it, pile) }.sumOf { it.npc.hitpoints } >= params.mageKillHp)) return barrage(pile)
+        val leaking = crabs.filter { !it.arrived && leaksBeforeNextProc(her, it, now) }
+        val pile = leaking.maxByOrNull { c -> pileWorth(leaking, c) }
+        if (pile != null && pileWorth(leaking, pile) >= params.pileWorth) return barrage(pile)
         if (nearProc(her)) return hold(bot)
         if (her.hitpoints * 100 <= her.baseHitpointsLvl * params.mageScytheBelow) return Plan(Move.Scythe, her)
         if (room.phase >= MAGE_ZCB_PHASE) spec(bot, Move.Zcb)?.let { return it }
@@ -266,13 +263,17 @@ class MaidenCrew(
 
     /**
      * A clump is ready when one of it reaches her next tick, when all of it stands in one 3x3, or (a lone crab) on the
-     * usual tick after the proc; the 4s go into the frozen 3s.
+     * usual tick after the proc; the 4s go into the frozen 3s, or with no 3s on their usual tick (proc + 16, where the
+     * older pile stands, so one barrage takes both) - after the 30s straight away (the sim's clumpReady).
      */
     private fun clumped(mine: List<MaidenSolo.CrabView>, crabs: List<MaidenSolo.CrabView>, wave: Int, group: Clump, now: Int): Boolean {
         if (mine.any { it.gap <= 2 }) return true
         if (group.name == "4s") {
-            val threes = crabs.filter { it.born == wave && it.spot in THREES && it.frozenUntil > now }
-            if (threes.isNotEmpty()) return mine.any { c -> threes.any { inSquare(c, it) } }
+            val threes = crabs.filter { it.born == wave && it.spot in THREES }
+            if (threes.any { it.frozenUntil <= now }) return false
+            val frozen = threes.filter { it.frozenUntil > now }
+            if (frozen.isNotEmpty()) return mine.any { c -> frozen.any { inSquare(c, it) } }
+            return room.phase >= LAST_PROC || room.t >= wave + group.lone
         }
         if (mine.size == 1) return room.t >= wave + group.lone
         return mine.all { c -> mine.all { inSquare(it, c) } }
@@ -295,8 +296,18 @@ class MaidenCrew(
     /** Ticks until a scythe swung from [here] lands on the crab: the run to it (two tiles a tick), then the swing. */
     private fun toHit(here: CoordGrid, c: MaidenSolo.CrabView): Int = (dist(here, room.real(c.npc.coords), CRAB_SIZE) - 1 + 1) / 2 + 1
 
-    /** A frozen crab that walks on soon: whoever can reach it finishes it first. */
-    private fun thawing(c: MaidenSolo.CrabView, now: Int): Boolean = c.frozenUntil > now && c.frozenUntil - now <= params.thawTicks
+    /**
+     * The sim's `pileWorth`: what a barrage on a pile keeps from healing her (up to 20 a crab), counting only crabs that
+     * would reach her before the next proc's clump barrage could cleave them - her hitpoints to the proc at 22 a tick,
+     * plus the ~12 ticks to that barrage.
+     */
+    private fun pileWorth(crabs: List<MaidenSolo.CrabView>, primary: MaidenSolo.CrabView): Int = crabs.filter { inSquare(it, primary) }.sumOf { minOf(it.npc.hitpoints, PILE_CRAB_CAP) }
+
+    private fun leaksBeforeNextProc(her: Npc, c: MaidenSolo.CrabView, now: Int): Boolean {
+        val next = PROCS.getOrNull(room.phase)
+        val eta = if (next == null) Int.MAX_VALUE else (her.hitpoints - her.baseHitpointsLvl * next / 100).coerceAtLeast(0) / PROC_RATE + CLUMP_AFTER_PROC
+        return maxOf(c.frozenUntil - now, 0) + c.gap - 1 <= eta
+    }
 
     private fun inSquare(c: MaidenSolo.CrabView, primary: MaidenSolo.CrabView): Boolean {
         val at = room.real(primary.npc.coords)
@@ -346,8 +357,11 @@ class MaidenCrew(
         val START_TILES = listOf(CoordGrid(3184, 4445, 0), CoordGrid(3184, 4447, 0), CoordGrid(3184, 4448, 0))
         const val CRAB_SIZE = 2
         const val BASH_RADIUS = 5
-        const val PILE_REACH = 3
+        const val PILE_CRAB_CAP = 20
+        const val PROC_RATE = 22
+        const val CLUMP_AFTER_PROC = 12
         val PROCS = listOf(70, 50, 30)
+        const val LAST_PROC = 3
         const val PCT_SCALE = 1000
         val THREES = setOf("N3", "S3")
         val CLUMPS = listOf(Clump("3s", THREES, 11), Clump("4s", setOf("N4a", "N4b", "S4a", "S4b"), 16))
@@ -359,10 +373,8 @@ class MaidenCrew(
 data class MaidenCrewParams(
     val crabGap: Int = 8,
     val standPermille: Int = 15,
-    val thawTicks: Int = 6,
-    val mageKillHp: Int = 45,
+    val pileWorth: Int = 23,
     val mageScytheBelow: Int = 30,
-    val pileHp: Int = 40,
     val dinhPhase: Int = 2,
     val dinhMin: Int = 3,
 ) {
@@ -374,10 +386,8 @@ data class MaidenCrewParams(
             return MaidenCrewParams(
                 crabGap = int("crabGap", d.crabGap),
                 standPermille = int("standPermille", d.standPermille),
-                thawTicks = int("thawTicks", d.thawTicks),
-                mageKillHp = int("mageKillHp", d.mageKillHp),
+                pileWorth = int("pileWorth", d.pileWorth),
                 mageScytheBelow = int("mageScytheBelow", d.mageScytheBelow),
-                pileHp = int("pileHp", d.pileHp),
                 dinhPhase = int("dinhPhase", d.dinhPhase),
                 dinhMin = int("dinhMin", d.dinhMin),
             )
