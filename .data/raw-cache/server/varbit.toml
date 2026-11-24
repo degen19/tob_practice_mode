@@ -371,6 +371,13 @@ endBit = 21
 
 [[varbit]]
 isServerOnly = true
+id = "varbit.saved_attackstyle_extending_chain_mace"
+varp = "varp.weapons_saved_attackstyle2"
+startBit = 22
+endBit = 23
+
+[[varbit]]
+isServerOnly = true
 id = "varbit.emote_counters_crazy_dance"
 varp = "varp.emote_counters"
 startBit = 0

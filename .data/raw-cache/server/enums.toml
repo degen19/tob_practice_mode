@@ -483,6 +483,7 @@ valueType = "INT"
 24 = "varbit.saved_attackstyle_powered_staff"
 27 = "varbit.saved_attackstyle_bludgeon"
 28 = "varbit.saved_attackstyle_bulwark"
+36 = "varbit.saved_attackstyle_extending_chain_mace"
 
 [[enum]]
 isServerOnly = true
