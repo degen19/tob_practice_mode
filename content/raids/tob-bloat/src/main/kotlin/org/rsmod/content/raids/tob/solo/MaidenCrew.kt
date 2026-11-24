@@ -407,14 +407,14 @@ class MaidenCrew(
         val speed = atkOf(cur).speed
         if (speed <= 1) return null
         val withMine = procTick(tt, true) ?: return null
-        if (tt + speed <= withMine + 1) return null
+        if (tt + speed <= withMine + 1 - params.procSlack) return null
         val others = crew.filter { it !== b }.minOf { it.next }
         if (tt + atkOf("tfz").speed <= others + 2 && pileWorth(tt, false).second >= params.preloadWorth) {
             b.force = "ibs:pile"
             return null
         }
         val bare = procTick(tt, false) ?: return null
-        return if (tt + speed <= bare + 1) null else "wait"
+        return if (tt + speed <= bare + 1 - params.procSlack) null else "wait"
     }
 
     /**
@@ -1261,6 +1261,7 @@ data class MaidenCrewParams(
     val walkWeight: Int = 30,
     val dinhWalk: Int = 2,
     val dodgeLead: Int = 1,
+    val procSlack: Int = 0,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
@@ -1286,6 +1287,7 @@ data class MaidenCrewParams(
                 walkWeight = int("walkWeight", d.walkWeight),
                 dinhWalk = int("dinhWalk", d.dinhWalk),
                 dodgeLead = int("dodgeLead", d.dodgeLead),
+                procSlack = int("procSlack", d.procSlack),
             )
         }
     }
