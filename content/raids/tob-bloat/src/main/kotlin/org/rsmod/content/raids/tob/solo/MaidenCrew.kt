@@ -122,6 +122,9 @@ class MaidenCrew(
 
     override fun starts(): List<CoordGrid> = crew.indices.map { START_TILES[it % START_TILES.size] }
 
+    override val walksIn: Boolean
+        get() = true
+
     override fun doneAt(): Int = room.deadAt
 
     override fun summary(): String =
@@ -129,6 +132,8 @@ class MaidenCrew(
 
     override fun prepare(bot: Player) {
         VarPlayerIntMapSetter.set(bot, "varbit.vengeance_rebound", 1)
+        VarPlayerIntMapSetter.set(bot, "varp.option_run", 1)
+        bot.runEnergy = FULL_RUN
         if (crew.first { it.player === bot }.role == NyloRole.Mage) return
         VarPlayerIntMapSetter.set(bot, "varbit.death_charge_scroll_used", 1)
         VarPlayerIntMapSetter.set(bot, "varbit.death_charge_charges", DEATH_CHARGES)
@@ -159,7 +164,7 @@ class MaidenCrew(
         val flinching = herAttack()
         for (b in crew) {
             val p = b.player
-            if (!p.isSlotAssigned || p.hitpoints <= 0 || p in flinching) continue
+            if (!p.isSlotAssigned || p.hitpoints <= 0 || p in flinching || !room.inArena(room.real(p.coords)) || t < FIRST_ACT) continue
             if (b.role != NyloRole.Mage) spells(b)
             if (dodge(b)) continue
             val o = b.order
@@ -276,11 +281,18 @@ class MaidenCrew(
         bots.walk(b.player, room.at(dest))
     }
 
-    /** A melee swing on her next (the sim has them on their spot by then): beside her during the cooldown. */
+    /**
+     * The next attack on her from closer in (the sim has them there by then): a scythe beside her, a ranged attack
+     * within its range, walked during the cooldown.
+     */
     private fun toHer(b: Bot) {
-        if (atkOf(b.raw()).style != 'm' || b.raw() != "scythe") return
         val here = room.real(b.player.coords)
-        if (room.besideHer(here)) return
+        REACH_OF[b.raw()]?.let { reach ->
+            val gap = room.gapToHer(here)
+            if (gap > reach) bots.walk(b.player, room.at(CoordGrid(here.x - (gap - reach), here.z, here.level)))
+            return
+        }
+        if (b.raw() != "scythe" || room.besideHer(here)) return
         val dest =
             (-REACH..REACH).flatMap { dx -> (-REACH..REACH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
                 .filter { room.besideHer(it) && room.inArena(it) && !room.under(it) && !room.bloody(it) }
@@ -395,7 +407,7 @@ class MaidenCrew(
         if (o.walkTo != null || b.player.actionDelay <= o.issued) return
         b.order = null
         trace { "t$t ${b.role} threw ${o.move} at ${crabs.firstOrNull { it.npc === o.target }?.key ?: "her"} (ordered t${o.at})" }
-        if (b.seq === b.lists[0] && b.step >= PREFIRES) opened += b.player
+        if (b.seq === b.lists[0] && b.step >= THRALL_AFTER) opened += b.player
         val land = t - 1 + LAND_DELAY.getOrDefault(o.move, 1)
         val (mean, sd) = MEAN_HIT[o.move] ?: (0.0 to 0.0)
         val onHer = o.target === her
@@ -405,18 +417,20 @@ class MaidenCrew(
     private fun spells(b: Bot) {
         val p = b.player
         if (p in opened && p !in thralled) {
-            if (p.vars["varbit.spellbook"] == ARCEUUS) {
-                bots.spell(p, GREATER_GHOST)
+            if (p.vars["varbit.arceuus_resurrection_active"] == 1) {
                 thralled += p
+                trace { "t$t ${b.role} has its thrall" }
+                if (p.vars["varbit.spellbook"] == ARCEUUS) {
+                    VarPlayerIntMapSetter.set(p, "varbit.spellbook_swap_book", 0)
+                    VarPlayerIntMapSetter.set(p, "varbit.spellbook", LUNARS)
+                }
+            } else if (p.vars["varbit.spellbook"] == ARCEUUS) {
+                bots.spell(p, GREATER_GHOST)
             } else if (swappedAt[p] == null) {
                 bots.spell(p, SPELLBOOK_SWAP, SWAP_TO_ARCEUUS)
                 swappedAt[p] = t
             }
             return
-        }
-        if (p in thralled && p.vars["varbit.spellbook"] == ARCEUUS) {
-            VarPlayerIntMapSetter.set(p, "varbit.spellbook_swap_book", 0)
-            VarPlayerIntMapSetter.set(p, "varbit.spellbook", LUNARS)
         }
         if (p.vars["varbit.vengeance_rebound"] == 0 && p.vars["varbit.vengeance_timelimit"] == 0 && p.vars["varbit.spellbook"] == LUNARS) bots.spell(p, VENGEANCE)
     }
@@ -1188,7 +1202,8 @@ class MaidenCrew(
         const val LUNARS = 2
         const val ARCEUUS = 3
         const val DEATH_CHARGES = 2
-        const val PREFIRES = 2
+        /** The sim summons the thrall between the first prefire and the first melee hit. */
+        const val THRALL_AFTER = 1
         val START_TILES = listOf(CoordGrid(3184, 4445, 0), CoordGrid(3184, 4447, 0), CoordGrid(3184, 4448, 0))
 
         /** The sim's room: x east from 3160, y south from 4458 (a 2x2 by its north-west tile); her 6x6 at (2, 9). */
@@ -1231,7 +1246,14 @@ class MaidenCrew(
         const val W_S2 = 1.2
         const val ORDER_TICKS = 6
         const val FLINCH = 2
+
+        /** In over the barrier on tick 0, the sim's players start running in on tick 1 (a tbow prefire on 5). */
+        const val FIRST_ACT = 1
+        const val FULL_RUN = 10000
         const val REACH = 8
+
+        /** The tiles out from her each ranged attack on her goes from. */
+        val REACH_OF = mapOf("ralos" to 7, "zcbs" to 8, "zcb" to 8, "bp" to 5)
         val FLICK = listOf(dev.openrune.util.Wearpos.RightHand to "obj.zaryte_xbow", dev.openrune.util.Wearpos.Back to "obj.dizanas_quiver_infinite")
         const val WALK_TICKS = 3
         const val TALLIED = 4

@@ -47,7 +47,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     var bled = 0
         private set
 
-    private class Crab(val npc: Npc, val spot: Int, val born: Int) {
+    private class Crab(val npc: Npc, val spot: Int, val born: Int, val wave: Int) {
         var arrived = false
         var leakedAt = -1
     }
@@ -82,17 +82,48 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     override fun floor(npc: Npc): Int? = if (npc === maiden && dead < 0) 1 else null
 
     override fun land(npc: Npc, hit: Hit): Int? {
-        if (npc !== maiden) return null
+        val replayed = replay?.let { replayed(npc, hit, it) }
+        if (npc !== maiden) return replayed
         if (dead >= 0) return 0
+        val damage = replayed ?: hit.damage
         if (TALLY) {
             val who = attacker(hit)?.username?.filter { it.isLetter() } ?: "other"
-            tally.merge("$phase:$who:${hit.type}", hit.damage, Int::plus)
+            tally.merge("$phase:$who:${hit.type}", damage, Int::plus)
             tally.merge("$phase:$who:n", 1, Int::plus)
         }
         // the crabs come on the tick the hit that takes her past 70 / 50 / 30% lands (Blert: same tick, and she
         // takes the whole hit)
-        phases(maiden.hitpoints - hit.damage)
-        return null
+        phases(maiden.hitpoints - damage)
+        return replayed
+    }
+
+    /** A sim hit to play back (`TOB_MAIDEN_REPLAY`): its landing tick, whose, on what, and its hitsplats in order. */
+    private class SimHit(val t: Int, val who: String, val on: String, val kind: String, val splats: ArrayDeque<Int>)
+
+    private val replay: MutableList<SimHit>? =
+        System.getenv("TOB_MAIDEN_REPLAY")?.let { java.io.File(it).readLines() }?.filter { it.isNotBlank() }?.mapTo(ArrayList()) { l ->
+            val f = l.split(' ')
+            SimHit(f[0].toInt(), f[1], f[2], f[3], ArrayDeque(f[4].split('/').map { it.toInt() }))
+        }
+
+    /**
+     * Tests: the damage the sim's run rolled for this hit - the same player's (any thrall's) of the same kind on the
+     * same target landing within a tick of now - so a run with the sim's spawns and rolls can be lined up tick by tick.
+     */
+    private fun replayed(npc: Npc, hit: Hit, hits: MutableList<SimHit>): Int? {
+        val on = if (npc === maiden) "her" else crabs.firstOrNull { it.npc === npc }?.let { "${SPOT_NAMES[it.spot]}@${it.wave}" } ?: return null
+        val p = attacker(hit)
+        val who = p?.username?.filter { it.isLetter() }?.let { if (it == "ranger") "range" else it }
+        val kind = if (p == null) "thrall" else if (hit.type == org.rsmod.game.hit.HitType.Typeless) "veng" else "atk"
+        val e = hits.filter { it.on == on && it.kind == kind && (kind == "thrall" || it.who == who) && kotlin.math.abs(it.t - t) <= if (kind == "thrall") THRALL_SLACK else 1 }.minByOrNull { kotlin.math.abs(it.t - t) }
+        if (e == null) {
+            println("replay t$t miss $who $kind on $on ours ${hit.damage}")
+            return null
+        }
+        val dmg = e.splats.removeFirst()
+        if (e.splats.isEmpty()) hits.remove(e)
+        println("replay t$t $who $kind on $on ours ${hit.damage} sim $dmg (sim t${e.t})")
+        return dmg
     }
 
     private val box: IntArray
@@ -145,7 +176,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             val crab = spawn(CRAB, CoordGrid(x, y, 0), hp(CRAB_HP, ENTRY_CRAB_HP))
             // the Nylocas Matomenos wiki: a freeze can't miss them from an accurate enough caster
             crab.vars["varn.freeze_guaranteed"] = FREEZE_SURE_ON_ROLL
-            crabs += Crab(crab, spot, t)
+            crabs += Crab(crab, spot, t, PROC_PCT[phase - 1])
         }
     }
 
@@ -400,6 +431,9 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     fun under(tile: CoordGrid): Boolean = tile.x in X until X + SIZE && tile.z in Y until Y + SIZE
 
     /** Whether a player on [tile] (a real tile) can hit her in melee: beside her, not on a corner. */
+    /** Tiles from [tile] to her nearest edge (1: beside her). */
+    fun gapToHer(tile: CoordGrid): Int = maxOf(X - tile.x, tile.x - (X + SIZE - 1), Y - tile.z, tile.z - (Y + SIZE - 1), 0)
+
     fun besideHer(tile: CoordGrid): Boolean {
         val gx = maxOf(X - tile.x, tile.x - (X + SIZE - 1), 0)
         val gz = maxOf(Y - tile.z, tile.z - (Y + SIZE - 1), 0)
@@ -432,6 +466,8 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val Y = 4444
         const val SIZE = 6
         const val CENTRE = 3
+        val PROC_PCT = listOf(70, 50, 30)
+        const val THRALL_SLACK = 3
         const val HP = 2625
         val PHASES = listOf("npc.tob_maiden_100", "npc.tob_maiden_70", "npc.tob_maiden_50", "npc.tob_maiden_30")
         const val DYING_B = "npc.tob_maiden_dying_b"

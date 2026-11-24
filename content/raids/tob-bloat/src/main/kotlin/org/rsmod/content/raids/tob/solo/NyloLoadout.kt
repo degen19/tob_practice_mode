@@ -72,7 +72,7 @@ object NyloLoadout {
     const val SURGE = "obj.4dosesurge"
 
     /** Vengeance, Spellbook Swap, thralls and Death Charge: the runes the ranger and melee cast with. */
-    val LUNAR_RUNES = listOf("obj.astralrune", "obj.earthrune", "obj.lawrune", "obj.cosmicrune", "obj.soulrune", "obj.bloodrune", "obj.deathrune")
+    val LUNAR_RUNES = listOf("obj.astralrune", "obj.earthrune", "obj.lawrune", "obj.cosmicrune", "obj.soulrune", "obj.bloodrune", "obj.deathrune", "obj.firerune")
 
     /** The ancients' barrage and rush. */
     val ANCIENT_RUNES = listOf("obj.waterrune", "obj.bloodrune", "obj.deathrune", "obj.chaosrune")

@@ -424,10 +424,12 @@ constructor(
         val team = crew.filter { it in bots.all }
         if (readied.add(room)) {
             for (p in team) {
+                if (room.real(p.coords) != room.entry) org.rsmod.game.entity.util.PathingEntityCommon.telejump(p, d.collision, room.at(room.entry))
                 potUp(p)
                 trio.prepare(p)
                 SoloBarrier.noAsk += p
             }
+            return
         }
         if (room.instanceTick != Math.floorMod(TRIO_START_TICK - CLICK_LEAD, INSTANCE_CYCLE)) return
         val (tile, barrier) = room.findLocs(BARRIER).minByOrNull { (at, _) -> maxOf(kotlin.math.abs(at.x - room.entry.x), kotlin.math.abs(at.z - room.entry.z)) } ?: return
