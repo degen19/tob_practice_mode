@@ -160,11 +160,13 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             return hit.damage
         }
         val n = nylos.firstOrNull { it.npc === npc } ?: return null
-        if (HIT_TRACE && wave in 24..26) println("nylohit t$t w${n.wave}${if (n.big) "B" else ""}${n.style} ${hit.type} ${hit.damage} by ${attacker(hit)?.username} nulled ${n.nulledBy.map { it.username }}")
+        if (HIT_TRACE && wave >= 28) println("nylohit t$t w${n.wave}${if (n.big) "B" else ""}${n.style} ${hit.type} ${hit.damage} by ${attacker(hit)?.username} nulled ${n.nulledBy.map { it.username }}")
         if (hit.queueTag > 0) n.inbound.firstOrNull { it[1] == hit.queueTag - 1 }?.let { n.inbound.remove(it) }
         if (hit.type == HitType.Typeless) return hit.damage
         val p = attacker(hit) ?: return hit.damage
-        if (hit.type != styleType(n.style) && n.nulledBy.add(p)) nulls++
+        // judged by its colour when the attack was thrown (a flicker turning before it lands doesn't change that)
+        val wrong = if (hit.queueTag != 0) hit.queueTag == WRONG_AT_THROW else hit.type != styleType(n.style)
+        if (wrong && n.nulledBy.add(p)) nulls++
         if (p !in n.nulledBy) return hit.damage
         npc.spotanim(SHIELDED)
         return 0
@@ -178,10 +180,10 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     override fun queued(npc: Npc, hit: org.rsmod.game.hit.HitBuilder) {
         nylos.firstOrNull { it.npc === npc }?.let { n ->
             val p = attacker(hit)
-            val hurts = hit.type == HitType.Typeless || (hit.type == styleType(n.style) && p !in n.nulledBy)
-            val dealt = if (hurts) hit.damage else 0
+            val right = hit.type == HitType.Typeless || hit.type == styleType(n.style)
+            val dealt = if (right && p !in n.nulledBy) hit.damage else 0
             if (dealt > 0) n.inbound += intArrayOf(t, dealt)
-            hit.queueTag = dealt + 1
+            hit.queueTag = if (right) dealt + 1 else WRONG_AT_THROW
             return
         }
         if (npc !== boss || bossDead >= 0) return
@@ -298,6 +300,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         if (npc.hitpoints <= 0) {
             if (n.diedAt < 0) {
                 n.diedAt = t
+                if (FATE_TRACE) println("nylofate ${owner.username} t$t w${n.wave} ${if (n.big) "big" else if (n.lane == null) "split" else "small"} killed age $age")
                 npc.routeDestination.clear()
                 gfx(NyloLooks.deathGfx(n.style), here)
                 if (n.big) {
@@ -318,6 +321,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         if (age >= life) {
             if (n.exploding < 0) {
                 n.exploding = t
+                if (FATE_TRACE) println("nylofate ${owner.username} t$t w${n.wave} ${if (n.big) "big" else if (n.lane == null) "split" else "small"} expired age $age")
                 npc.routeDestination.clear()
                 npc.anim(NyloLooks.detonateSeq(n.style))
                 gfx(NyloLooks.detonateGfx(n.style), here)
@@ -679,6 +683,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         /** The longest a hit takes to land (a barrage from across the room): one queued longer ago never will. */
         const val PENDING_TICKS = 6
         val HIT_TRACE = System.getenv("TOB_HIT_TRACE") != null
+        val FATE_TRACE = System.getenv("TOB_TRIO_TRACE") != null
         const val BIG_LIFE = 53
         const val BIG_BOOM_TICKS = 3
         const val DETONATE_TICKS = 2
@@ -724,6 +729,9 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val BOSS_SIZE = 4
         const val TAG_RIGHT = 1
         const val TAG_WRONG = 2
+
+        /** A nylocas hit thrown at the wrong colour (the right ones carry what they'll deal, plus one). */
+        const val WRONG_AT_THROW = -1
         const val BOSS_HP = 1875
         const val BOSS_CYCLES = 5
         const val BOSS_DROP = 2

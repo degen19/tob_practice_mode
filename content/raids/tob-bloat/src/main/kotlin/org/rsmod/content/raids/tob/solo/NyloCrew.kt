@@ -90,17 +90,17 @@ class NyloCrew(
         claimed.entries.removeIf { (npc, claim) -> !npc.isSlotAssigned || npc.hitpoints <= 0 || claim.second < room.t }
         unreachable.entries.removeIf { it.value < room.t }
         everyone = room.targets()
-        val all = everyone.filter { params.lanes || onFloor(room.real(it.npc.coords)) }
+        val all = everyone.filter { params.lanes || room.wavesSpawned >= params.lanesFrom || onFloor(room.real(it.npc.coords)) }
         val wanted = all
         spare = spareOnes(all)
         if (TRACING && room.wavesSpawned >= TRACE_FROM && room.bossTick < 0 && room.t % 2 == 0) {
-            println("nylo ${members[0].first.username} t${room.t} alive " + everyone.joinToString(" ") { "w${it.wave}${if (it.big) "B" else ""}${it.style}:${it.npc.hitpoints}/${room.lifeLeft(it)}${if (it.npc in spare) "s" else ""}${if (onFloor(room.real(it.npc.coords))) "" else "L"}${if (it.nulledBy.isNotEmpty()) "n" + it.nulledBy.joinToString("") { p -> p.username.take(2) } else ""}${if (it.doomed) "d" else ""}${if (it.onPillar) "p" else ""}" })
+            println("nylo ${members[0].first.username} t${room.t} alive " + everyone.joinToString(" ") { "w${it.wave}${if (it.big) "B" else ""}${it.style}:${it.npc.hitpoints}/${room.lifeLeft(it)}${if (it.npc in spare) "s" else ""}${if (onFloor(room.real(it.npc.coords))) "" else "L"}${if (it.nulledBy.isNotEmpty()) "n" + it.nulledBy.joinToString("") { p -> p.username.take(2) } else ""}${if (it.doomed) "d" else ""}${if (it.onPillar) "p" + room.real(it.npc.coords).let { c -> "@${c.x},${c.z}" } + if (meleeReach(it)) "+" else "-" else ""}" })
         }
         for ((bot, role) in members) {
             if (!bot.isSlotAssigned || bot.hitpoints <= 0) continue
             if (bot.actionDelay > now + 1) continue
             noteStuck(bot, now)
-            val plan = best(bot, role, wanted.filter { bot !in it.nulledBy && !it.doomed })
+            val plan = scripted(bot, role) ?: best(bot, role, wanted.filter { bot !in it.nulledBy && !it.doomed })
             if (TRACING && room.wavesSpawned >= TRACE_FROM && room.bossTick < 0) {
                 println("nylo ${members[0].first.username} t${room.t} $role " + (plan?.let { "${it.weapon} w${it.target.wave}${if (it.target.big) "B" else ""}${it.target.style}:${it.target.npc.hitpoints} x${it.victims.size}" } ?: "prefire"))
             }
@@ -177,6 +177,7 @@ class NyloCrew(
                 if (weapon == Weapon.Dinh && victims.size < params.dinhMin) continue
                 val nulls = nulled(bot, weapon, target, here)
                 if (params.keepBigs && nulls.any { it.big }) continue
+                if (weapon.area == Area.Square && room.wavesSpawned >= params.cleanAreaFrom && nulls.isNotEmpty()) continue
                 val score = score(bot, role, weapon, target, victims, nulls, here)
                 if (best == null || score > best.score) best = Plan(weapon, target, victims, score)
             }
@@ -249,6 +250,40 @@ class NyloCrew(
         if (v.npc in spare) worth *= if (room.wavesSpawned >= room.wavesTotal) params.cleanupSpareWorth else params.spareWorth
         return worth
     }
+
+    /**
+     * The playbook as a script ([NyloCrewParams.script]): a wave nylocas Blert's fastest trios give this role is this
+     * bot's to hit from the age they first hit it (lanes included - those are the prefires), the one due soonest
+     * first, with whichever of its weapons scores best on it; everything else (splits, the rest) goes on the scoring.
+     */
+    private fun scripted(bot: Player, role: NyloRole): Plan? {
+        if (!params.script) return null
+        val here = room.real(bot.coords)
+        val mine =
+            everyone.filter { t ->
+                val play = playOf(t) ?: return@filter false
+                play.role == role.style && bot !in t.nulledBy && !t.doomed && room.t - t.born >= startAge(play) && t.wave >= params.scriptFrom &&
+                    !(t.big && params.scriptGuard && splitsWouldStall()) && (t.big || !params.scriptBigs) &&
+                    !unreachable.containsKey(bot to t.npc)
+            }.sortedBy { it.born + (playOf(it)?.let(::startAge) ?: 0) }
+        for (target in mine) {
+            var best: Plan? = null
+            for (weapon in weapons.getValue(role)) {
+                if (target.style != weapon.hits || weapon.area == Area.Bash) continue
+                if (weapon.range <= 1 && !meleeReach(target)) continue
+                if (weapon == Weapon.Barrage && room.wavesSpawned >= params.barrageTo) continue
+                val victims = victims(weapon, target, everyone, here)
+                val nulls = nulled(bot, weapon, target, here)
+                val score = score(bot, role, weapon, target, victims, nulls, here)
+                if (best == null || score > best.score) best = Plan(weapon, target, victims, score)
+            }
+            if (best != null) return best
+        }
+        return null
+    }
+
+    /** When the script starts on it: Blert's first hit (less a lead), or with [NyloCrewParams.bookDeath] that many ticks before Blert's death age. */
+    private fun startAge(play: Play): Int = if (params.bookDeath > 0) play.deathAge - params.bookDeath else play.firstAge - params.bookLead
 
     /** Who Blert's fastest trios have hit this wave nylocas first, and from what age (null: a split, or no clear call). */
     private fun playOf(v: NyloSolo.Target): Play? {
@@ -452,6 +487,13 @@ data class NyloCrewParams(
     val chinsFrom: Int = 0,
     val barrageTo: Int = 99,
     val bigYouth: Boolean = false,
+    val script: Boolean = false,
+    val bookDeath: Int = 0,
+    val scriptFrom: Int = 1,
+    val lanesFrom: Int = 99,
+    val cleanAreaFrom: Int = 99,
+    val scriptBigs: Boolean = false,
+    val scriptGuard: Boolean = true,
 ) {
     companion object {
         fun parse(text: String): NyloCrewParams {
@@ -491,6 +533,13 @@ data class NyloCrewParams(
                 chinsFrom = int("chinsFrom", d.chinsFrom),
                 barrageTo = int("barrageTo", d.barrageTo),
                 bigYouth = num("bigYouth", if (d.bigYouth) 1.0 else 0.0) != 0.0,
+                script = num("script", if (d.script) 1.0 else 0.0) != 0.0,
+                bookDeath = int("bookDeath", d.bookDeath),
+                scriptFrom = int("scriptFrom", d.scriptFrom),
+                lanesFrom = int("lanesFrom", d.lanesFrom),
+                cleanAreaFrom = int("cleanAreaFrom", d.cleanAreaFrom),
+                scriptBigs = num("scriptBigs", if (d.scriptBigs) 1.0 else 0.0) != 0.0,
+                scriptGuard = num("scriptGuard", if (d.scriptGuard) 1.0 else 0.0) != 0.0,
             )
         }
     }
