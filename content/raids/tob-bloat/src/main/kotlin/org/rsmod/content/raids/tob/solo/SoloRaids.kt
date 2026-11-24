@@ -117,7 +117,11 @@ class SoloRaids {
 
 /** Hits on a solo room's NPCs go through the room first (shields, immunities, halving). */
 class SoloLand @Inject constructor(private val raids: SoloRaids) : NpcHitLandHook {
-    override fun land(npc: Npc, hit: Hit): Int = raids.forNpc(npc)?.land(npc, hit) ?: hit.damage
+    override fun land(npc: Npc, hit: Hit): Int {
+        val room = raids.forNpc(npc) ?: return hit.damage
+        room.recordHit(npc, hit)
+        return room.land(npc, hit) ?: hit.damage
+    }
 
     override fun heals(npc: Npc, hit: Hit): Boolean = raids.forNpc(npc)?.healedByHits(npc, hit) == true
 }

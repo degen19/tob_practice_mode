@@ -132,16 +132,6 @@ class SupplyChest @Inject constructor(private val spellbooks: MagicSpellbookMana
         player.inv[slot] = null
     }
 
-    /** Powered staves come out of the chest fully charged, as the sim plays them. */
-    private fun fillCharges(inv: Inventory) {
-        for (slot in inv.indices) {
-            val obj = inv[slot] ?: continue
-            val (internal, full) = CHARGES[RSCM.getReverseMapping(RSCMType.OBJ, obj.id)] ?: continue
-            val varobj = ServerCacheManager.getVarObj(internal.asRSCM(RSCMType.VAROBJ)) ?: continue
-            if (obj.vars.getBits(varobj.bits) == 0) inv[slot] = obj.copy(vars = obj.vars.withBits(varobj.bits, full))
-        }
-    }
-
     /**
      * Search by name, then how many. [tradeables]: the Grand Exchange list (one entry per item);
      * otherwise every item in the game, untradeables and the game's alternate copies included.
@@ -228,6 +218,17 @@ class SupplyChest @Inject constructor(private val spellbooks: MagicSpellbookMana
             )
     }
 }
+
+/** Powered staves come out of the chest fully charged, as the sim plays them. */
+fun fillCharges(inv: Inventory) {
+    for (slot in inv.indices) {
+        val obj = inv[slot] ?: continue
+        val (internal, full) = CHARGES[RSCM.getReverseMapping(RSCMType.OBJ, obj.id)] ?: continue
+        val varobj = ServerCacheManager.getVarObj(internal.asRSCM(RSCMType.VAROBJ)) ?: continue
+        if (obj.vars.getBits(varobj.bits) == 0) inv[slot] = obj.copy(vars = obj.vars.withBits(varobj.bits, full))
+    }
+}
+
 
 private val CHARGES =
     mapOf(

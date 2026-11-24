@@ -87,7 +87,8 @@ constructor(
     }
 
     private companion object {
-        private const val GAME_TICK_INTERVAL = 600L
+        /** 600ms, as the game runs; `GAME_TICK_MS` shortens it for headless test runs (bots only, nobody logged in). */
+        private val GAME_TICK_INTERVAL = System.getenv("GAME_TICK_MS")?.toLongOrNull()?.coerceIn(1L, 600L) ?: 600L
         private const val GAME_THREAD_NAME = "game"
     }
 }

@@ -8,7 +8,9 @@ import net.rsprot.protocol.util.CombinedId
 import org.rsmod.api.net.rsprot.handlers.If3ButtonHandler
 import org.rsmod.content.interfaces.prayer.tab.PrayerRepository
 import net.rsprot.protocol.game.incoming.misc.user.MoveGameClick
+import net.rsprot.protocol.game.incoming.npcs.OpNpcT
 import net.rsprot.protocol.game.incoming.npcs.OpNpcV2
+import org.rsmod.api.net.rsprot.handlers.OpNpcTHandler
 import org.rsmod.annotations.InternalApi
 import org.rsmod.api.net.rsprot.HeadlessAvatars
 import org.rsmod.api.net.rsprot.handlers.MoveGameClickHandler
@@ -46,6 +48,7 @@ constructor(
     private val random: GameRandom,
     private val moveClick: MoveGameClickHandler,
     private val opNpc: OpNpcHandler,
+    private val opNpcT: OpNpcTHandler,
     private val opLoc: OpLocHandler,
     private val button: If3ButtonHandler,
     private val prayers: PrayerRepository,
@@ -114,6 +117,47 @@ constructor(
         opNpc.handle(player, OpNpcV2(npc.slotId, false, op, -1))
     }
 
+    /** Cast the spell on [component] (a spellbook button, packed) on [npc]. */
+    fun cast(player: Player, npc: Npc, component: Int) {
+        opNpcT.handle(player, OpNpcT(npc.slotId, false, CombinedId(component ushr 16, component and 0xFFFF), -1, -1))
+    }
+
+    /**
+     * Puts [obj] on in [slot] at once, swapping what was there into its inventory slot (and a shield off for a
+     * two-handed weapon). Switches in the game cost no ticks, but a Wield click queues behind the bot's attack and
+     * cancels it; this keeps a bot's switch and its attack on the same tick, as a player's are.
+     */
+    fun equip(player: Player, slot: Int, obj: Int): Boolean {
+        val from = (0 until player.inv.size).firstOrNull { player.inv[it]?.id == obj } ?: return false
+        val type = dev.openrune.ServerCacheManager.getItem(obj) ?: return false
+        val left = dev.openrune.util.Wearpos.LeftHand.slot
+        val right = dev.openrune.util.Wearpos.RightHand.slot
+        val twoHanded = type.wearpos2 == left || type.wearpos3 == left
+        val offhandTwoHanded = slot == left && player.worn[right]?.let { w -> dev.openrune.ServerCacheManager.getItem(w.id)?.let { it.wearpos2 == left || it.wearpos3 == left } } == true
+        val bump = when {
+            slot == right && twoHanded -> left
+            offhandTwoHanded -> right
+            else -> -1
+        }
+        if (bump >= 0 && player.worn[bump] != null) {
+            val free = (0 until player.inv.size).firstOrNull { player.inv[it] == null && it != from } ?: return false
+            player.inv[free] = player.worn[bump]
+            player.worn[bump] = null
+        }
+        val off = player.worn[slot]
+        player.worn[slot] = player.inv[from]
+        player.inv[from] = off
+        player.rebuildAppearance()
+        return true
+    }
+
+    /** Wield or wear the first [obj] in the inventory (its second option, as a click on the inventory would). */
+    fun wield(player: Player, obj: Int): Boolean {
+        val slot = (0 until player.inv.size).firstOrNull { player.inv[it]?.id == obj } ?: return false
+        click(player, INVENTORY_ITEMS ushr 16, INVENTORY_ITEMS and 0xFFFF, slot, obj, WIELD_OP)
+        return true
+    }
+
     fun opLoc(player: Player, loc: Int, at: CoordGrid, op: Int = 1) {
         opLoc.handle(player, OpLocV2(loc, at.x, at.z, false, op, -1))
     }
@@ -131,6 +175,8 @@ constructor(
     private companion object {
         const val BOT_ID_BASE = 9_000_000_000L
         const val XP_99 = 130_344_310
+        const val WIELD_OP = 3
+        val INVENTORY_ITEMS: Int by lazy { dev.openrune.rscm.RSCM.run { "component.inventory:items".asRSCM(dev.openrune.rscm.RSCMType.COMPONENT) } }
         val STATS =
             listOf(
                 "stat.attack", "stat.strength", "stat.defence", "stat.hitpoints",

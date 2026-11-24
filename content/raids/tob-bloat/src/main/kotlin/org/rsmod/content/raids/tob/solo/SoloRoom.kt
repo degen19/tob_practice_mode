@@ -193,6 +193,14 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
             .append("\"npc\":{\"id\":${npc.id},\"roomId\":${npc.slotId}},\"npcAttack\":{\"attack\":$attack,\"target\":\"$target\"}}\n")
     }
 
+    /** Notes a player's hit landing on one of the room's NPCs (our own event, 1000: who, with what, for how much). */
+    fun recordHit(npc: Npc, hit: Hit) {
+        if (recording.length > MAX_RECORDING || !hit.isFromPlayer) return
+        val p = hit.resolvePlayerSource(d.players) ?: return
+        recording.append("{\"type\":1000,\"stage\":$stage,\"tick\":$t,\"xCoord\":0,\"yCoord\":0,")
+            .append("\"hit\":{\"player\":\"${p.username}\",\"roomId\":${npc.slotId},\"weapon\":${hit.righthandType()?.id ?: -1},\"damage\":${hit.damage}}}\n")
+    }
+
     /** Notes a room event of Blert's [type] with its fields ([json]: the inside of an object) at this tick. */
     fun recordEvent(type: Int, json: String) {
         if (recording.length > MAX_RECORDING) return

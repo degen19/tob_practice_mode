@@ -62,6 +62,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         var diedAt = -1
         var exploding = -1
         var nulled = false
+        var biting = false
         val size: Int
             get() = if (big) 2 else 1
     }
@@ -74,6 +75,11 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     private var wave = 0
     private var nextWaveAt = FIRST_WAVE
     private var lastWaveAt = 0
+    private var cycleAt = 0
+
+    /** Wave checks the cap held back, so far. */
+    var stalls = 0
+        private set
     private var bossAt = -1
     private var boss: Npc? = null
     private var bossStyle = 'M'
@@ -88,6 +94,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         dying.clear()
         wave = 0
         nextWaveAt = FIRST_WAVE
+        stalls = 0
         lastWaveAt = 0
         bossAt = -1
         boss = null
@@ -171,11 +178,13 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     }
 
     private fun waves() {
+        if (instanceTick == WAVE_TICK) cycleAt = t
         if (wave >= WAVES.size) return
         if (t < nextWaveAt || instanceTick != WAVE_TICK) return
         val cap = if (wave + 1 >= CAP_WAVE) CAP_LATE else CAP_EARLY
         val alive = roomCount()
         if (alive >= cap) {
+            stalls++
             recordEvent(121, "\"nyloWave\":{\"wave\":${wave + 1},\"nylosAlive\":$alive,\"roomCap\":$cap}")
             return
         }
@@ -314,6 +323,7 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             npc.walk(at(stepToward(here, CoordGrid(pillar.cx, pillar.cy, 0), n.size)))
             return
         }
+        n.biting = true
         if (t >= n.nextAttack) {
             n.nextAttack = t + NYLO_SPEED
             npc.faceSquare(at(pillar.x, pillar.y), 3, 3)
@@ -368,9 +378,17 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
 
     private fun chebyshev(a: CoordGrid, b: CoordGrid): Int = maxOf(abs(a.x - b.x), abs(a.z - b.z))
 
-    /** Nylocas walk the lanes (no tiles for players) and only the pillars stand in their way. */
+    /** Nylocas walk the lanes (no tiles for players) and the floor, and only the pillars stand in their way there. */
     private fun free(c: CoordGrid, size: Int): Boolean =
-        pillars.none { p -> p.up && c.x + size - 1 >= p.x && c.x <= p.x + 2 && c.z + size - 1 >= p.y && c.z <= p.y + 2 }
+        (0 until size).all { dx -> (0 until size).all { dz -> nyloTile(c.x + dx, c.z + dz) } } &&
+            pillars.none { p -> p.up && c.x + size - 1 >= p.x && c.x <= p.x + 2 && c.z + size - 1 >= p.y && c.z <= p.y + 2 }
+
+    /** The tiles a nylocas ever stands on (Blert: 50 trios' positions): the three lanes and the floor between the pillars. */
+    private fun nyloTile(x: Int, z: Int): Boolean =
+        (z in WEST_EAST_LANE_Z && (x in WEST_LANE_X || x in EAST_LANE_X)) ||
+            (x in SOUTH_LANE_X && z in SOUTH_LANE_Z) ||
+            (x in FLOOR_WIDE_X && z in FLOOR_WIDE_Z) ||
+            (x in FLOOR_NARROW_X && z in FLOOR_NARROW_Z)
 
     private fun frozen(n: Npc): Boolean = n.vars["varn.freeze_end_clock"] > d.mapClock.cycle
 
@@ -490,11 +508,11 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
     }
 
     /** A live nylocas as a bot sees it: its style now, size, when it came and whether it hunts players. */
-    class Target(val npc: Npc, val style: Char, val big: Boolean, val born: Int, val aggro: Boolean, val wave: Int)
+    class Target(val npc: Npc, val style: Char, val big: Boolean, val born: Int, val aggro: Boolean, val wave: Int, val onPillar: Boolean)
 
     fun targets(): List<Target> =
         nylos.filter { it.npc.isSlotAssigned && it.npc.hitpoints > 0 && it.exploding < 0 && !it.nulled }
-            .map { Target(it.npc, it.style, it.big, it.born, it.aggro, it.wave) }
+            .map { Target(it.npc, it.style, it.big, it.born, it.aggro, it.wave, it.biting) }
 
     /** The tick Vasilias drops in (-1 until the last nylocas is gone), and the waves spawned so far. */
     val bossTick: Int
@@ -502,6 +520,39 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
 
     val wavesSpawned: Int
         get() = wave
+
+    val pillarsStanding: Int
+        get() = pillars.count { it.up }
+
+    val wavesTotal: Int
+        get() = WAVES.size
+
+    /** What counts toward the cap now, and the cap the next wave checks against. */
+    val roomAlive: Int
+        get() = roomCount()
+
+    val cap: Int
+        get() = if (wave + 1 >= CAP_WAVE) CAP_LATE else CAP_EARLY
+
+    /** The next tick a wave tries to spawn (a cycle start no earlier than its natural stall allows). */
+    val nextWaveCheck: Int
+        get() {
+            var at = maxOf(t, nextWaveAt)
+            while (Math.floorMod(at - cycleAt, CYCLE) != 0) at++
+            return at
+        }
+
+    /** The tick wave 31 spawns if no wave from here on is held back by the cap (each waits out its natural stall). */
+    val lastWaveEta: Int
+        get() {
+            if (wave >= WAVES.size) return lastWaveAt
+            var at = nextWaveCheck
+            for (i in wave until WAVES.size - 1) at += WAVES[i].stall.coerceAtLeast(CYCLE)
+            return at
+        }
+
+    /** Ticks until [target] goes off on its own. */
+    fun lifeLeft(target: Target): Int = (if (target.big) BIG_LIFE else SMALL_LIFE) - (t - target.born)
 
     override fun autoTarget(): Npc? {
         boss?.let { if (bossDead < 0) return it }
@@ -560,6 +611,15 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val PILLAR_COLLAPSE_TICKS = 4
         /** The cache's pillar hitpoints (normal, Entry); how they scale with the party isn't known yet. */
         const val PILLAR_HP = 130
+        val WEST_EAST_LANE_Z = 4248..4249
+        val WEST_LANE_X = 3281..3289
+        val EAST_LANE_X = 3302..3310
+        val SOUTH_LANE_X = 3295..3296
+        val SOUTH_LANE_Z = 4233..4242
+        val FLOOR_WIDE_X = 3290..3301
+        val FLOOR_WIDE_Z = 4245..4252
+        val FLOOR_NARROW_X = 3292..3299
+        val FLOOR_NARROW_Z = 4243..4254
         const val ENTRY_PILLAR_HP = 155
         const val PILLAR_HIT_MIN = 0
         const val PILLAR_HIT_MAX = 2

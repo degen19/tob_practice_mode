@@ -174,6 +174,7 @@ constructor(
                 return targets
             }
             val centre = primary.coords
+            if (primary is Player) return collectPlayers(primary, targets)
             for (npc in hunt.findNpcs(centre, AOE_SEARCH_RADIUS, HuntVis.Off)) {
                 if (targets.size >= MAX_TARGETS) {
                     return targets
@@ -187,6 +188,12 @@ constructor(
                     targets += npc
                 }
             }
+            return targets
+        }
+
+        /** An area spell on a player splashes onto players only (one on an NPC, onto NPCs only), as in the game. */
+        private fun ProtectedAccess.collectPlayers(primary: Player, targets: MutableList<PathingEntity>): List<PathingEntity> {
+            val centre = primary.coords
             for (other in hunt.findPlayers(centre, AncientSpellEffects.AOE_RADIUS, HuntVis.Off)) {
                 if (targets.size >= MAX_TARGETS) {
                     return targets

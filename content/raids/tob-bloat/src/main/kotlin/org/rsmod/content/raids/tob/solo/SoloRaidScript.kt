@@ -3,6 +3,7 @@ package org.rsmod.content.raids.tob.solo
 import org.rsmod.api.player.righthand
 import com.github.michaelbull.logging.InlineLogger
 import dev.openrune.rscm.RSCM
+import dev.openrune.rscm.RSCM.asRSCM
 import dev.openrune.rscm.RSCMType
 import jakarta.inject.Inject
 import org.rsmod.api.config.constants
@@ -31,6 +32,7 @@ import org.rsmod.api.script.onOpNpc3
 import org.rsmod.game.cheat.Cheat
 import org.rsmod.game.entity.Player
 import org.rsmod.game.movement.MoveSpeed
+import org.rsmod.api.player.vars.varMoveSpeed
 import org.rsmod.game.loc.LocShape
 import org.rsmod.map.CoordGrid
 import org.rsmod.map.util.Bounds
@@ -61,6 +63,7 @@ constructor(
     private val d: SoloDeps,
     private val protectedAccess: ProtectedAccessLauncher,
     private val bots: org.rsmod.content.raids.tob.bloat.RaidBots,
+    private val spells: org.rsmod.api.spells.MagicSpellRegistry,
 ) : PluginScript() {
     private val auto = HashSet<Player>()
     private val logger = InlineLogger()
@@ -264,11 +267,19 @@ constructor(
     private var selfTestQueue = ArrayDeque<TobRoom>()
 
     /** Tests (`TOB_TRIO=n`): n bot trios, each in its own Nylocas room, run the waves until Vasilias drops in. */
-    private val trios = HashMap<SoloRoom, NyloTrio>()
+    private val trios = HashMap<SoloRoom, NyloCrew>()
+
+    /** `TOB_TRIO_PARAMS`: a file with one line of [NyloCrewParams] per trio (a search's candidates). */
+    private val trioParams: List<String> by lazy { System.getenv("TOB_TRIO_PARAMS")?.let { java.io.File(it).readLines() } ?: emptyList() }
+
+    private val barrageButton: Int by lazy {
+        val obj = dev.openrune.ServerCacheManager.getItem(NyloLoadout.ICE_BARRAGE.asRSCM(dev.openrune.rscm.RSCMType.OBJ))!!
+        spells.getObjSpell(obj)!!.component.packed
+    }
 
     private fun startTrios(teams: Int) {
         for (i in 1..teams) {
-            val crew = NyloTrio.Role.entries.map { role -> role to bots.spawn("${role.name}$i", EXIT, SELF_TEST_GEAR, emptyList()) }
+            val crew = NyloRole.entries.map { role -> role to spawnNyloBot("${role.name}$i", role) }
             if (crew.any { it.second == null }) return logger.warn { "nylo trio $i: no room for its bots" }
             val owner = crew[0].second!!
             auto += owner
@@ -278,12 +289,28 @@ constructor(
                 room.helpers += bot!!
                 org.rsmod.game.entity.util.PathingEntityCommon.telejump(bot, d.collision, room.at(room.entry))
             }
-            trios[room] = NyloTrio(room, crew.map { it.second!! to it.first }, bots, d.npcHits)
+            val params = trioParams.getOrNull(i - 1)?.let(NyloCrewParams::parse) ?: NyloCrewParams()
+            trios[room] = NyloCrew(room, crew.map { it.second!! to it.first }, bots, d.mapClock, barrageButton, params)
         }
     }
 
+    private fun spawnNyloBot(name: String, role: NyloRole): Player? {
+        val bot = bots.spawn(name, EXIT, NyloLoadout.worn(role), NyloLoadout.pack(role)) ?: return null
+        for (slot in 0 until bot.inv.size) {
+            val obj = bot.inv[slot] ?: continue
+            val rune = (NyloLoadout.BARRAGE_RUNES + NyloLoadout.CHINCHOMPAS).firstOrNull { it.asRSCM(dev.openrune.rscm.RSCMType.OBJ) == obj.id } ?: continue
+            bot.inv[slot] = org.rsmod.game.inv.InvObj(rune, RUNES)
+        }
+        bot.worn[dev.openrune.util.Wearpos.Quiver.slot] = org.rsmod.game.inv.InvObj(NyloLoadout.BOLTS, RUNES)
+        org.rsmod.content.raids.tob.bloat.fillCharges(bot.inv)
+        org.rsmod.api.player.worn.DizanasQuiver.store(bot, NyloLoadout.ARROWS.asRSCM(dev.openrune.rscm.RSCMType.OBJ), RUNES)
+        if (role == NyloRole.Mage) org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(bot, "varbit.spellbook", 1)
+        bot.varMoveSpeed = org.rsmod.game.movement.MoveSpeed.Run
+        return bot
+    }
+
     /** A trio's tick: start on a 4 like a team does, then play until Vasilias spawns. */
-    private fun trioTick(room: SoloRoom, trio: NyloTrio) {
+    private fun trioTick(room: SoloRoom, trio: NyloCrew) {
         val nylo = room as NyloSolo
         if (room.t < 0) {
             // as a Yes clicked on the timer's 4: the room's first tick comes on its 2
@@ -292,9 +319,10 @@ constructor(
             room.start()
             return
         }
+        for (p in listOf(room.owner) + room.helpers) if (p in bots.all) p.runEnergy = org.rsmod.api.config.constants.run_max_energy
         trio.tick()
         if (nylo.bossTick >= 0 && room.t >= nylo.bossTick) {
-            logger.info { "nylo trio ${room.owner.username}: Vasilias at room tick ${nylo.bossTick} (${raidTime(nylo.bossTick)}), waves ${nylo.wavesSpawned}" }
+            logger.info { "nylo trio ${room.owner.username}: Vasilias at room tick ${nylo.bossTick} (${raidTime(nylo.bossTick)}), waves ${nylo.wavesSpawned}, stalls ${nylo.stalls}, pillars ${nylo.pillarsStanding}" }
             trios.remove(room)
             auto.remove(room.owner)
             val crew = listOf(room.owner) + room.helpers
@@ -375,6 +403,7 @@ constructor(
         const val CHEST = "loc.tob_midway_chest_closed"
         const val NPC_VIEW = 32
         const val SELF_TEST_AT = 30
+        const val RUNES = 100_000
         val SELF_TEST_GEAR =
             listOf(
                 dev.openrune.util.Wearpos.Hat.slot to "obj.torva_helm",
