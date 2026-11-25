@@ -122,9 +122,6 @@ class MaidenCrew(
     private val leaks = HashSet<Npc>()
     private val crew = members.mapIndexed { i, (p, r) -> Bot(p, r, i) }
     private val mage = crew.first { it.role == NyloRole.Mage }
-
-    /** Each wave's first tick the mage could cast on it: the tick after its proc, or its cooldown's end. */
-    private val mageFree = HashMap<Int, Int>()
     private val metas = HashMap<Npc, Meta>()
     private val spawned = HashMap<Int, MutableSet<String>>()
     private val plans = HashMap<Int, WavePlan>()
@@ -610,7 +607,6 @@ class MaidenCrew(
 
     /** Everyone on to the list for the proc that just came (a ZCB they didn't get to is kept for after their freezes). */
     private fun onProc(n: Int) {
-        mageFree[WAVES[n - 1]] = max(procAt[n - 1] + 1, mage.next)
         for (b in crew) {
             val next = b.lists[n]
             b.seq = if (n == 1) next else carry(b, next)
@@ -1385,15 +1381,15 @@ class MaidenCrew(
     }
 
     /**
-     * A freeze on [c]: the S2 gets an ice rush on the mage's first two ticks for it (it thaws in time to walk into its
-     * wave's 4s and be frozen again with them), later a barrage that catches no loose 3s/4s (null: leave it); any other
+     * A freeze on [c]: the S2 gets an ice rush on its first two ticks out (it thaws, past its immunity, in time to walk
+     * into its wave's 4s and be frozen again with them), later a barrage that catches no loose 3s/4s (null: leave it); any other
      * single a rush where a barrage would catch them.
      */
     private fun singleCast(c: Crab, tt: Int): String? {
         val early = aoe3(c).any { it !== c && (it.base in THREES || it.base in FOURS) && tt > it.frozenTo }
         return when {
             c.base != "S2" -> if (early) "ir" else "ibs"
-            tt <= (mageFree[c.wave] ?: tt) + S2_SLACK -> "ir"
+            tt <= (procOf(c.wave) ?: tt) + 1 + S2_SLACK -> "ir"
             early -> null
             else -> "ibs"
         }
@@ -1791,7 +1787,9 @@ class MaidenCrew(
         val toFreeze = { q: Crab ->
             q.wave == w0 && tt > q.frozenTo && ((q.id in fz0 && md[q.wave]?.contains(q.id) != true) || (big(q) && md[q.wave]?.contains(clumpOf(q)) != true))
         }
-        val inPile = { q: Crab -> toFreeze(q) || big(q) || (q.meta.rushed && !clumpDone(q)) || live.any { r -> r !== q && big(r) && inArea(r, q) } }
+        // a clump's barrage takes the 3x3 round its best primary: a 1/2 beside the clump but outside that isn't in it
+        val prims = live.filter(big).groupBy { it.wave }.values.mapNotNull { g -> g.maxByOrNull { p -> live.count { inArea(p, it) } } }
+        val inPile = { q: Crab -> toFreeze(q) || big(q) || (q.meta.rushed && !clumpDone(q)) || prims.any { p -> p !== q && inArea(p, q) } }
         val weight = { q: Crab ->
             if (inPile(q)) {
                 if (tt > q.frozenTo && big(q)) (if (q.wave != w0) params.walkWeight / 10.0 else W_PILE) else W_PILE
@@ -1806,7 +1804,7 @@ class MaidenCrew(
         val under = { x: Int, y: Int -> live.any { x >= it.x && x <= it.x + 1 && y >= it.y && y <= it.y + 1 } }
         val opts = ArrayList<DinOpt>()
         for (c in live.filter { it.base in DINH_POOL && !(it.meta.rushed && !clumpDone(it)) && skip?.contains(it.key) != true && it.hp > SAFE_HP && (crabRef(it.key)?.let { q -> reachOf(q) > tt + 1 } ?: true) }) {
-            val sides = if (c.id == "S2") listOf("west") else if (c.id == "S1") listOf("north", "west") else listOf("north", "south", "west", "east")
+            val sides = if (c.id == "S2" || c.id == "S1") listOf("north", "west") else listOf("north", "south", "west", "east")
             var best: DinOpt? = null
             for (sd in sides) {
                 val tiles =
