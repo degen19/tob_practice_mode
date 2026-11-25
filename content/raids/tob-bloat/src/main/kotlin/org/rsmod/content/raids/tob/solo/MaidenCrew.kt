@@ -68,6 +68,7 @@ class MaidenCrew(
         var sw50 = 0
         var dinPos: IntArray? = null
         var dinNext: DinOpt? = null
+        var walkedFor: String? = null
         var force: String? = null
         val tfzD = HashMap<Int, MutableSet<String>>()
         val dpsD = HashMap<Int, MutableSet<String>>()
@@ -191,7 +192,7 @@ class MaidenCrew(
     /**
      * Her next attack, as the sim has it: it goes at whoever is closest to her centre, so when someone with Vengeance up
      * isn't, the ones in front without it flinch two tiles out on her attack tick - if that puts the Vengeance player in
-     * front of them all. Her target flicks a crossbow and quiver on for the tick, so her drain goes on Ranged.
+     * front of them all, and none of them has a swing due that tick (players flinch between swings). Her target flicks a crossbow and quiver on for the tick, so her drain goes on Ranged.
      */
     private fun herAttack(): Set<Player> {
         if (!room.attacksNext) return emptySet()
@@ -204,7 +205,7 @@ class MaidenCrew(
         for ((k, q) in near.withIndex()) {
             if (q.first.vars["varbit.vengeance_rebound"] != 1) continue
             val before = near.subList(0, k)
-            if (before.any { b -> b.first !in bots || !(q.second < b.second + FLINCH || (q.second == b.second + FLINCH && q.third < b.third)) }) break
+            if (before.any { b -> b.first !in bots || b.first.actionDelay <= clock.cycle || !(q.second < b.second + FLINCH || (q.second == b.second + FLINCH && q.third < b.third)) }) break
             before.forEach { flinching += it.first }
             target = q.first
             break
@@ -310,6 +311,7 @@ class MaidenCrew(
                 .map { (sx, sy) -> CoordGrid(sx + ROOM_X, ROOM_Y - sy, here.level) }
                 .filter { !room.bloody(it) }
                 .minWithOrNull(compareBy({ if (room.besideHer(it)) 0 else 1 }, { maxOf(abs(it.x - here.x), abs(it.z - here.z)) })) ?: return
+        b.walkedFor = c.key
         trace { "t$t ${b.role} moves to ${dest.x - ROOM_X},${ROOM_Y - dest.z} for ${c.key} (swing t$due)" }
         bots.walk(b.player, room.at(dest))
     }
@@ -351,27 +353,34 @@ class MaidenCrew(
     private fun dinhSpot(b: Bot): IntArray? {
         val next = upcoming(b)
         if (!b.dinDone && next in DINH_LINES) return b.dinNext?.pos
-        val second = next == "tdin2" && b.dinDone && !b.din2Done && (b.spec >= DINH_COST || (!b.surged && "surge" in b.seq.drop(b.step)))
+        val surge = if (!b.surged && "surge" in b.seq.drop(b.step)) SURGE_SPEC else 0
+        val second = next == "tdin2" && b.dinDone && !b.din2Done && b.spec + surge >= DINH_COST
         if (!second) return null
         if (b.dinNext == null) {
             val keep = curT
             curT = max(b.next, t)
-            b.dinNext = dinPick(0, inflightKeys(curT, false))?.takeIf { it.n >= params.secondDinhMin }
+            b.dinNext = dinPick(0, inflightKeys(curT, false), b, RUN * max(1, curT - t))?.takeIf { it.n >= params.secondDinhMin }
             curT = keep
         }
         return b.dinNext?.pos
     }
 
     /**
-     * The Dinh's the melee lined up a swing ago, when it stands on its tile and the target's still there: it goes as
-     * planned (a player walks to their Dinh's spot during the swing before; the sim, with no walking, re-picks).
+     * The Dinh's the melee lined up a swing ago, when it stands on its tile: it goes as planned (a player walks to their
+     * Dinh's spot during the swing before; the sim, with no walking, re-picks), on the best target from there when the
+     * planned one could die to a hit landing first.
      */
     private fun committed(b: Bot): DinOpt? {
         val plan = b.dinNext ?: return null
         val here = room.real(b.player.coords)
         if (maxOf(abs(plan.pos[0] - (here.x - ROOM_X)), abs(plan.pos[1] - (ROOM_Y - here.z))) > params.dinhWalk) return null
-        if (b.spec < DINH_COST || (plan.key != "maiden" && crabRef(plan.key) == null)) return null
-        return plan
+        if (b.spec < DINH_COST) return null
+        if (plan.key == "maiden" || crabRef(plan.key)?.takeIf { it.hp > SAFE_HP && it.key !in inflightKeys(t + 1, false) } != null) return plan
+        val keep = curT
+        curT = t + 1
+        val pk = dinPick(0, inflightKeys(curT, false), b)
+        curT = keep
+        return pk
     }
 
     /** Between swings, to the tile the melee's held Dinh's goes from (the sim's pick a swing ahead): there when it's due. */
@@ -581,9 +590,28 @@ class MaidenCrew(
         val tt = b.next
         curT = tt
         val stand = if (b.role == NyloRole.Mage && b.force == null) standFor(b, tt) else null
-        val a = stand ?: obligate(b, nextAct(b, tt), tt)
+        val a = onTime(b, stand ?: obligate(b, nextAct(b, tt), tt), tt)
+        b.walkedFor = null
         trace { "t$tt ${b.role}@${room.real(b.player.coords).let { "${it.x - ROOM_X},${ROOM_Y - it.z}" }} $a${if (a.startsWith("dinhs")) " from ${b.dinPos?.joinToString(",")}" else ""}" }
         perform(b, a, tt)
+    }
+
+    /**
+     * A melee swing on her that would first have to walk (the bot went for a crab or its Dinh's, and the pick has moved
+     * on since) goes on what it walked for instead, when that's still there to hit: a DPS never waits on a run.
+     */
+    private fun onTime(b: Bot, a: String, tt: Int): String {
+        if (b.dps == null || (a != "scythe" && a != "tdps") || room.gapToHer(room.real(b.player.coords)) - 1 <= 2) return a
+        committed(b)?.let { plan ->
+            if (!b.dinDone || !b.din2Done) {
+                if (b.dinDone) b.din2Done = true else b.dinDone = true
+                trace { "t$tt ${b.role} keeps its lined-up Dinh's on ${plan.key}" }
+                return "dinhs:${plan.key}"
+            }
+        }
+        val c = b.walkedFor?.let { crabRef(it) }?.takeIf { canHit(b, it, tt) } ?: crabs.filter { canHit(b, it, tt) }.maxByOrNull { it.hp } ?: return a
+        trace { "t$tt ${b.role} swings on ${c.key}, beside it, instead of walking to her" }
+        return "scyk:${c.key}"
     }
 
     /**
@@ -726,7 +754,7 @@ class MaidenCrew(
                 if (!b.dinDone) {
                     a = "tdin"
                 } else {
-                    val pk = if (!b.din2Done && b.spec >= DINH_COST) committed(b) ?: dinPick(0, inflightKeys(tt, false)) else null
+                    val pk = if (!b.din2Done && b.spec >= DINH_COST) committed(b) ?: dinPick(0, inflightKeys(tt, false), b) else null
                     if (pk == null || pk.n < params.secondDinhMin) return dpsSwing(b, tt)
                     b.din2Done = true
                     b.dinPos = pk.pos
@@ -770,7 +798,7 @@ class MaidenCrew(
         if (b.sw50 < 1) {
             b.sw50 = 1
             val sw = dpsSwing(b, tt)
-            b.dinNext = dinPick(5, inflightKeys(tt, false))
+            b.dinNext = dinPick(5, inflightKeys(tt, false), b, PLAN_RUN)
             return sw
         }
         committed(b)?.let { plan ->
@@ -786,8 +814,8 @@ class MaidenCrew(
         swK?.let { strag += it }
         strag += inflightKeys(tt, false)
         latestWave()?.let { w -> strag += planOf(w).left.map { "$it@$w" } }
-        val now = dinPick(0, strag)
-        val later = dinPick(5, strag)
+        val now = dinPick(0, strag, b)
+        val later = dinPick(5, strag, b, PLAN_RUN)
         val cap = proc50 != null && tt + 5 > proc50!! + params.dinhCap
         trace { "t$tt dinh now ${now?.key}:${now?.value?.toInt()}:${now?.n} later ${later?.key}:${later?.value?.toInt()}:${later?.n} skip $strag sw $sw0 crabs ${crabs.joinToString(" ") { "${it.key}:${it.hp}@${it.x},${it.y}${if (it.frozenTo >= tt) "f" else ""}" }}" }
         val here = room.real(b.player.coords)
@@ -803,7 +831,7 @@ class MaidenCrew(
         b.dpsD.clear()
         b.dpsD.putAll(dd)
         swK?.let { strag -= it }
-        val tg = dinPick(0, strag)
+        val tg = dinPick(0, strag, b)
         b.dinDone = true
         b.dinPos = tg?.pos
         return if (tg != null) "dinhs:${tg.key}" else "scythe"
@@ -811,7 +839,7 @@ class MaidenCrew(
 
     private fun specFallback(b: Bot, a: String): String? {
         if (a != "zcbs" || b.spec < DINH_COST || phase == 0 || !b.owns(DINH_WEAPON)) return null
-        val pk = dinPick(0) ?: return null
+        val pk = dinPick(0, from = b) ?: return null
         if (pk.n < params.secondDinhMin) return null
         b.dinPos = pk.pos
         return "dinhs:${pk.key}"
@@ -962,12 +990,12 @@ class MaidenCrew(
                     val rch = { x: String -> crabRef("$x@$w")?.let { reachOf(it) } ?: -1 }
                     val lord = plan.lord ?: plan.left.sortedBy(rch).also { plan.lord = it }
                     val dl = crew.firstOrNull { d -> d !== b && d.dps != null && d.raw() in DINH_LINES && d.spec >= DINH_COST && d.sw50 >= 1 && d.next <= tt + 1 }
-                    val dk = if (dl != null) dinPick(0) else null
+                    val dk = if (dl != null) dinPick(0, from = dl) else null
                     lord.withIndex().firstOrNull { (k, x) -> x !in done && rch(x) >= (if (k == 0) tt + 2 else tt + 1) && (k == 0 || dk?.key != "$x@$w") }?.value
                 }
             }
         if (id != null && id !in done) {
-            val c = crabRef("$id@$w")?.takeIf { reachOf(it) == tt + 1 || canHit(b, it, tt) }
+            val c = crabRef("$id@$w")?.takeIf { canHit(b, it, tt) }
             if (plan.left.size == 1 && !(w == 50 && b.lists[2].any { it.startsWith("tdin") }) && c != null && reachOf(c) >= tt + 5 && !beside(b, c)) return "scythe"
             if (c != null && reachOf(c) == tt + 1 && c.hp >= blue()) {
                 done += id
@@ -985,7 +1013,7 @@ class MaidenCrew(
                 if (q.id in plan.fz) mdone?.contains(q.id) != true else if (q.base in THREES || q.base in FOURS) mdone?.contains(clumpOf(q)) != true else false
         }
         val dpl = crew.firstOrNull { d -> d !== b && d.dps != null && d.raw() in DINH_LINES && d.spec >= DINH_COST && d.sw50 >= 1 }
-        val dpk = if (dpl != null) dinPick(0, inflightKeys(tt, false) + plan.left.map { "$it@$w" }) else null
+        val dpk = if (dpl != null) dinPick(0, inflightKeys(tt, false) + plan.left.map { "$it@$w" }, dpl) else null
         val dinCovers = { q: Crab -> dpk != null && dpk.key == q.key && dpl!!.next <= tt + 1 && reachOf(q) > dpl.next + 1 }
         val red = red()
         val blue = blue()
@@ -999,7 +1027,7 @@ class MaidenCrew(
                         !(q.meta.scyBy >= 0 && q.meta.scyBy != b.i && q.hp <= SHARED_HP)
                 }
                 .map { it to reachOf(it) }
-                .filter { (q, r) -> r in tt + 1..tt + params.straggleTicks && (r == tt + 1 || canHit(b, q, tt)) }
+                .filter { (q, r) -> r in tt + 1..tt + params.straggleTicks && canHit(b, q, tt) }
                 .sortedWith(compareBy<Pair<Crab, Int>> { if (it.second <= tt + 5) 0 else 1 }.thenByDescending { it.first.hp }.thenBy { it.second })
                 .toList()
         for ((q, r) in st0) {
@@ -1017,26 +1045,23 @@ class MaidenCrew(
     }
 
     /**
-     * Whether a scythe from the bot lands on the crab before it reaches her: the sim swings at once, a bot first runs to
-     * it (two tiles a tick, the crab walking in meanwhile).
+     * Whether the bot's swing on the crab goes when it's due: from within a run of a tile beside it (two tiles a tick,
+     * up to the swing; the game walks it in and swings the same tick), before the crab reaches her.
      */
     private fun canHit(b: Bot, q: Crab, tt: Int): Boolean {
         if (!params.walkCheck) return true
         val me = room.real(b.player.coords).let { intArrayOf(it.x - ROOM_X, ROOM_Y - it.z) }
-        val reach = reachOf(q)
+        if (tt + 1 > reachOf(q)) return false
         var x = q.x
         var y = q.y
-        for (k in 0..WALK_LIMIT) {
-            if (tt + k + 1 > reach) return false
-            val gap = maxOf(x - me[0], me[0] - (x + 1), y - me[1], me[1] - (y + 1), 0)
-            if (gap - 1 <= 2 * (k + max(lead, tt - t))) return true
-            if (tt + k >= q.frozenTo && !adjacent(x, y)) {
-                val sw = y + 1
-                x -= 1
-                if (sw < SWROW) y++ else if (sw > SWROW) y--
-            }
+        for (k in t + 1..tt) {
+            if (k <= q.frozenTo || adjacent(x, y)) continue
+            val sw = y + 1
+            x -= 1
+            if (sw < SWROW) y++ else if (sw > SWROW) y--
         }
-        return false
+        val gap = maxOf(x - me[0], me[0] - (x + 1), y - me[1], me[1] - (y + 1), 0)
+        return gap - 1 <= 2 * max(lead, tt - t)
     }
 
     private fun clumpOf(q: Crab): String = if (q.base in THREES) "3s" else "4s"
@@ -1092,9 +1117,12 @@ class MaidenCrew(
     /**
      * The sim's Dinh's pick: on a 1/2/3 the barrages won't cleave, from the side of it whose 11x11 takes in the most crabs
      * (then the most value), or on her from her east side; a crab walking in alone counts at triple value (every point it
-     * keeps heals her two), one in the pile or frozen at a fraction. [ahead]: the crabs walked on that many ticks.
+     * keeps heals her two), one in the pile or frozen at a fraction. [ahead]: the crabs walked on that many ticks. With
+     * [from], only spots that bot runs to in time ([run] tiles): a Dinh's never waits on a walk.
      */
-    private fun dinPick(ahead: Int, skip: Set<String>? = null): DinOpt? {
+    private fun dinPick(ahead: Int, skip: Set<String>? = null, from: Bot? = null, run: Int = RUN): DinOpt? {
+        val me = from?.let { room.real(it.player.coords) }?.let { intArrayOf(it.x - ROOM_X, ROOM_Y - it.z) }
+        val far = { x: Int, y: Int -> me != null && maxOf(abs(x - me[0]), abs(y - me[1])) > run }
         val tt = curT + ahead
         val live =
             crabs.filter { !(skip != null && it.key in skip && it.hp <= 30) }.map { q0 ->
@@ -1134,7 +1162,7 @@ class MaidenCrew(
         val blocked = { x: Int, y: Int -> x < 0 || y < 0 || x > ROOM_W || y > ROOM_H || (x in MT_X..MX1 && y in MT_Y..MY1) }
         val under = { x: Int, y: Int -> live.any { x >= it.x && x <= it.x + 1 && y >= it.y && y <= it.y + 1 } }
         val opts = ArrayList<DinOpt>()
-        for (c in live.filter { it.base in DINH_POOL && !(it.meta.rushed && !clumpDone(it)) }) {
+        for (c in live.filter { it.base in DINH_POOL && !(it.meta.rushed && !clumpDone(it)) && skip?.contains(it.key) != true }) {
             val sides = if (c.id == "S2") listOf("west") else if (c.id == "S1") listOf("north", "west") else listOf("north", "south", "west", "east")
             var best: DinOpt? = null
             for (sd in sides) {
@@ -1146,7 +1174,7 @@ class MaidenCrew(
                         else -> listOf(c.x + 2 to c.y, c.x + 2 to c.y + 1)
                     }
                 for ((x, y) in tiles) {
-                    if (blocked(x, y) || under(x, y)) continue
+                    if (blocked(x, y) || under(x, y) || far(x, y)) continue
                     val n = live.count { near(x, y, it) }
                     val sc = worth(c, x, y) + if (c.wave == w0) 0.5 else 0.0
                     if (best == null || n > best.n || (n == best.n && sc > best.value)) best = DinOpt(c.key, intArrayOf(x, y), n, sc)
@@ -1157,7 +1185,7 @@ class MaidenCrew(
         var onHer: DinOpt? = null
         for (y in MT_Y..MY1) {
             val x = MX1 + 1
-            if (blocked(x, y) || under(x, y)) continue
+            if (blocked(x, y) || under(x, y) || far(x, y)) continue
             val n = live.count { near(x, y, it) }
             val sc = worth(null, x, y)
             if (onHer == null || n > onHer.n || (n == onHer.n && sc > onHer.value)) onHer = DinOpt("maiden", intArrayOf(x, y), n, sc)
@@ -1271,12 +1299,9 @@ class MaidenCrew(
             }
             "dinhs" -> {
                 val target = if (ref == "maiden") her else crab?.npc
-                val here = room.real(b.player.coords)
-                val near = if (target === her) room.besideHer(here) else crab?.let { beside(b, it) } == true
-                val pos = b.dinPos?.let { CoordGrid(it[0] + ROOM_X, ROOM_Y - it[1], 0) }?.takeIf { !near && maxOf(abs(it.x - here.x), abs(it.z - here.z)) <= params.dinhWalk }
                 b.dinPos = null
                 b.dinNext = null
-                if (target == null) hold(b) else act(b, Move.Dinh, target, pos)
+                if (target == null) hold(b) else act(b, Move.Dinh, target)
             }
             else -> act(b, Move.Scythe, her)
         }
@@ -1379,6 +1404,18 @@ class MaidenCrew(
         const val ORDER_TICKS = 6
         const val FLINCH = 2
         const val PREDODGE_TICKS = 2
+
+        /** Tiles a bot runs in the tick before its swing (the game walks it in and swings on the same tick). */
+        const val RUN = 2
+
+        /** A surge potion's special attack energy. */
+        const val SURGE_SPEC = 25
+
+        /** A Dinh's target with no more than this left can die to a hit landing first, and the swing with it. */
+        const val SAFE_HP = 30
+
+        /** Tiles it runs to its Dinh's spot between swings. */
+        const val PLAN_RUN = 8
 
         /** In over the barrier on tick 0, the sim's players start running in on tick 1 (a tbow prefire on 5). */
         const val FIRST_ACT = 1
