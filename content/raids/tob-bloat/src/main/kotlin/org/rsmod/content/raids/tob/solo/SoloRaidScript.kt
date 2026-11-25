@@ -110,6 +110,10 @@ constructor(
             invalidArgs = "Usage: ::tob <room> | stop"
             cheat { tob() }
         }
+        onCommand("watch") {
+            desc = "Watch a bot trio play a Theatre room live: ::watch [maiden | nylo] (Nylocas by default)"
+            cheat { watch(player, watched(args.getOrNull(0))) }
+        }
         for (type in QUEUE_WATCHED) {
             onEvent<org.rsmod.api.npc.events.NpcHitEvents.Modify>(type.asRSCM(RSCMType.NPC).toLong()) { raids.forNpc(npc)?.queued(npc, hit) }
         }
@@ -141,7 +145,7 @@ constructor(
             "map" -> raids.byOwner[player.username]?.let { dumpMap(it) }
             "mode" -> raids.switchMode(player)
             "start" -> raids.byOwner[player.username]?.start()
-            "watch" -> watch(player, args.getOrNull(1)?.let { TobRoom.parse(it) }?.takeIf { it == TobRoom.MAIDEN } ?: TobRoom.NYLOCAS)
+            "watch" -> watch(player, watched(args.getOrNull(1)))
             "auto" -> if (!auto.remove(player)) { auto += player; player.mes("Autopilot on.") } else player.mes("Autopilot off.")
             "hp" -> raids.byOwner[player.username]?.autoTarget()?.let { it.hitpoints = args.getOrNull(1)?.toIntOrNull() ?: it.hitpoints }
             else -> {
@@ -328,8 +332,12 @@ constructor(
     private val spectators = HashMap<SoloRoom, MutableList<Player>>()
     private var watchRuns = 0
 
+    private fun watched(arg: String?): TobRoom = arg?.let { TobRoom.parse(it) }?.takeIf { it == TobRoom.MAIDEN } ?: TobRoom.NYLOCAS
+
+    /** Watching from your own room leaves it first, as ::tob stop does. */
     private fun watch(player: Player, where: TobRoom) {
-        if (raids.forPlayer(player) != null || spectators.values.any { player in it }) return player.mes("You're already in the Theatre.")
+        if (spectators.values.any { player in it }) return player.mes("You're already watching a trio.")
+        raids.byOwner[player.username]?.let { close(it) }
         val room = startTrio("w${++watchRuns}", where, "") ?: return player.mes("No room for a bot trio right now.")
         spectators.getOrPut(room) { ArrayList() } += player
         protectedAccess.launch(player) { telejump(room.at(room.entry), TeleportType.Exempt) }
