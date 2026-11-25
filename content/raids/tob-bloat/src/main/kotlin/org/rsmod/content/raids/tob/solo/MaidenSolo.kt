@@ -290,6 +290,10 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         }
     }
 
+    /** The most her auto can hit now. */
+    val autoMax: Int
+        get() = floor(BASE_MAX + PER_LEAK * leaks).toInt().let { if (entryMode) it / 2 else it }
+
     /** Her autos on their way: the cycle each lands on its target (the queue it's held in takes it a tick early) and the most it can hit. */
     val autos = HashMap<Player, Pair<Int, Int>>()
 

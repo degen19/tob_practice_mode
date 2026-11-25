@@ -485,6 +485,7 @@ constructor(
             p.runEnergy = org.rsmod.api.config.constants.run_max_energy
             val missing = p.statBase("stat.prayer") - p.stat("stat.prayer")
             if (missing > 0) p.statAdd("stat.prayer", missing, 0)
+            if (trio.keepsHp) continue
             val hurt = p.statBase("stat.hitpoints") - p.stat("stat.hitpoints")
             if (hurt > 0) p.statAdd("stat.hitpoints", hurt, 0)
         }

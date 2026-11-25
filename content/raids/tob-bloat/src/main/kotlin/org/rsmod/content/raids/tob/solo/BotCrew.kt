@@ -15,6 +15,10 @@ interface BotCrew {
 
     fun tick()
 
+    /** Whether its bots keep the damage they take (else they're topped back up every tick). */
+    val keepsHp: Boolean
+        get() = false
+
     /** Anything a bot does before the room starts (outside it, as a team would), after it's potted up. */
     fun prepare(bot: org.rsmod.game.entity.Player) {}
 
