@@ -1090,7 +1090,8 @@ class MaidenCrew(
             if (tt + 5 <= due) {
                 if (w != 70) {
                     val c = barragePrim("old", tt)
-                    if (c != null && aoe3(c).sumOf { it.hp } >= OLD_PILE_HP) return "ibs:old"
+                    val worth = params.clumpFill && pileWorth(tt, true, "old").second * 2 >= params.pileWorth
+                    if (c != null && (worth || aoe3(c).sumOf { it.hp } >= OLD_PILE_HP)) return "ibs:old"
                 }
                 return "tbr"
             }
@@ -1830,6 +1831,7 @@ data class MaidenCrewParams(
     val lateStragglers: Boolean = true,
     val posts: Boolean = true,
     val casterGap: Int = 4,
+    val clumpFill: Boolean = false,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
@@ -1853,6 +1855,7 @@ data class MaidenCrewParams(
                 lateStragglers = flag("lateStragglers", d.lateStragglers),
                 posts = flag("posts", d.posts),
                 casterGap = int("casterGap", d.casterGap),
+                clumpFill = flag("clumpFill", d.clumpFill),
                 redOffset = int("redOffset", d.redOffset),
                 walkWeight = int("walkWeight", d.walkWeight),
                 dinhWalk = int("dinhWalk", d.dinhWalk),
