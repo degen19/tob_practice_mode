@@ -100,7 +100,7 @@ object NyloLoadout {
         when (role) {
             NyloRole.Melee -> listOf(TBOW, RALOS, SCYTHE, DINH, ZCB, OBLIGATOR)
             NyloRole.Ranger -> listOf(TBOW, RALOS, SCYTHE, ZCB)
-            NyloRole.Mage -> listOf(TBOW, RALOS, BARRAGE, SCYTHE, ZCB, CROSSBOWS, TOME)
+            NyloRole.Mage -> listOf(TBOW, RALOS, BARRAGE, SCYTHE, ZCB, CROSSBOWS, TOME, CLAWS)
         }
 
     /** Worn at the start: the first set plus bolts in the ammo slot. */

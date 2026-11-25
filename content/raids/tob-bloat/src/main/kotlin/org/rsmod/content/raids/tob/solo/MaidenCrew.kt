@@ -47,6 +47,7 @@ class MaidenCrew(
         Scythe(NyloLoadout.SCYTHE, 1),
         Obligator(NyloLoadout.OBLIGATOR, 0),
         Dinh(NyloLoadout.DINH, 0, 500),
+        Claws(NyloLoadout.CLAWS, 1, 500),
         Barrage(NyloLoadout.BARRAGE, 0),
         Rush(NyloLoadout.BARRAGE, 0),
         Tome(NyloLoadout.TOME, 0),
@@ -444,7 +445,8 @@ class MaidenCrew(
         val spec = b.spec + if (!b.surged && "surge" in b.seq.drop(b.step)) SURGE_SPEC else 0
         val a =
             (b.step until b.seq.size).map { b.seq[it] }
-                .firstOrNull { it != "surge" && !(it == "tfz" && tfzSpent(b, tt)) && !(it == "zcbs" && spec < atkOf(it).spec) } ?: b.raw()
+                .firstOrNull { it != "surge" && !(it == "tfz" && tfzSpent(b, tt)) && !(it == "zcbs" && spec < atkOf(it).spec && !clawsOver(b, spec)) } ?: b.raw()
+        if (a == "zcbs" && clawsOver(b, spec)) return "claws"
         if (a != "tpile") return a
         if (phase == 0) return "scythe"
         return if (pileWorth(tt, true, "pile").second * 2 >= params.pileWorth) a else "tbr"
@@ -673,6 +675,15 @@ class MaidenCrew(
             return
         }
         if (p.vars["varbit.vengeance_rebound"] == 0 && p.vars["varbit.vengeance_timelimit"] == 0 && p.vars["varbit.spellbook"] == LUNARS) bots.spell(p, VENGEANCE)
+    }
+
+    /**
+     * After the 30s, whether the mage's ZCB spec goes to its claws instead: a claw spec on her worth more than the ZCB's
+     * (its ruby proc a share of her hitpoints, capped), or energy for the claws and not the ZCB.
+     */
+    private fun clawsOver(b: Bot, spec: Int): Boolean {
+        if (b.role != NyloRole.Mage || phase != 0 || !b.owns("claws") || spec < atkOf("claws").spec) return false
+        return spec < atkOf("zcbs").spec || CLAW_MEAN > min(ZCB_CAP, hp * ZCB_PCT / 100) + ZCB_HIT
     }
 
     /** The standard normal distribution's CDF (a logistic fit, good to about 1%). */
@@ -936,6 +947,12 @@ class MaidenCrew(
             if (a == "zcbs" && b.dps != null && params.thawYields) thawing(b, tt)?.let { q ->
                 return if (reachOf(q) == tt + 1) "scys:${q.key}:${if (q.hp >= magenta()) "N" else "S"}" else "scyk:${q.key}"
             }
+            // the mage's last freeze done, a claw spec worth more than the ZCB (or all the energy left would buy) goes first
+            if (a == "zcbs" && clawsOver(b, b.spec)) {
+                if (!last) b.step++
+                trace { "t$tt Mage claws instead of its ZCB" }
+                return "claws"
+            }
             if (a == "zcbs" && b.role == NyloRole.Mage && zcbProcs(tt)) {
                 trace { "t$tt Mage keeps its ZCB: it would proc her" }
                 return "tbr"
@@ -943,6 +960,11 @@ class MaidenCrew(
             if (a == "tpile") return if (pileWorth(tt, true, "pile").second * 2 >= params.pileWorth) "ibs:pile" else "tbr"
             if (a == "tfz" || a == "tdps") {
                 val r = if (a == "tfz") tfzPick(b, tt) else dpsSwing(b, tt)
+                // a free hit in the 30s freezes (a crab missing from the list) goes to the ZCB the mage has the energy for
+                if (r == "tbr" && b.role == NyloRole.Mage && phase == 0 && b.owns("zcb") && b.spec >= atkOf("zcbs").spec) {
+                    trace { "t$tt Mage ZCBs its free hit" }
+                    return "zcbs"
+                }
                 if (r == "wait" || r == "tbr" || r == "ibs:old" || r?.startsWith("aya:") == true || r?.startsWith("ax:") == true) return r
                 if (r == null) {
                     if (!last) {
@@ -1686,6 +1708,7 @@ class MaidenCrew(
             "ax" -> act(b, Move.Crossbows, crab?.npc ?: her)
             "ralos" -> act(b, Move.Ralos, her)
             "zcbs" -> act(b, Move.Zcb, her)
+            "claws" -> act(b, Move.Claws, her)
             "scyk", "scyc", "scys" -> crab?.let { act(b, Move.Scythe, it.npc) } ?: hold(b)
             "ibs" -> crab?.let { act(b, Move.Barrage, it.npc) } ?: hold(b)
             "ir" -> crab?.let {
@@ -1903,6 +1926,11 @@ class MaidenCrew(
         const val THREES_DUE = 11
         const val ZCB_CAP = 110
         const val ZCB_PCT = 22
+
+        /** A ZCB's own hit on her (the spec's ruby proc on top), and a dragon claw spec's total: estimates, to measure. */
+        const val ZCB_HIT = 25
+        const val CLAW_MEAN = 75.0
+        const val CLAW_SD = 25.0
         const val FOURS_DUE = 16
         const val OLD_PILE_HP = 100
         const val PILE_CRAB_CAP = 20
@@ -1983,29 +2011,29 @@ class MaidenCrew(
 
         val OWNS =
             mapOf(
-                NyloRole.Mage to setOf("scythe", "tbow", "ralos", "xbows", "zcb"),
+                NyloRole.Mage to setOf("scythe", "tbow", "ralos", "xbows", "zcb", "claws"),
                 NyloRole.Ranger to setOf("scythe", "tbow", "ralos", "bp", "zcb"),
                 NyloRole.Melee to setOf("scythe", "tbow", "ralos", "bp", "zcb", "dinh", "obligator"),
             )
 
         val WEAPON =
             mapOf(
-                "tbr" to "tbow", "bp" to "bp", "ax" to "xbows", "ralos" to "ralos", "zcbs" to "zcb", "scythe" to "scythe", "scyk" to "scythe",
+                "tbr" to "tbow", "bp" to "bp", "ax" to "xbows", "ralos" to "ralos", "zcbs" to "zcb", "claws" to "claws", "scythe" to "scythe", "scyk" to "scythe",
                 "scyc" to "scythe", "scys" to "scythe", "tdps" to "scythe", "tdin" to "scythe", "tdin2" to "scythe", "dinhs" to "dinh",
             )
 
         /** Style: r ranged, m melee, f a freeze, g magic, - no attack. */
         val ATTACKS =
             mapOf(
-                "tbr" to Atk(5, 'r'), "bp" to Atk(2, 'r'), "ax" to Atk(2, 'r'), "ralos" to Atk(6, 'r', spec = 50), "zcbs" to Atk(5, 'r', spec = 75),
+                "tbr" to Atk(5, 'r'), "bp" to Atk(2, 'r'), "ax" to Atk(2, 'r'), "ralos" to Atk(6, 'r', spec = 50), "zcbs" to Atk(5, 'r', spec = 75), "claws" to Atk(4, 'm', spec = 50),
                 "scythe" to Atk(5, 'm'), "scyk" to Atk(5, 'm', true), "scyc" to Atk(5, 'm', true), "scys" to Atk(5, 'm', true),
                 "tdps" to Atk(5, 'm', true), "tdin" to Atk(5, 'm'), "tdin2" to Atk(5, 'm'), "dinhs" to Atk(5, 'm', true, 50), "obl" to Atk(5, 'm', true),
                 "tfz" to Atk(5, 'f', true), "ibs" to Atk(5, 'f', true), "ir" to Atk(5, 'f', true), "aya" to Atk(3, 'g', true),
                 "tpile" to Atk(5, 'r'), "wait" to Atk(1, '-'), "surge" to Atk(0, '-'),
             )
 
-        val LAND_DELAY = mapOf(Move.Tbow to 3, Move.Blowpipe to 2, Move.Crossbows to 2, Move.Zcb to 3, Move.Ralos to 3, Move.Scythe to 1, Move.Obligator to 1, Move.Dinh to 1, Move.Barrage to 2)
-        val MEAN_HIT = mapOf(Move.Tbow to (TBOW_MEAN to TBOW_SD), Move.Scythe to (SCYTHE_MEAN to SCYTHE_SD), Move.Blowpipe to (16.1 to 9.8), Move.Crossbows to (16.1 to 9.8))
+        val LAND_DELAY = mapOf(Move.Tbow to 3, Move.Blowpipe to 2, Move.Crossbows to 2, Move.Zcb to 3, Move.Ralos to 3, Move.Scythe to 1, Move.Obligator to 1, Move.Dinh to 1, Move.Claws to 1, Move.Barrage to 2)
+        val MEAN_HIT = mapOf(Move.Tbow to (TBOW_MEAN to TBOW_SD), Move.Scythe to (SCYTHE_MEAN to SCYTHE_SD), Move.Blowpipe to (16.1 to 9.8), Move.Crossbows to (16.1 to 9.8), Move.Claws to (CLAW_MEAN to CLAW_SD))
     }
 }
 
