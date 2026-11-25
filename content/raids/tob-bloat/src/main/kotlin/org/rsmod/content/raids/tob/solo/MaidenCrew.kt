@@ -281,7 +281,7 @@ class MaidenCrew(
             (-FLINCH..FLINCH).flatMap { dx -> (-FLINCH..FLINCH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
                 .filter { maxOf(abs(it.x - here.x), abs(it.z - here.z)) == FLINCH }
                 .filter { room.inArena(it) && !room.under(it) && !room.bloody(it) && !struck(it) && if (beside) room.besideHer(it) else room.gapToHer(it) in gap - 1..gap }
-                .minWithOrNull(compareBy({ if (b.dps != null && !northEast(it)) 1 else 0 }, { if (b.dps != null) room.gapToHer(it) else abs(room.gapToHer(it) - gap) })) ?: return false
+                .minWithOrNull(compareBy({ if (b.dps != null) room.gapToHer(it) else abs(room.gapToHer(it) - gap) }, { if (b.dps != null) fromCorner(it) else 0 })) ?: return false
         trace { "t$t ${b.role} pre-dodges to ${to.x - ROOM_X},${ROOM_Y - to.z}" }
         walk(b, to)
         return true
@@ -301,7 +301,7 @@ class MaidenCrew(
         val to =
             (-DODGE..DODGE).flatMap { dx -> (-DODGE..DODGE).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
                 .filter { it != here && room.inArena(it) && !room.under(it) && !room.bloody(it) && (!beside || room.besideHer(it)) }
-                .minWithOrNull(compareBy({ if (room.gapToHer(it) - 1 <= RUN) 0 else 1 }, { if (b.dps != null && !northEast(it)) 1 else 0 }, { maxOf(abs(it.x - here.x), abs(it.z - here.z)) })) ?: return false
+                .minWithOrNull(compareBy({ if (room.gapToHer(it) - 1 <= RUN) 0 else 1 }, { if (b.dps != null) fromCorner(it) else 0 }, { maxOf(abs(it.x - here.x), abs(it.z - here.z)) })) ?: return false
         trace { "t$t ${b.role} steps off blood to ${to.x - ROOM_X},${ROOM_Y - to.z}" }
         val o = b.order
         if (o != null) {
@@ -323,8 +323,8 @@ class MaidenCrew(
         val due = b.next
         if (due <= t) return
         val own = ownCrab(b, due)
-        // the sim's DPS on their one crab: her while it's still a swing off, so the swing due goes on her from beside her
-        if (own != null && planOf(own.wave).left.size == 1 && !(own.wave == 50 && b.lists[2].any { it.startsWith("tdin") }) && reachOf(own) >= due + 5) return toHer(b)
+        // the sim's DPS on their one crab: her while the next swing still catches it, so the swing due goes on her from beside her
+        if (own != null && planOf(own.wave).left.size == 1 && !(own.wave == 50 && b.lists[2].any { it.startsWith("tdin") }) && reachOf(own) > due + SWING + 1) return toHer(b)
         val c = own ?: nextCrab(b, due) ?: return toHer(b)
         var x = c.x
         var y = c.y
@@ -363,20 +363,20 @@ class MaidenCrew(
         }
         if (atkOf(next).style != 'm') return
         val beside = room.besideHer(here)
-        if (beside && northEast(here)) return
+        if (beside && fromCorner(here) <= CORNER_NEAR) return
         val dist = { c: CoordGrid -> maxOf(abs(c.x - here.x), abs(c.z - here.z)) }
         val open =
             (-REACH..REACH).flatMap { dx -> (-REACH..REACH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
                 .filter { room.besideHer(it) && room.inArena(it) && !room.under(it) && !room.bloody(it) }
         val nearest = open.minOfOrNull(dist) ?: return
         val spare = RUN * (b.next - t - 1)
-        val dest = open.filter { northEast(it) && dist(it) <= maxOf(if (beside) 0 else nearest, spare) }.minByOrNull(dist) ?: if (beside) return else open.minByOrNull(dist) ?: return
+        val dest = open.filter { fromCorner(it) <= CORNER_NEAR && dist(it) <= maxOf(if (beside) 0 else nearest, spare) }.minByOrNull(dist) ?: if (beside) return else open.minByOrNull(dist) ?: return
         trace { "t$t ${b.role} moves beside her to ${dest.x - ROOM_X},${ROOM_Y - dest.z} (swing t${b.next})" }
         walk(b, dest)
     }
 
-    /** North or east of her: where the N1 walks in (DPS stand there to reach it). */
-    private fun northEast(c: CoordGrid): Boolean = ROOM_Y - c.z < MT_Y || c.x - ROOM_X > MX1
+    /** Tiles from her north-east corner, where the north spawns walk in. */
+    private fun fromCorner(c: CoordGrid): Int = maxOf(abs(c.x - ROOM_X - (MX1 + 1)), abs(ROOM_Y - c.z - (MT_Y - 1)))
 
     /** The line the bot's next swing comes off: spent freezes and the surge skipped, a pile barrage not worth it as its fallback. */
     private fun upcoming(b: Bot): String {
@@ -467,6 +467,7 @@ class MaidenCrew(
      * her when the swing on [due] lands.
      */
     private fun ownCrab(b: Bot, due: Int): Crab? {
+        splitStraggler(b, due)?.let { return it }
         val w = latestWave() ?: return null
         val plan = planOf(w)
         val done = b.dpsD[w] ?: emptySet<String>()
@@ -474,7 +475,7 @@ class MaidenCrew(
             when {
                 plan.left.size == 1 -> plan.left
                 w == 30 -> listOfNotNull(plan.left.getOrNull(b.dps ?: return null))
-                else -> plan.left.sortedBy { x -> crabRef("$x@$w")?.let { reachOf(it) } ?: -1 }
+                else -> leftOrder(b, w, due)
             }
         return ids.filter { it !in done }.firstNotNullOfOrNull { id -> crabRef("$id@$w")?.takeIf { reachOf(it) > due } }
     }
@@ -1106,6 +1107,9 @@ class MaidenCrew(
     private fun dpsSwing(b: Bot, tt: Int): String {
         val w = latestWave() ?: return "scythe"
         val dps = b.dps ?: return "scythe"
+        splitStraggler(b, tt)?.takeIf { canHit(b, it, tt) }?.let { q ->
+            return if (reachOf(q) == tt + 1) "scys:${q.key}:${if (q.hp >= magenta()) "N" else "S"}" else "scyk:${q.key}"
+        }
         val plan = planOf(w)
         val done = b.dpsD.getOrPut(w) { HashSet() }
         val id: String? =
@@ -1114,7 +1118,7 @@ class MaidenCrew(
                 w == 30 -> plan.left.getOrNull(dps)
                 else -> {
                     val rch = { x: String -> crabRef("$x@$w")?.let { reachOf(it) } ?: -1 }
-                    val lord = plan.lord ?: plan.left.sortedBy(rch).also { plan.lord = it }
+                    val lord = leftOrder(b, w, tt)
                     val dl = crew.firstOrNull { d -> d !== b && d.dps != null && d.raw() in DINH_LINES && d.spec >= DINH_COST && d.sw50 >= 1 && d.next <= tt + 1 }
                     val dk = if (dl != null) dinPick(0, from = dl) else null
                     lord.withIndex().firstOrNull { (k, x) -> x !in done && rch(x) >= (if (k == 0) tt + 2 else tt + 1) && (k == 0 || dk?.key != "$x@$w") }?.value
@@ -1122,7 +1126,7 @@ class MaidenCrew(
             }
         if (id != null && id !in done) {
             val c = crabRef("$id@$w")?.takeIf { canHit(b, it, tt) }
-            if (plan.left.size == 1 && !(w == 50 && b.lists[2].any { it.startsWith("tdin") }) && c != null && reachOf(c) >= tt + 5 && !beside(b, c)) return "scythe"
+            if (plan.left.size == 1 && !(w == 50 && b.lists[2].any { it.startsWith("tdin") }) && c != null && reachOf(c) > tt + SWING + 1 && !beside(b, c)) return "scythe"
             if (c != null && reachOf(c) == tt + 1 && c.hp >= blue()) {
                 done += id
                 return "scys:${c.key}:${if (c.hp >= magenta()) "N" else "S"}"
@@ -1168,6 +1172,34 @@ class MaidenCrew(
             }
         }
         return "scythe"
+    }
+
+    /**
+     * The wave's unfrozen 1s / 2s in the order the bot goes for them: the one reaching her first (both DPS on it), then
+     * the other - unless the other walks in before the swing after, when the melee takes it and the ranger the first.
+     */
+    private fun leftOrder(b: Bot, w: Int, tt: Int): List<String> {
+        val plan = planOf(w)
+        val rch = { x: String -> crabRef("$x@$w")?.let { reachOf(it) } ?: -1 }
+        val lord = plan.lord ?: plan.left.sortedBy(rch).also { plan.lord = it }
+        if (b.dps != MELEE_DPS || lord.size < 2) return lord
+        val done = b.dpsD[w].orEmpty()
+        val (first, second) = lord[0] to lord[1]
+        if (first in done || second in done || rch(second) !in tt + 1..tt + SWING) return lord
+        return listOf(second, first) + lord.drop(2)
+    }
+
+    /**
+     * With both DPS on the wave's one unfrozen crab, the melee takes a healthy older crab that thaws and walks in before
+     * its next swing instead (the ranger keeps the new one).
+     */
+    private fun splitStraggler(b: Bot, tt: Int): Crab? {
+        if (b.dps != MELEE_DPS) return null
+        val w = latestWave() ?: return null
+        if (planOf(w).left.size != 1 || crew.none { it.dps != null && it !== b && it.player.hitpoints > 0 }) return null
+        return crabs.filter { q ->
+            q.wave != w && q.frozenTo <= tt && q.hp >= SPLIT_HP && reachOf(q) in tt + 1..tt + SWING && !pushPast(q) && !freezing(q) && !clumpCovers(q, tt)
+        }.maxByOrNull { it.hp }
     }
 
     /**
@@ -1598,6 +1630,10 @@ class MaidenCrew(
         const val CASTER_GAP = 7
         const val MAGE_ROW = 11
         const val MAGE_ROWS = 3
+        const val SWING = 5
+        const val CORNER_NEAR = 3
+        const val SPLIT_HP = 40
+        const val MELEE_DPS = 1
         const val STAND_SEARCH = 14
         const val CHUNK = 8
         const val CHUNK_Y0 = 3
