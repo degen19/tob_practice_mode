@@ -790,13 +790,17 @@ class MaidenCrew(
                 else -> return a
             }
         if (line == null || (k != "scythe" && line.n < params.oblTargets)) return a
+        // the thrust has to beat the swing it replaces (a crab's hits keep twice their damage off her), and not land on
+        // a crab something already on its way (a hit, or a barrage's splash) may kill first
+        val swing = if (k == "scythe") SCYTHE_MEAN else min(c.hp, SCY_CRAB).toDouble() * 2
+        if (line.worth <= swing || line.keys.any { it in inflightKeys(tt) || crabRef(it)?.let { q -> freezing(q) } == true }) return a
         // a thrust that has to walk further than the swing it replaces would lose the tick (and the Dinh's behind it)
         val here = room.real(b.player.coords)
         if (maxOf(abs(line.x + ROOM_X - here.x), abs(ROOM_Y - line.y - here.z)) > RUN * max(0, tt - t)) return a
         return "obl:${c.key}:${line.x},${line.y}"
     }
 
-    private class Line(val x: Int, val y: Int, val n: Int, val her: Boolean, val crabHp: Int)
+    private class Line(val x: Int, val y: Int, val n: Int, val her: Boolean, val crabHp: Int, val worth: Double, val keys: List<String>)
 
     /** A frozen crab with the same spawn from another proc frozen on its very tiles: one thrust takes both. */
     private fun stacked(q: Crab): Boolean =
@@ -822,7 +826,8 @@ class MaidenCrew(
             val n = hit.size + if (her) 1 else 0
             val dist = maxOf(abs(x - me[0]), abs(y - me[1]))
             if (best == null || n > best.n || (n == best.n && dist < bestD)) {
-                best = Line(x, y, n, her, hit.sumOf { min(it.hp, PILE_CRAB_CAP * 2) })
+                val worth = hit.sumOf { min(it.hp, OBL_CRAB).toDouble() * 2 } + if (her) OBL_CRAB.toDouble() else 0.0
+                best = Line(x, y, n, her, hit.sumOf { min(it.hp, PILE_CRAB_CAP * 2) }, worth, hit.map { it.key })
                 bestD = dist
             }
         }
@@ -1742,6 +1747,10 @@ class MaidenCrew(
         const val SPLIT_HP = 40
         const val PROC_SEEN = 2
         const val STACK_HP = 100
+
+        /** Mean damage a thrust does each crab it pierces, and a scythe does the one crab it's aimed at (our recordings). */
+        const val OBL_CRAB = 26
+        const val SCY_CRAB = 30
         const val MELEE_DPS = 1
         const val STAND_SEARCH = 14
         const val CHUNK = 8
@@ -1788,7 +1797,7 @@ class MaidenCrew(
         const val SAFE_HP = 30
 
         /** Tiles it runs to its Dinh's spot between swings. */
-        const val PLAN_RUN = 8
+        const val PLAN_RUN = 6
 
         /** In over the barrier on tick 0, the sim's players start running in on tick 1 (a tbow prefire on 5). */
         const val FIRST_ACT = 1
