@@ -155,12 +155,12 @@ private val DEATH_TRACE = System.getenv("TOB_TRIO_TRACE") != null
 
 class SoloDeath @Inject constructor(private val raids: SoloRaids) : PlayerDeathOverrideHook {
     override suspend fun ProtectedAccess.override(): Boolean {
-        val room = raids.forPlayer(player) ?: return false
         if (player in raids.undying) {
-            if (DEATH_TRACE) println("botdeath ${player.username} t${room.t} ${room.debug()}")
+            if (DEATH_TRACE) println("botdeath ${player.username} ${raids.around(player)?.debug()}")
             player.statMap.setCurrentLevel("stat.hitpoints", player.baseHitpointsLvl.toByte())
             return true
         }
+        val room = raids.forPlayer(player) ?: return false
         if (org.rsmod.api.player.PracticeSettings.noDeaths) {
             player.statMap.setCurrentLevel("stat.hitpoints", 1.toByte())
             return true

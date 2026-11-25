@@ -3,6 +3,7 @@ package org.rsmod.content.raids.tob.solo
 import dev.openrune.rscm.RSCM.asRSCM
 import dev.openrune.rscm.RSCMType
 import org.rsmod.api.player.output.runClientScript
+import org.rsmod.api.player.stat.baseHitpointsLvl
 import org.rsmod.api.player.stat.hitpoints
 import org.rsmod.api.player.ui.ifCloseOverlay
 import org.rsmod.api.player.ui.ifOpenFullOverlay
@@ -11,7 +12,8 @@ import org.rsmod.events.EventBus
 import org.rsmod.game.entity.Player
 
 /**
- * The Theatre's own HUD (`tob_hud`), as the game drives it: the party orb top left, the room's progress bar top
+ * The Theatre's own HUD (`tob_hud`), as the game drives it: the party's orbs top left (each one's first letter, "Me"
+ * on your own, filled by hitpoints; none of them yours while you only watch), the room's progress bar top
  * centre, and the screen-wide fades (the red passage between rooms with the next room's name).
  *
  * The bar's type is also what client plugins read as the room's state: 0 while no fight is on, 1 for a fight, 2 while
@@ -22,35 +24,53 @@ object TobHud {
 
     private var Player.partyStatus by intVarBit("varbit.tob_client_partystatus")
     private var Player.partySlot by intVarBit("varbit.tob_client_partyslot")
-    private var Player.orb by intVarBit("varbit.tob_client_p0")
+    private val ORBS = listOf("varbit.tob_client_p0", "varbit.tob_client_p1", "varbit.tob_client_p2", "varbit.tob_client_p3", "varbit.tob_client_p4")
+    private val named = java.util.WeakHashMap<Player, List<String>>()
     private var Player.barType by intVarBit("varbit.tob_client_waveprogress_type")
     private var Player.barValue by intVarBit("varbit.tob_client_waveprogress_val")
     private var Player.barMax by intVarBit("varbit.tob_client_waveprogress_max")
 
     fun open(player: Player, eventBus: EventBus) {
         if (!player.ui.containsOverlay(HUD)) player.ifOpenFullOverlay(HUD, eventBus)
-        if (player.partySlot != MY_SLOT) player.partySlot = MY_SLOT
         if (player.partyStatus != IN_RAID) player.partyStatus = IN_RAID
-        player.runClientScript(NAMES.asRSCM(RSCMType.CLIENTSCRIPT), player.displayName, "", "", "", "")
-        update(player, null)
+        named.remove(player)
+        update(player, null, listOf(player))
     }
 
     fun close(player: Player, eventBus: EventBus) {
-        update(player, null)
+        update(player, null, emptyList())
         player.partyStatus = 0
         player.partySlot = 0
-        player.orb = 0
+        named.remove(player)
         if (player.ui.containsOverlay(HUD)) player.ifCloseOverlay(HUD, eventBus)
     }
 
-    /** The orb and the bar, written only when they change. */
-    fun update(player: Player, bar: Bar?) {
-        val orb = if (player.hitpoints > 0) ORB_ALIVE else ORB_DEAD
-        if (player.orb != orb) player.orb = orb
+    /** The orbs of [party] (in its order) and the bar, written only when they change. */
+    fun update(player: Player, bar: Bar?, party: List<Player>) {
+        val members = party.take(ORBS.size)
+        val slot = members.indexOf(player) + 1
+        if (player.partySlot != slot) player.partySlot = slot
+        val names = members.map { it.displayName }
+        if (named[player] != names) {
+            named[player] = names
+            val padded = names + List(ORBS.size - names.size) { "" }
+            player.runClientScript(NAMES.asRSCM(RSCMType.CLIENTSCRIPT), padded[0], padded[1], padded[2], padded[3], padded[4])
+        }
+        for ((i, varbit) in ORBS.withIndex()) {
+            val orb = members.getOrNull(i)?.let(::orb) ?: 0
+            if (player.vars[varbit] != orb) org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(player, varbit, orb)
+        }
         val b = bar ?: NONE
         if (player.barMax != b.max) player.barMax = b.max
         if (player.barValue != b.value) player.barValue = b.value
         if (player.barType != b.type) player.barType = b.type
+    }
+
+    /** An orb: empty to full red with hitpoints (an overheal shows full), red when dead, dark when not here. */
+    private fun orb(p: Player): Int = when {
+        !p.isSlotAssigned -> ORB_GONE
+        p.hitpoints <= 0 -> ORB_DEAD
+        else -> 1 + minOf(ORB_FULL, (p.hitpoints * ORB_FULL + p.baseHitpointsLvl - 1) / p.baseHitpointsLvl.coerceAtLeast(1))
     }
 
     /** A bar of [hp] out of [max], kept to the HUD's ten bits as thousandths. */
@@ -79,9 +99,9 @@ object TobHud {
     private const val PORTAL = "clientscript.[clientscript,tob_hud_portal]"
     private const val FADE = "clientscript.[clientscript,tob_hud_fade]"
     private const val IN_RAID = 2
-    private const val MY_SLOT = 1
-    private const val ORB_ALIVE = 27
+    private const val ORB_FULL = 26
     private const val ORB_DEAD = 30
+    private const val ORB_GONE = 31
     private const val SCALE = 1000
     private const val CLEAR = 255
 }

@@ -268,9 +268,10 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
 
     private fun hud() {
         bossBar()
-        for (w in watchers) if (w.isSlotAssigned) TobHud.update(w, progress())
+        val members = listOf(owner) + helpers
+        for (w in watchers) if (w.isSlotAssigned) TobHud.update(w, progress(), members)
         val p = player() ?: return
-        TobHud.update(p, progress())
+        TobHud.update(p, progress(), members)
         if (id in TIMED_ROOMS) p.say("${if (instanceTick == 0) INSTANCE_CYCLE else instanceTick}")
     }
 

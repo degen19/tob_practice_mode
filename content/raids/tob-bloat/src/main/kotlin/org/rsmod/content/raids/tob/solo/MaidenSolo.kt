@@ -230,7 +230,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     }
 
     /** A crab beside her is melting into her from the tick after it arrives: hits already on the way still land. */
-    override fun attackable(npc: Npc): Boolean = crabs.none { it.npc === npc && it.arrived }
+    override fun attackable(npc: Npc): Boolean = !(npc === maiden && dead >= 0) && crabs.none { it.npc === npc && it.arrived }
 
     private fun gap(n: Npc): Int {
         val r = real(n.coords)

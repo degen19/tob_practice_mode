@@ -173,6 +173,12 @@ class MaidenCrew(
             return
         }
         t = room.t - 1
+        if (room.t == 0) {
+            for (b in crew) {
+                VarPlayerIntMapSetter.set(b.player, "varbit.vengeance_timelimit", 1)
+                b.player.queue(VENG_COOLDOWN, VENG_COOLDOWN_TICKS - VENG_LEAD)
+            }
+        }
         while (procAt.size < room.phase) {
             procAt += t - 1
             onProc(procAt.size)
@@ -186,8 +192,9 @@ class MaidenCrew(
         val flinching = herAttack()
         for (b in crew) {
             val p = b.player
-            if (!p.isSlotAssigned || p.hitpoints <= 0 || p in flinching || !room.inArena(room.real(p.coords)) || t < FIRST_ACT) continue
+            if (!p.isSlotAssigned || p.hitpoints <= 0) continue
             protect(b)
+            if (p in flinching || !room.inArena(room.real(p.coords)) || t < FIRST_ACT) continue
             if (b.role != NyloRole.Mage) spells(b)
             if (stall(b)) continue
             stepRoute(b)
@@ -689,11 +696,11 @@ class MaidenCrew(
 
     /**
      * After the 30s, whether the mage's ZCB spec goes to its claws instead: a claw spec on her worth more than the ZCB's
-     * (its ruby proc a share of her hitpoints, capped), or energy for the claws and not the ZCB.
+     * (its ruby proc, a share of her hitpoints capped, is the whole hit), or energy for the claws and not the ZCB.
      */
     private fun clawsOver(b: Bot, spec: Int): Boolean {
         if (b.role != NyloRole.Mage || phase != 0 || !b.owns("claws") || spec < atkOf("claws").spec) return false
-        return spec < atkOf("zcbs").spec || CLAW_MEAN > min(ZCB_CAP, hp * ZCB_PCT / 100) + ZCB_HIT
+        return spec < atkOf("zcbs").spec || CLAW_MEAN > min(ZCB_CAP, hp * ZCB_PCT / 100)
     }
 
     /**
@@ -856,9 +863,9 @@ class MaidenCrew(
 
     /**
      * The melee's Obligator (not in the sim): a thrust pierces 3 tiles in a line, so from the right tile it takes a
-     * frozen crab and what's behind it - more crabs of a pile, or her when the crab stands against her. A scythe on a
-     * frozen crab goes as a thrust when its best line reaches [MaidenCrewParams.oblTargets] targets; a scythe on her goes
-     * through a stack of repeat spawns, frozen on one tile, when the thrust is worth more.
+     * frozen crab and what's behind it - more crabs of a pile, or her when the crab stands against her. A swing goes as a
+     * thrust whenever the thrust is worth more: one on a frozen crab through its line, one on her through a frozen crab
+     * against her or a stack of repeat spawns frozen on one tile.
      */
     private fun obligate(b: Bot, a: String, tt: Int): String {
         if (!b.owns("obligator")) return a
@@ -869,14 +876,12 @@ class MaidenCrew(
                 "scythe" ->
                     crabs.filter { it.frozenTo >= tt + 1 }
                         .mapNotNull { q ->
-                            bestLine(b, q)?.takeIf {
-                                stacked(q) && it.n - (if (it.her) 1 else 0) >= 2
-                            }?.let { q to it }
+                            bestLine(b, q)?.takeIf { it.her || (stacked(q) && it.n - (if (it.her) 1 else 0) >= 2) }?.let { q to it }
                         }
-                        .maxByOrNull { it.second.crabHp } ?: return a
+                        .maxByOrNull { it.second.worth } ?: return a
                 else -> return a
             }
-        if (line == null || (k != "scythe" && line.n < params.oblTargets)) return a
+        if (line == null) return a
         // the thrust has to beat the swing it replaces (a crab's hits keep twice their damage off her), and not land on
         // a crab something already on its way (a hit, or a barrage's splash) may kill first
         val swing = if (k == "scythe") SCYTHE_MEAN else min(c.hp, SCY_CRAB).toDouble() * 2
@@ -1084,7 +1089,7 @@ class MaidenCrew(
         val near = crabs.filter { pk.key != it.key && abs(it.x - pk.pos[0]) <= DINH_REACH && abs(it.y + 1 - pk.pos[1]) <= DINH_REACH }
         val first = crabRef(pk.key)?.let { min(it.hp, 2 * SPLAT) } ?: SPLAT
         val dinh = first + near.map { min(it.hp, SPLAT) }.sortedDescending().take(DINH_HITS - 1).sum()
-        return dinh < min(ZCB_CAP, hp * ZCB_PCT / 100) + ZCB_HIT
+        return dinh < min(ZCB_CAP, hp * ZCB_PCT / 100)
     }
 
     private fun specFallback(b: Bot, a: String): String? {
@@ -1209,7 +1214,15 @@ class MaidenCrew(
                 }
                 leave(plan, after, w, tt)
             }
-            return "${if (plan.rush && k == 0) "ir" else "ibs"}:$id@$w"
+            if (plan.rush && k == 0) {
+                val cast = s2Cast(c, tt)
+                if (cast == null) {
+                    leave(plan, id, w, tt)
+                    continue
+                }
+                return "$cast:$id@$w"
+            }
+            return "ibs:$id@$w"
         }
         if (anchorS2 && w != 30 && "S2" in done && "aya" !in done) {
             done += "aya"
@@ -1339,8 +1352,19 @@ class MaidenCrew(
             return "ibs:${prim.key}"
         }
         val c = crabRef("${first.id}@${first.w}") ?: return null
+        val cast = s2Cast(c, tt)
+        if (cast == null) leave(plan, first.id, w, tt)
+        return cast?.let { "$it:${c.key}" }
+    }
+
+    /** A barrage, or a rush when a barrage would catch loose 3s/4s - only on its first two ticks out; null: neither. */
+    private fun s2Cast(c: Crab, tt: Int): String? {
         val early = aoe3(c).any { it !== c && (it.base in THREES || it.base in FOURS) && tt > it.frozenTo }
-        return "${if (early) "ir" else "ibs"}:${c.key}"
+        return when {
+            !early -> "ibs"
+            tt <= (procOf(c.wave) ?: tt) + 1 + S2_SLACK -> "ir"
+            else -> null
+        }
     }
 
     private fun fzTargets(b: Bot, w: Int, tt: Int): List<Fz> {
@@ -1406,23 +1430,25 @@ class MaidenCrew(
 
     /**
      * The 30s 4s with no 3s to walk into: the tick they first stand in one 3x3 together with enough of the 50s pile,
-     * still frozen there, that their barrage cleaves it too - if that's before they reach her. The mage fills till then
+     * frozen there or still walking in, that their barrage cleaves (and refreezes) it too - if that's before they reach her. The mage fills till then
      * (a bow, or two crossbow hits a tick late) rather than freezing them early.
      */
     private fun overPile(mine: List<Crab>, tt: Int): Int? {
         val w = latestWave() ?: return null
-        val pile = crabs.filter { it.wave != w && it.frozenTo > tt }
+        val pile = crabs.filter { it.wave != w && reachOf(it) - FZ_LAND > tt }
         if (pile.sumOf { it.hp } < OLD_PILE_HP) return null
-        val pos = mine.map { intArrayOf(it.x, it.y) }
+        val walkers = mine + pile
+        val pos = walkers.map { intArrayOf(it.x, it.y) }
         val last = mine.minOf { reachOf(it) } - FZ_LAND
         for (k in 0..WALK_LIMIT) {
             val at = tt + k
             if (at > last) return null
-            for (c in pos) {
-                if (!pos.all { abs(it[0] - c[0]) <= 1 && abs(it[1] - c[1]) <= 1 }) continue
-                if (pile.filter { it.frozenTo > at && abs(it.x - c[0]) <= 1 && abs(it.y - c[1]) <= 1 }.sumOf { it.hp } >= OLD_PILE_HP) return at
+            for (c in pos.take(mine.size)) {
+                if (!pos.take(mine.size).all { abs(it[0] - c[0]) <= 1 && abs(it[1] - c[1]) <= 1 }) continue
+                val caught = pile.indices.filter { i -> reachOf(pile[i]) - FZ_LAND >= at && pos[mine.size + i].let { abs(it[0] - c[0]) <= 1 && abs(it[1] - c[1]) <= 1 } }
+                if (caught.sumOf { pile[it].hp } >= OLD_PILE_HP) return at
             }
-            for ((i, c) in mine.withIndex()) {
+            for ((i, c) in walkers.withIndex()) {
                 val p = pos[i]
                 if (at < c.frozenTo || adjacent(p[0], p[1])) continue
                 val sw = p[1] + 1
@@ -2100,10 +2126,9 @@ class MaidenCrew(
         const val ZCB_CAP = 110
         const val ZCB_PCT = 22
 
-        /** A ZCB's own hit on her (the spec's ruby proc on top), and a dragon claw spec's total: estimates, to measure. */
-        const val ZCB_HIT = 25
-        const val CLAW_MEAN = 75.0
-        const val CLAW_SD = 25.0
+        /** A dragon claw spec's total on her (the mage's, 55 specs measured); a ZCB spec is its ruby proc alone. */
+        const val CLAW_MEAN = 71.6
+        const val CLAW_SD = 13.4
         const val FOURS_DUE = 16
         const val OLD_PILE_HP = 100
         const val PILE_CRAB_CAP = 20
@@ -2126,6 +2151,10 @@ class MaidenCrew(
 
         /** A surge potion's special attack energy. */
         const val SURGE_SPEC = 25
+        const val VENG_COOLDOWN = "queue.vengeance_cooldown"
+        const val VENG_COOLDOWN_TICKS = 50
+        /** Ticks before the room starts that they cast the Vengeance they walk in with. */
+        const val VENG_LEAD = 5
 
         /** A crab with no more than this left can die to a hit landing first, taking a Dinh's on it as its target with it. */
         const val SAFE_HP = 30
@@ -2218,7 +2247,6 @@ class MaidenCrew(
  */
 data class MaidenCrewParams(
     val lookahead: Int = 1,
-    val oblTargets: Int = 9,
     val pileWorth: Int = 45,
     val preloadWorth: Int = 15,
     val dinhHoldPct: Int = 97,
@@ -2240,7 +2268,6 @@ data class MaidenCrewParams(
             fun int(name: String, default: Int) = values[name]?.toDoubleOrNull()?.toInt() ?: default
             return MaidenCrewParams(
                 lookahead = int("lookahead", d.lookahead),
-                oblTargets = int("oblTargets", d.oblTargets),
                 pileWorth = int("pileWorth", d.pileWorth),
                 preloadWorth = int("preloadWorth", d.preloadWorth),
                 dinhHoldPct = int("dinhHoldPct", d.dinhHoldPct),
