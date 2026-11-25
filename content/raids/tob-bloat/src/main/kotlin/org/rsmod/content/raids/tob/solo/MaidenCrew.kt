@@ -423,6 +423,7 @@ class MaidenCrew(
         val (px, py) =
             when {
                 !params.posts -> MX1 + 1 to MT_Y - 1
+                params.centrePosts -> MX1 + 1 to if (b.dps == MELEE_DPS) CENTRE_LOW else CENTRE_HIGH
                 b.dps == MELEE_DPS -> MX1 + 1 to MT_Y + 1
                 params.thawPost && southThaw() -> MX1 + 1 to MY1
                 else -> MX1 to MT_Y - 1
@@ -1968,6 +1969,10 @@ class MaidenCrew(
         const val DEATH_CHARGE = "component.magic_spellbook:death_charge"
         const val MARK_OF_DARKNESS = "component.magic_spellbook:mark_of_darkness"
         const val STALL_TICKS = 4
+
+        /** The middle of her east side, where a DPS reaches both the N1 and the S1 for the first swing after a proc. */
+        const val CENTRE_HIGH = 11
+        const val CENTRE_LOW = 12
         const val THAW_LOOK = 10
         const val REBOUND = 0.75
         const val REBOUND_STEPS = 4
@@ -2179,6 +2184,7 @@ data class MaidenCrewParams(
     val oldClumpFirst: Boolean = true,
     val leftYield: Boolean = false,
     val oddPlan: Boolean = true,
+    val centrePosts: Boolean = false,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
@@ -2217,6 +2223,7 @@ data class MaidenCrewParams(
                 oldClumpFirst = flag("oldClumpFirst", d.oldClumpFirst),
                 leftYield = flag("leftYield", d.leftYield),
                 oddPlan = flag("oddPlan", d.oddPlan),
+                centrePosts = flag("centrePosts", d.centrePosts),
                 redOffset = int("redOffset", d.redOffset),
                 walkWeight = int("walkWeight", d.walkWeight),
                 dinhWalk = int("dinhWalk", d.dinhWalk),
