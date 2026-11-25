@@ -8,6 +8,7 @@ import dev.openrune.types.aconverted.SpotanimType
 import dev.or2.central.account.Rights
 import jakarta.inject.Inject
 import jakarta.inject.Singleton
+import org.rsmod.api.instances.region.OsrsInstancing
 import org.rsmod.api.area.checker.AreaChecker
 import org.rsmod.api.config.Constants
 import org.rsmod.api.invtx.invAddOrDrop
@@ -268,7 +269,9 @@ constructor(
         worldRepo.soundArea(coords, UNDERWATER_SOUND, radius = SOUND_RADIUS)
     }
 
+    /** No random events in instances (the game's rule: a raid room, a boss copy), nor the no-events areas or by a bank. */
     private fun eventsAllowed(coords: CoordGrid): Boolean {
+        if (OsrsInstancing.isInstancedWorldX(coords.x)) return false
         if (areas.inArea(NO_EVENTS_AREA, coords)) return false
         val bankAllowed = areas.inArea(BANK_EVENTS_AREA, coords)
         val zone = ZoneKey.from(coords)
