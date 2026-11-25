@@ -423,12 +423,44 @@ class MaidenCrew(
         val (px, py) =
             when {
                 !params.posts -> MX1 + 1 to MT_Y - 1
-                params.centrePosts -> MX1 + 1 to if (b.dps == MELEE_DPS) CENTRE_LOW else CENTRE_HIGH
+                params.centrePosts || (params.centreBusy && mageBusy()) -> MX1 + 1 to if (b.dps == MELEE_DPS) CENTRE_LOW else CENTRE_HIGH
                 b.dps == MELEE_DPS -> MX1 + 1 to MT_Y + 1
                 params.thawPost && southThaw() -> MX1 + 1 to MY1
                 else -> MX1 to MT_Y - 1
             }
         return maxOf(abs(c.x - ROOM_X - px), abs(ROOM_Y - c.z - py))
+    }
+
+    /**
+     * The room pacing for a proc before the mage has this wave's clump frozen (a 9s): the DPS's swings on her would
+     * take her past it, so one of them - the ranger first, the melee too if one off still procs her - swings on a
+     * crab out of the clump instead, and the proc comes a swing later, once the mage's clump is done.
+     */
+    private fun holdProc(b: Bot, tt: Int): Crab? {
+        if (!params.holdProc || phase == 0 || b.dps == null) return null
+        val w = latestWave() ?: return null
+        val done = mage.tfzD[w].orEmpty()
+        if (crabs.none { it.wave == w && it.frozenTo < 0 && (it.base in THREES || it.base in FOURS) && clumpOf(it) !in done }) return null
+        val due = crew.filter { it.dps != null && it.player.hitpoints > 0 && it.next == tt && it.raw() in SCYTHE_LINES }.sortedBy { if (it.dps == MELEE_DPS) 1 else 0 }
+        if (b !in due) return null
+        val line = full * phase / 100.0
+        val mean = landing(tt, tt + 1).first
+        if (hp - mean >= line) return null
+        val off = (1..due.size).firstOrNull { k -> hp - (mean - k * SCYTHE_MEAN) >= line } ?: return null
+        if (due.indexOf(b) >= off) return null
+        return crabs.filter { q -> q.base !in THREES && q.base !in FOURS && reachOf(q) > tt + 1 && !freezing(q) && canHit(b, q, tt) }
+            .maxWithOrNull(compareBy({ if (tt > it.frozenTo) 1 else 0 }, { it.hp }))
+    }
+
+    /**
+     * The next proc likely on the swings due while the mage still has this wave's clump to freeze: it'll skip a freeze
+     * of the new set, so the DPS wait mid-east, where either a 1 north or a 1 south is a swing away.
+     */
+    private fun mageBusy(): Boolean {
+        val w = latestWave() ?: return false
+        if (phase == 0) return false
+        val done = mage.tfzD[w].orEmpty()
+        return crabs.any { it.wave == w && it.frozenTo < 0 && (it.base in THREES || it.base in FOURS) && clumpOf(it) !in done } && procRisk(t, t + SWING + 1)
     }
 
     private fun southThaw(): Boolean {
@@ -1424,6 +1456,10 @@ class MaidenCrew(
     private fun dpsSwing(b: Bot, tt: Int): String {
         val w = latestWave() ?: return "scythe"
         val dps = b.dps ?: return "scythe"
+        holdProc(b, tt)?.let { q ->
+            trace { "t$tt ${b.role} holds the proc: swings on ${q.key}" }
+            return "scyk:${q.key}"
+        }
         splitStraggler(b, tt)?.takeIf { canHit(b, it, tt) }?.let { q ->
             return if (reachOf(q) == tt + 1) "scys:${q.key}:${if (q.hp >= magenta()) "N" else "S"}" else "scyk:${q.key}"
         }
@@ -1599,6 +1635,7 @@ class MaidenCrew(
     private fun clumpCovers(q: Crab, tt: Int): Boolean {
         val w = latestWave() ?: return false
         if (q.wave == w) return false
+        if (q.frozenTo < 0 && clumpOf(q).let { k -> (q.base in THREES || q.base in FOURS) && mage.tfzD[q.wave]?.contains(k) != true }) return true
         val done = mage.tfzD[w]
         val lim = reachOf(q)
         for (which in listOf("3s", "4s")) {
@@ -2185,6 +2222,8 @@ data class MaidenCrewParams(
     val leftYield: Boolean = false,
     val oddPlan: Boolean = true,
     val centrePosts: Boolean = false,
+    val centreBusy: Boolean = false,
+    val holdProc: Boolean = true,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
@@ -2224,6 +2263,8 @@ data class MaidenCrewParams(
                 leftYield = flag("leftYield", d.leftYield),
                 oddPlan = flag("oddPlan", d.oddPlan),
                 centrePosts = flag("centrePosts", d.centrePosts),
+                centreBusy = flag("centreBusy", d.centreBusy),
+                holdProc = flag("holdProc", d.holdProc),
                 redOffset = int("redOffset", d.redOffset),
                 walkWeight = int("walkWeight", d.walkWeight),
                 dinhWalk = int("dinhWalk", d.dinhWalk),
