@@ -1139,6 +1139,7 @@ class MaidenCrew(
     }
 
     private fun tfzPick(b: Bot, tt: Int): String? {
+        oddPlan(b, tt)?.let { return it }
         oldClump(b, tt)?.let { return it }
         val w = latestWave() ?: return null
         val plan = planOf(w)
@@ -1272,6 +1273,101 @@ class MaidenCrew(
                 leave(plan, id, w, tt)
             } else f += speed
         }
+    }
+
+    /** A freeze the mage could cast: a 1 / 2 (by id) or a wave's clump, the cast ticks it's good for, and what it saves. */
+    private class Fz(val w: Int, val id: String, val clump: Boolean, val from: Int, val to: Int, val value: Double)
+
+    /**
+     * An odd proc (a 9.6s, 10.8s, 11.4s 50s, an early 70s or 30s, a mage a tick or a bow behind): when the freezes as usually ordered don't
+     * all fit, the mage takes the set and order worth most - every clump (old wave and new) on its tick and the 1s / 2s
+     * the DPS can't reach first - filling the ticks between, and leaves the rest to the DPS at once.
+     */
+    private fun oddPlan(b: Bot, tt: Int): String? {
+        if (!params.oddPlan) return null
+        val w = latestWave() ?: return null
+        val fs = fzTargets(b, w, tt)
+        if (fs.isEmpty()) return null
+        val usual = fs.filter { it.clump && it.w != w }.sortedBy { it.from } + planOf(w).fz.mapNotNull { id -> fs.firstOrNull { !it.clump && it.id == id } } + fs.filter { it.clump && it.w == w }.sortedBy { it.from }
+        if (fits(usual, tt) != null) return null
+        val best = bestFreezes(fs, tt)
+        trace { "t$tt Mage plans ${best.joinToString { "${it.first.id}@${it.first.w}:t${it.second}" }} of ${fs.joinToString { "${it.id}@${it.w}[${it.from},${it.to}]=${it.value.toInt()}" }}" }
+        val plan = planOf(w)
+        val done = b.tfzD.getOrPut(w) { HashSet() }
+        for (f in fs) if (!f.clump && best.none { it.first === f }) {
+            done += f.id
+            leave(plan, f.id, w, tt)
+        }
+        val (first, at) = best.firstOrNull() ?: return null
+        if (at > tt) return if (at - tt >= atkOf("tbr").speed) "tbr" else if (at - tt >= atkOf("ax").speed) "ax:${looseNear(b, tt)?.key ?: "maiden"}" else "wait"
+        b.tfzD.getOrPut(first.w) { HashSet() } += first.id
+        if (first.clump) {
+            val mine = ofWave(first.w, if (first.id == "3s") THREES else FOURS)
+            val prim = mine.maxByOrNull { c -> aoe3(c).let { n -> n.count { tt > it.immuneTo && tt > it.frozenTo } * 100 + n.size } } ?: return null
+            return "ibs:${prim.key}"
+        }
+        val c = crabRef("${first.id}@${first.w}") ?: return null
+        val early = aoe3(c).any { it !== c && (it.base in THREES || it.base in FOURS) && tt > it.frozenTo }
+        return "${if (early) "ir" else "ibs"}:${c.key}"
+    }
+
+    private fun fzTargets(b: Bot, w: Int, tt: Int): List<Fz> {
+        val out = ArrayList<Fz>()
+        for (cw in listOfNotNull(WAVES.getOrNull(WAVES.indexOf(w) - 1), w)) {
+            val lp = procOf(cw) ?: continue
+            val done = b.tfzD[cw].orEmpty()
+            for ((which, ids) in listOf("3s" to THREES, "4s" to FOURS)) {
+                if (which in done) continue
+                val mine = ofWave(cw, ids).filter { tt > it.frozenTo && tt > it.immuneTo && !freezing(it) }
+                if (mine.isEmpty()) continue
+                val due = if (cw == WAVES[2] && which == "4s" && !waveHas(cw, THREE_RE)) clumpAt(mine, tt) ?: (lp + FOURS_DUE) else lp + if (which == "3s") THREES_DUE else FOURS_DUE
+                val from = if (clumpReady(cw, which, tt) == true) tt else max(tt, due)
+                out += Fz(cw, which, true, from, mine.minOf { reachOf(it) } - FZ_LAND, mine.sumOf { it.hp } * 2.0)
+            }
+        }
+        val done = b.tfzD[w].orEmpty()
+        for (id in planOf(w).fz) {
+            if (id in done) continue
+            val c = crabRef("$id@$w") ?: continue
+            if (tt <= c.frozenTo || freezing(c)) continue
+            val covered = crew.any { d -> d.dps != null && d.player.hitpoints > 0 && max(d.next, t + 1).let { s -> listOf(s, s + SWING).any { it < reachOf(c) && canHit(d, c, it) } } }
+            out += Fz(w, id, false, tt, reachOf(c) - FZ_LAND + if (c.base == "S2") S2_SLACK else 0, c.hp * 2.0 * if (covered) COVERED_SHARE else 1.0)
+        }
+        return out
+    }
+
+    /** Each freeze in [order] cast as soon as it's good for after the one before, if they all fit. */
+    private fun fits(order: List<Fz>, tt: Int): List<Pair<Fz, Int>>? {
+        var at = tt
+        val out = ArrayList<Pair<Fz, Int>>()
+        for (f in order) {
+            val x = max(at, f.from)
+            if (x > f.to) return null
+            out += f to x
+            at = x + atkOf("ibs").speed
+        }
+        return out
+    }
+
+    /** The set and order of [fs] worth most (ties: done soonest). */
+    private fun bestFreezes(fs: List<Fz>, tt: Int): List<Pair<Fz, Int>> {
+        var best = emptyList<Pair<Fz, Int>>()
+        var bestV = 0.0
+        var bestEnd = Int.MAX_VALUE
+        fun go(cur: List<Pair<Fz, Int>>, at: Int, v: Double, rest: List<Fz>) {
+            val end = cur.lastOrNull()?.second ?: tt
+            if (v > bestV + 1e-6 || (abs(v - bestV) < 1e-6 && end < bestEnd)) {
+                best = cur
+                bestV = v
+                bestEnd = end
+            }
+            for (f in rest) {
+                val x = max(at, f.from)
+                if (x <= f.to) go(cur + (f to x), x + atkOf("ibs").speed, v + f.value, rest - f)
+            }
+        }
+        go(emptyList(), tt, 0.0, fs)
+        return best
     }
 
     private fun procOf(w: Int): Int? = procAt.getOrNull(WAVES.indexOf(w))?.takeIf { it >= 0 }
@@ -1924,6 +2020,13 @@ class MaidenCrew(
         val DINH_POOL = setOf("N1", "N2", "N3", "S1", "S2", "S3")
         val DINH_LINES = setOf("tdin", "dinhs")
         const val THREES_DUE = 11
+
+        /** The last tick a barrage still catches a crab before it reaches her, and a freeze's worth on a 1 / 2 the DPS can reach. */
+        const val FZ_LAND = 1
+
+        /** An ice rush on the S2 can go a tick late and still hold it. */
+        const val S2_SLACK = 1
+        const val COVERED_SHARE = 0.35
         const val ZCB_CAP = 110
         const val ZCB_PCT = 22
 
@@ -2075,6 +2178,7 @@ data class MaidenCrewParams(
     val pileThaw: Boolean = true,
     val oldClumpFirst: Boolean = true,
     val leftYield: Boolean = false,
+    val oddPlan: Boolean = true,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
@@ -2112,6 +2216,7 @@ data class MaidenCrewParams(
                 pileThaw = flag("pileThaw", d.pileThaw),
                 oldClumpFirst = flag("oldClumpFirst", d.oldClumpFirst),
                 leftYield = flag("leftYield", d.leftYield),
+                oddPlan = flag("oddPlan", d.oddPlan),
                 redOffset = int("redOffset", d.redOffset),
                 walkWeight = int("walkWeight", d.walkWeight),
                 dinhWalk = int("dinhWalk", d.dinhWalk),
