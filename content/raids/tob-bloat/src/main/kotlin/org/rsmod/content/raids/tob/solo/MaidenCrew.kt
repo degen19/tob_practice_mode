@@ -84,7 +84,7 @@ class MaidenCrew(
         fun owns(weapon: String): Boolean = weapon in OWNS.getValue(role)
     }
 
-    private class Order(val move: Move, val target: Npc, val at: Int, var walkTo: CoordGrid?, val issued: Int)
+    private class Order(val move: Move, val target: Npc, val at: Int, var walkTo: CoordGrid?, val issued: Int, var held: Boolean = false)
 
     private class Meta(val wave: Int, val idx: Int) {
         var chunk = ""
@@ -176,7 +176,13 @@ class MaidenCrew(
             val o = b.order
             if (o != null) {
                 if (o.target.isSlotAssigned && o.target.hitpoints > 0 && t - o.at <= ORDER_TICKS) {
-                    o.walkTo?.let { dest -> if (room.real(p.coords) == dest || t - o.at >= WALK_TICKS) fire(b, o) }
+                    if (o.held) {
+                        if (p.actionDelay <= clock.cycle) {
+                            o.held = false
+                            o.walkTo = null
+                            fire(b, o)
+                        }
+                    } else o.walkTo?.let { dest -> if (room.real(p.coords) == dest || t - o.at >= WALK_TICKS) fire(b, o) }
                     continue
                 }
                 b.order = null
@@ -269,7 +275,7 @@ class MaidenCrew(
         val to =
             (-DODGE..DODGE).flatMap { dx -> (-DODGE..DODGE).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
                 .filter { it != here && room.inArena(it) && !room.under(it) && !room.bloody(it) && (!beside || room.besideHer(it)) }
-                .minByOrNull { maxOf(abs(it.x - here.x), abs(it.z - here.z)) } ?: return false
+                .minWithOrNull(compareBy({ if (room.gapToHer(it) - 1 <= RUN) 0 else 1 }, { maxOf(abs(it.x - here.x), abs(it.z - here.z)) })) ?: return false
         trace { "t$t ${b.role} steps off blood to ${to.x - ROOM_X},${ROOM_Y - to.z}" }
         val o = b.order
         if (o != null) {
@@ -304,6 +310,7 @@ class MaidenCrew(
         }
         val here = room.real(b.player.coords)
         val me = intArrayOf(here.x - ROOM_X, ROOM_Y - here.z)
+        b.walkedFor = c.key
         if (maxOf(x - me[0], me[0] - (x + 1), y - me[1], me[1] - (y + 1), 0) == 1 && (me[0] in x..x + 1 || me[1] in y..y + 1)) return
         val sides = listOf(x to y - 1, x + 1 to y - 1, x to y + 2, x + 1 to y + 2, x - 1 to y, x - 1 to y + 1, x + 2 to y, x + 2 to y + 1)
         val dest =
@@ -311,7 +318,6 @@ class MaidenCrew(
                 .map { (sx, sy) -> CoordGrid(sx + ROOM_X, ROOM_Y - sy, here.level) }
                 .filter { !room.bloody(it) }
                 .minWithOrNull(compareBy({ if (room.besideHer(it)) 0 else 1 }, { maxOf(abs(it.x - here.x), abs(it.z - here.z)) })) ?: return
-        b.walkedFor = c.key
         trace { "t$t ${b.role} moves to ${dest.x - ROOM_X},${ROOM_Y - dest.z} for ${c.key} (swing t$due)" }
         bots.walk(b.player, room.at(dest))
     }
@@ -356,6 +362,8 @@ class MaidenCrew(
         val surge = if (!b.surged && "surge" in b.seq.drop(b.step)) SURGE_SPEC else 0
         val second = next == "tdin2" && b.dinDone && !b.din2Done && b.spec + surge >= DINH_COST
         if (!second) return null
+        // drunk on the cooldown: a potion taken with the click cancels the attack queued behind it
+        if (b.spec < DINH_COST) drink(b)
         if (b.dinNext == null) {
             val keep = curT
             curT = max(b.next, t)
@@ -375,7 +383,7 @@ class MaidenCrew(
         val here = room.real(b.player.coords)
         if (maxOf(abs(plan.pos[0] - (here.x - ROOM_X)), abs(plan.pos[1] - (ROOM_Y - here.z))) > params.dinhWalk) return null
         if (b.spec < DINH_COST) return null
-        if (plan.key == "maiden" || crabRef(plan.key)?.takeIf { it.hp > SAFE_HP && it.key !in inflightKeys(t + 1, false) } != null) return plan
+        if (plan.key == "maiden" || crabRef(plan.key)?.takeIf { it.hp > SAFE_HP && it.key !in inflightKeys(t + 1, false) && reachOf(it) > t + 2 } != null) return plan
         val keep = curT
         curT = t + 1
         val pk = dinPick(0, inflightKeys(curT, false), b)
@@ -1162,7 +1170,7 @@ class MaidenCrew(
         val blocked = { x: Int, y: Int -> x < 0 || y < 0 || x > ROOM_W || y > ROOM_H || (x in MT_X..MX1 && y in MT_Y..MY1) }
         val under = { x: Int, y: Int -> live.any { x >= it.x && x <= it.x + 1 && y >= it.y && y <= it.y + 1 } }
         val opts = ArrayList<DinOpt>()
-        for (c in live.filter { it.base in DINH_POOL && !(it.meta.rushed && !clumpDone(it)) && skip?.contains(it.key) != true }) {
+        for (c in live.filter { it.base in DINH_POOL && !(it.meta.rushed && !clumpDone(it)) && skip?.contains(it.key) != true && it.hp > SAFE_HP && (crabRef(it.key)?.let { q -> reachOf(q) > tt + 1 } ?: true) }) {
             val sides = if (c.id == "S2") listOf("west") else if (c.id == "S1") listOf("north", "west") else listOf("north", "south", "west", "east")
             var best: DinOpt? = null
             for (sd in sides) {
@@ -1314,9 +1322,16 @@ class MaidenCrew(
 
     private fun act(b: Bot, move: Move, target: Npc, walkTo: CoordGrid? = null) {
         val p = b.player
-        val o = Order(move, target, t, walkTo?.takeIf { room.real(p.coords) != it }, max(clock.cycle, p.actionDelay))
+        // a special picked a tick early goes on the tick it's ready: switched in sooner, its spec bar doesn't hold
+        // a special picked a tick early is clicked on the tick it's ready: switched in sooner, its spec toggle doesn't hold
+        val o = Order(move, target, t, walkTo?.takeIf { room.real(p.coords) != it }, max(clock.cycle, p.actionDelay), held = move.spec && p.actionDelay > clock.cycle)
         b.order = o
         val dest = o.walkTo
+        if (o.held) {
+            // on its way in now with what it holds, so it's beside the target when the special goes
+            if (dest != null) bots.walk(p, room.at(dest)) else bots.attack(p, target)
+            return
+        }
         if (dest == null) fire(b, o) else bots.walk(p, room.at(dest))
     }
 
@@ -1411,7 +1426,7 @@ class MaidenCrew(
         /** A surge potion's special attack energy. */
         const val SURGE_SPEC = 25
 
-        /** A Dinh's target with no more than this left can die to a hit landing first, and the swing with it. */
+        /** A crab with no more than this left can die to a hit landing first, taking a Dinh's on it as its target with it. */
         const val SAFE_HP = 30
 
         /** Tiles it runs to its Dinh's spot between swings. */
@@ -1503,7 +1518,7 @@ class MaidenCrew(
 data class MaidenCrewParams(
     val walkCheck: Boolean = true,
     val prePosition: Boolean = true,
-    val lookahead: Int = 0,
+    val lookahead: Int = 1,
     val oblTargets: Int = 9,
     val oblHer: Boolean = false,
     val oblPileHp: Int = 0,
