@@ -245,7 +245,29 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
         return TobHud.bar(TobHud.FIGHT, boss.hitpoints, boss.baseHitpointsLvl)
     }
 
+    /** Who's shown the boss's big HP bar (top of the screen: its name, hitpoints and percentage), and for which NPC. */
+    private val barShown = HashMap<Player, Npc>()
+
+    private fun bossBar() {
+        val boss = barBoss()?.takeIf { t >= 0 && !cleared && it.isSlotAssigned }
+        val viewers = (watchers + owner).filter { it.isSlotAssigned && it !in d.raids.undying && contains(it.coords) }
+        val gone = barShown.keys.filter { it !in viewers || boss == null }
+        for (p in gone) {
+            val npc = barShown.remove(p) ?: continue
+            if (p.isSlotAssigned) d.bossBar.onClose(p, npc)
+        }
+        if (boss == null) return
+        for (p in viewers) {
+            if (barShown[p] !== boss) {
+                d.bossBar.onOpen(p, boss)
+                barShown[p] = boss
+            }
+            d.bossBar.onUpdate(p, boss)
+        }
+    }
+
     private fun hud() {
+        bossBar()
         for (w in watchers) if (w.isSlotAssigned) TobHud.update(w, progress())
         val p = player() ?: return
         TobHud.update(p, progress())
@@ -334,6 +356,8 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     }
 
     fun cleanup() {
+        for ((p, npc) in barShown) if (p.isSlotAssigned) d.bossBar.onClose(p, npc)
+        barShown.clear()
         saveRecording()
         for (n in npcs) if (n.isSlotAssigned) d.npcRepo.del(n, Int.MAX_VALUE)
         npcs.clear()
