@@ -394,10 +394,10 @@ constructor(
     }
 
     private fun spawnCrewBot(name: String, role: NyloRole, sets: List<GearSet>, maiden: Boolean): Player? {
-        val extra = if (!maiden) emptyList() else if (role == NyloRole.Mage) NyloLoadout.ANCIENT_RUNES + NyloLoadout.SURGE else NyloLoadout.LUNAR_RUNES + NyloLoadout.SURGE + NyloLoadout.BOOK
+        val extra = if (!maiden) emptyList() else if (role == NyloRole.Mage) NyloLoadout.ANCIENT_RUNES + NyloLoadout.SURGE + NyloLoadout.DIAMOND_BOLTS else NyloLoadout.LUNAR_RUNES + NyloLoadout.SURGE + NyloLoadout.BOOK
         val pack = (NyloLoadout.pack(role, sets) + extra).distinct()
         val bot = bots.spawn(name, EXIT, NyloLoadout.worn(sets), pack) ?: return null
-        val stacks = NyloLoadout.SPELL_RUNES + NyloLoadout.CHINCHOMPAS
+        val stacks = NyloLoadout.SPELL_RUNES + NyloLoadout.CHINCHOMPAS + NyloLoadout.DIAMOND_BOLTS
         for (slot in 0 until bot.inv.size) {
             val obj = bot.inv[slot] ?: continue
             val rune = stacks.firstOrNull { it.asRSCM(dev.openrune.rscm.RSCMType.OBJ) == obj.id } ?: continue

@@ -2,6 +2,7 @@ package org.rsmod.content.raids.tob.solo
 
 import dev.openrune.rscm.RSCM.asRSCM
 import dev.openrune.rscm.RSCMType
+import dev.openrune.util.Wearpos
 import org.rsmod.api.player.clearInteractionRoute
 import org.rsmod.api.player.stat.hitpoints
 import org.rsmod.api.player.vars.VarPlayerIntMapSetter
@@ -35,11 +36,12 @@ class MaidenCrew(
     private val rush: Int,
     private val params: MaidenCrewParams = MaidenCrewParams(),
 ) : BotCrew {
-    enum class Move(val set: GearSet, val stance: Int, val cost: Int = 0) {
+    enum class Move(val set: GearSet, val stance: Int, val cost: Int = 0, val ammo: String? = null) {
         Tbow(NyloLoadout.TBOW, 1),
         Blowpipe(NyloLoadout.BLOWPIPE, 1),
+        Crossbows(NyloLoadout.CROSSBOWS, 1, ammo = NyloLoadout.DIAMOND_BOLTS),
         Ralos(NyloLoadout.RALOS, 1, 500),
-        Zcb(NyloLoadout.ZCB, 1, 750),
+        Zcb(NyloLoadout.ZCB, 1, 750, NyloLoadout.RUBY_BOLTS),
         Scythe(NyloLoadout.SCYTHE, 1),
         Obligator(NyloLoadout.OBLIGATOR, 0),
         Dinh(NyloLoadout.DINH, 0, 500),
@@ -276,7 +278,7 @@ class MaidenCrew(
             (-FLINCH..FLINCH).flatMap { dx -> (-FLINCH..FLINCH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
                 .filter { maxOf(abs(it.x - here.x), abs(it.z - here.z)) == FLINCH }
                 .filter { room.inArena(it) && !room.under(it) && !room.bloody(it) && !struck(it) && if (beside) room.besideHer(it) else room.gapToHer(it) in gap - 1..gap }
-                .minByOrNull { abs(room.gapToHer(it) - gap) } ?: return false
+                .minByOrNull { if (b.dps != null) room.gapToHer(it) else abs(room.gapToHer(it) - gap) } ?: return false
         trace { "t$t ${b.role} pre-dodges to ${to.x - ROOM_X},${ROOM_Y - to.z}" }
         bots.walk(p, room.at(to))
         return true
@@ -797,7 +799,7 @@ class MaidenCrew(
             if (a == "tpile") return if (pileWorth(tt, true, "pile").second * 2 >= params.pileWorth) "ibs:pile" else "tbr"
             if (a == "tfz" || a == "tdps") {
                 val r = if (a == "tfz") tfzPick(b, tt) else dpsSwing(b, tt)
-                if (r == "wait" || r == "tbr" || r == "ibs:old" || r?.startsWith("aya:") == true) return r
+                if (r == "wait" || r == "tbr" || r == "ibs:old" || r?.startsWith("aya:") == true || r?.startsWith("ax:") == true) return r
                 if (r == null) {
                     if (!last) {
                         b.step++
@@ -955,7 +957,7 @@ class MaidenCrew(
         if (!has3) {
             if (w == 30) {
                 val d = mage.tfzD[w] ?: return false
-                return planOf(w).fz.all { it in d }
+                return planOf(w).fz.all { it in d } && mine.all { c -> mine.all { inArea(c, it) } }
             }
             if (tt < lp + FOURS_DUE) return false
         }
@@ -1012,7 +1014,9 @@ class MaidenCrew(
                 continue
             }
             val lp = lastProc ?: return "wait"
-            val due = lp + if (which == "3s") THREES_DUE else FOURS_DUE
+            val due =
+                if (w == 30 && which == "4s" && !waveHas(w, THREE_RE)) clumpAt(ofWave(w, FOURS), tt) ?: (lp + FOURS_DUE)
+                else lp + if (which == "3s") THREES_DUE else FOURS_DUE
             if (w == 70 && plan.fz.isEmpty() && which == "3s") {
                 if ("tb" !in done) {
                     if (tt < lp + 3) return "wait"
@@ -1033,14 +1037,33 @@ class MaidenCrew(
                 }
                 return "tbr"
             }
-            if (w != 30 && "aya" !in done && tt + atkOf("aya").speed <= due) {
-                done += "aya"
-                val loose = crabs.filter { tt > it.frozenTo && it.base !in THREES && it.base !in FOURS }.maxByOrNull { it.hp }
-                return "aya:${loose?.key ?: "maiden"}"
-            }
+            if (tt + atkOf("ax").speed <= due) return "ax:${looseNear(b, tt)?.key ?: "maiden"}"
             return "wait"
         }
         return null
+    }
+
+    /** The tick [mine] first stand in one 3x3 as they walk in (the 30s 4s with no 3s to walk into), if they do. */
+    private fun clumpAt(mine: List<Crab>, tt: Int): Int? {
+        val pos = mine.map { intArrayOf(it.x, it.y) }
+        for (k in 0..WALK_LIMIT) {
+            if (pos.all { a -> pos.all { abs(a[0] - it[0]) <= 1 && abs(a[1] - it[1]) <= 1 } }) return tt + k
+            for ((i, c) in mine.withIndex()) {
+                val at = pos[i]
+                if (tt + k < c.frozenTo || adjacent(at[0], at[1])) continue
+                val sw = at[1] + 1
+                at[0] -= 1
+                if (sw < SWROW) at[1]++ else if (sw > SWROW) at[1]--
+            }
+        }
+        return null
+    }
+
+    /** A crab walking in unfrozen (not one of the clump) the mage can shoot from where it stands, the healthiest. */
+    private fun looseNear(b: Bot, tt: Int): Crab? {
+        val here = room.real(b.player.coords)
+        val me = intArrayOf(here.x - ROOM_X, ROOM_Y - here.z - 1)
+        return crabs.filter { tt > it.frozenTo && it.base !in THREES && it.base !in FOURS && reachOf(it) > tt + 1 && maxOf(abs(it.x - me[0]), abs(it.y - me[1])) <= REACH_OF.getValue("ax") }.maxByOrNull { it.hp }
     }
 
     /** A 1 / 2 the late mage won't get to goes to the DPS, as soon as that's known (they have the ticks to reach it). */
@@ -1379,6 +1402,7 @@ class MaidenCrew(
             "wait" -> hold(b)
             "tbr" -> act(b, Move.Tbow, her)
             "bp" -> act(b, Move.Blowpipe, her)
+            "ax" -> act(b, Move.Crossbows, crab?.npc ?: her)
             "ralos" -> act(b, Move.Ralos, her)
             "zcbs" -> act(b, Move.Zcb, her)
             "scyk", "scyc", "scys" -> crab?.let { act(b, Move.Scythe, it.npc) } ?: hold(b)
@@ -1432,6 +1456,7 @@ class MaidenCrew(
             val id = obj.asRSCM(RSCMType.OBJ)
             if (p.worn[slot.slot]?.id != id) bots.equip(p, slot.slot, id)
         }
+        o.move.ammo?.asRSCM(RSCMType.OBJ)?.let { id -> if (p.worn[Wearpos.Quiver.slot]?.id != id && p.inv.any { it?.id == id }) bots.equip(p, Wearpos.Quiver.slot, id) }
         if (o.move != Move.Barrage && o.move != Move.Rush) VarPlayerIntMapSetter.set(p, "varp.com_mode", o.move.stance)
         if (o.move.spec) VarPlayerIntMapSetter.set(p, "varp.sa_attack", 1)
         when (o.move) {
@@ -1529,7 +1554,7 @@ class MaidenCrew(
         const val REACH = 8
 
         /** The tiles out from her each ranged attack on her goes from. */
-        val REACH_OF = mapOf("ralos" to 7, "zcbs" to 8, "zcb" to 8, "bp" to 5)
+        val REACH_OF = mapOf("ralos" to 7, "zcbs" to 8, "zcb" to 8, "bp" to 5, "ax" to 7)
         val FLICK = listOf(dev.openrune.util.Wearpos.RightHand to "obj.zaryte_xbow", dev.openrune.util.Wearpos.Back to "obj.dizanas_quiver_infinite")
         const val WALK_TICKS = 3
         const val TALLIED = 4
@@ -1555,7 +1580,7 @@ class MaidenCrew(
         val LISTS =
             mapOf(
                 NyloRole.Mage to listOf(
-                    listOf("tbr", "ralos", "bp", "tbr"),
+                    listOf("tbr", "ralos", "ax", "tbr"),
                     listOf("tfz", "tfz", "tfz", "tfz", "tfz", "surge", "zcbs", "tbr"),
                     listOf("tfz", "tfz", "tfz", "tfz", "tfz", "tpile"),
                     listOf("tfz", "tfz", "tfz", "tfz", "tfz", "tpile", "scythe"),
@@ -1576,29 +1601,29 @@ class MaidenCrew(
 
         val OWNS =
             mapOf(
-                NyloRole.Mage to setOf("scythe", "tbow", "ralos", "bp", "zcb"),
+                NyloRole.Mage to setOf("scythe", "tbow", "ralos", "xbows", "zcb"),
                 NyloRole.Ranger to setOf("scythe", "tbow", "ralos", "bp", "zcb"),
                 NyloRole.Melee to setOf("scythe", "tbow", "ralos", "bp", "zcb", "dinh", "obligator"),
             )
 
         val WEAPON =
             mapOf(
-                "tbr" to "tbow", "bp" to "bp", "ralos" to "ralos", "zcbs" to "zcb", "scythe" to "scythe", "scyk" to "scythe",
+                "tbr" to "tbow", "bp" to "bp", "ax" to "xbows", "ralos" to "ralos", "zcbs" to "zcb", "scythe" to "scythe", "scyk" to "scythe",
                 "scyc" to "scythe", "scys" to "scythe", "tdps" to "scythe", "tdin" to "scythe", "tdin2" to "scythe", "dinhs" to "dinh",
             )
 
         /** Style: r ranged, m melee, f a freeze, g magic, - no attack. */
         val ATTACKS =
             mapOf(
-                "tbr" to Atk(5, 'r'), "bp" to Atk(2, 'r'), "ralos" to Atk(6, 'r', spec = 50), "zcbs" to Atk(5, 'r', spec = 75),
+                "tbr" to Atk(5, 'r'), "bp" to Atk(2, 'r'), "ax" to Atk(2, 'r'), "ralos" to Atk(6, 'r', spec = 50), "zcbs" to Atk(5, 'r', spec = 75),
                 "scythe" to Atk(5, 'm'), "scyk" to Atk(5, 'm', true), "scyc" to Atk(5, 'm', true), "scys" to Atk(5, 'm', true),
                 "tdps" to Atk(5, 'm', true), "tdin" to Atk(5, 'm'), "tdin2" to Atk(5, 'm'), "dinhs" to Atk(5, 'm', true, 50), "obl" to Atk(5, 'm', true),
                 "tfz" to Atk(5, 'f', true), "ibs" to Atk(5, 'f', true), "ir" to Atk(5, 'f', true), "aya" to Atk(3, 'g', true),
                 "tpile" to Atk(5, 'r'), "wait" to Atk(1, '-'), "surge" to Atk(0, '-'),
             )
 
-        val LAND_DELAY = mapOf(Move.Tbow to 3, Move.Blowpipe to 2, Move.Zcb to 3, Move.Ralos to 3, Move.Scythe to 1, Move.Obligator to 1, Move.Dinh to 1, Move.Barrage to 2)
-        val MEAN_HIT = mapOf(Move.Tbow to (TBOW_MEAN to TBOW_SD), Move.Scythe to (SCYTHE_MEAN to SCYTHE_SD), Move.Blowpipe to (16.1 to 9.8))
+        val LAND_DELAY = mapOf(Move.Tbow to 3, Move.Blowpipe to 2, Move.Crossbows to 2, Move.Zcb to 3, Move.Ralos to 3, Move.Scythe to 1, Move.Obligator to 1, Move.Dinh to 1, Move.Barrage to 2)
+        val MEAN_HIT = mapOf(Move.Tbow to (TBOW_MEAN to TBOW_SD), Move.Scythe to (SCYTHE_MEAN to SCYTHE_SD), Move.Blowpipe to (16.1 to 9.8), Move.Crossbows to (16.1 to 9.8))
     }
 }
 

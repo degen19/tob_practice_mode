@@ -68,6 +68,7 @@ object NyloLoadout {
     const val ARROWS = "obj.dragon_arrow"
     const val SEEKING_ARROWS = "obj.seeking_dragon_arrow"
     const val RUBY_BOLTS = "obj.dragon_bolts_enchanted_ruby"
+    const val DIAMOND_BOLTS = "obj.ascension_bolts_diamond_enchanted"
     const val BOOK = "obj.book_of_the_dead"
     const val SURGE = "obj.4dosesurge"
 
@@ -99,7 +100,7 @@ object NyloLoadout {
         when (role) {
             NyloRole.Melee -> listOf(TBOW, RALOS, SCYTHE, DINH, ZCB, OBLIGATOR)
             NyloRole.Ranger -> listOf(TBOW, RALOS, SCYTHE, ZCB)
-            NyloRole.Mage -> listOf(TBOW, RALOS, BARRAGE, SCYTHE, ZCB, BLOWPIPE, TOME)
+            NyloRole.Mage -> listOf(TBOW, RALOS, BARRAGE, SCYTHE, ZCB, CROSSBOWS, TOME)
         }
 
     /** Worn at the start: the first set plus bolts in the ammo slot. */
