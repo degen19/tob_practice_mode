@@ -52,10 +52,14 @@ public object CombatEffects {
     public fun frozenTicks(target: Npc): Int =
         maxOf(0, target.vars["varn.freeze_end_clock"] - target.currentMapClock)
 
+    /**
+     * NPCs move before players act, so a freeze a player puts on this tick holds for [ticks] ticks from the next one
+     * (Blert: a crab barraged on tick T, with a sceptre's 35, takes its next step on T + 36).
+     */
     public fun freeze(target: Npc, ticks: Int, ignoreImmunity: Boolean = false): Boolean {
         val clock = target.currentMapClock
         if (!ignoreImmunity && target.vars["varn.freeze_immunity_end_clock"] > clock) return false
-        val end = clock + ticks
+        val end = clock + ticks + 1
         target.vars["varn.freeze_end_clock"] = end
         target.vars["varn.freeze_immunity_end_clock"] = end + FREEZE_IMMUNITY_TICKS
         target.routeDestination.clear()

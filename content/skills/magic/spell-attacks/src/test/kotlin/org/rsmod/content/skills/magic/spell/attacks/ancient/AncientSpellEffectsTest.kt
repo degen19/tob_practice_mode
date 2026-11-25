@@ -176,9 +176,9 @@ internal class AncientSpellEffectsTest {
         fun `freezes npc for wiki duration`(spell: AncientSpell, sceptre: Boolean, ticks: Int) {
             val target = npc("npc.man", clock = 100)
             AncientSpellEffects(landing).apply(spell, player(), target, 5, sceptre)
-            target.currentMapClock = 100 + ticks - 1
-            assertTrue(CombatEffects.isFrozen(target), "frozen on last tick")
             target.currentMapClock = 100 + ticks
+            assertTrue(CombatEffects.isFrozen(target), "frozen on last tick")
+            target.currentMapClock = 100 + ticks + 1
             assertFalse(CombatEffects.isFrozen(target), "thawed after duration")
         }
 
@@ -192,7 +192,7 @@ internal class AncientSpellEffectsTest {
             effects.apply(AncientSpell.IceRush, player(), target, 5, false)
             assertFalse(CombatEffects.isFrozen(target))
 
-            target.currentMapClock = 113
+            target.currentMapClock = 114
             effects.apply(AncientSpell.IceRush, player(), target, 5, false)
             assertTrue(CombatEffects.isFrozen(target))
         }

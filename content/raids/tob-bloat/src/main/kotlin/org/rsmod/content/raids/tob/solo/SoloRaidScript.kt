@@ -589,9 +589,17 @@ object SoloBarrier {
                     p.z in zs -> CoordGrid(if (p.x < xs.first) xs.last + 1 else xs.first - 1, p.z, p.level)
                     else -> return
                 }
-            val tiles = maxOf(kotlin.math.abs(dest.x - p.x), kotlin.math.abs(dest.z - p.z))
             if (!inside && room.t < 0) room.start()
-            cross(player, dest, tiles)
+            val dir =
+                when {
+                    dest.x > p.x -> constants.em_face_east
+                    dest.x < p.x -> constants.em_face_west
+                    dest.z > p.z -> constants.em_face_north
+                    else -> constants.em_face_south
+                }
+            // as the game's barrier: you're on the far side from the next tick, the walk through drawn over two
+            anim(PASS_SEQ)
+            exactMove(p, dest, delay1 = 0, delay2 = PASS_CYCLES, dir = dir, teleportType = TeleportType.Exempt)
         }
     }
 
@@ -637,6 +645,8 @@ object SoloBarrier {
     var collision: org.rsmod.routefinder.collision.CollisionFlagMap? = null
 
     private const val CROSS_GRACE = 2
+    private const val PASS_SEQ = "seq.human_walk_f"
+    private const val PASS_CYCLES = 60
 }
 
 /** Names of locs by id, for the room's handlers. */

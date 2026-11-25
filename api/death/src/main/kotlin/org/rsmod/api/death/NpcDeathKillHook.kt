@@ -9,6 +9,8 @@ public data class NpcDeathKillContext(
     public val npc: Npc,
     public val lootTrackerEventId: Int,
     public val dropCoords: CoordGrid = npc.coords,
+    /** The last player to queue a hit on [npc] before it died (the wiki's multicombat rule for on-kill effects). */
+    public val lastAttacker: Player? = null,
 )
 
 /**

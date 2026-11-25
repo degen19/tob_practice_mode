@@ -117,6 +117,9 @@ class SoloRaids {
 
     fun forPlayer(player: Player): SoloRoom? = byOwner[player.username]?.takeIf { it.contains(player.coords) }
 
+    /** The room [player] is standing in, theirs or one they're helping in. */
+    fun around(player: Player): SoloRoom? = forPlayer(player) ?: byOwner.values.firstOrNull { it.contains(player.coords) }
+
     fun forNpc(npc: Npc): SoloRoom? = byOwner.values.firstOrNull { it.owns(npc) }
 }
 

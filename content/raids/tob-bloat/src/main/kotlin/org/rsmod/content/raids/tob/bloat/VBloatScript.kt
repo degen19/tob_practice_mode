@@ -270,7 +270,7 @@ constructor(
      * on the tick you want, as in the game. Once someone is inside, Pass just takes you through.
      */
     private suspend fun ProtectedAccess.barrier(loc: org.rsmod.game.loc.BoundLocInfo) {
-        solo.forPlayer(player)?.let { return org.rsmod.content.raids.tob.solo.SoloBarrier.pass(this, it, loc.bounds()) }
+        solo.around(player)?.let { return org.rsmod.content.raids.tob.solo.SoloBarrier.pass(this, it, loc.bounds()) }
         val barrier = loc.coords
         val room = rooms.forPlayer(player)
         if (room != null && room.t < 0 && room.local(player.coords).first >= 24) {

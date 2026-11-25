@@ -123,7 +123,7 @@ constructor(private val spells: MagicSpellRegistry, private val runes: MagicRune
 internal class DeathChargeKillHook @Inject constructor(private val energy: SpecialAttackEnergy) :
     NpcDeathKillHook {
     override fun onKill(context: NpcDeathKillContext) {
-        val player = context.hero
+        val player = context.lastAttacker ?: context.hero
         if (player.deathChargeCharges == 0) {
             return
         }

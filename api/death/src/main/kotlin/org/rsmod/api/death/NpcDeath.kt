@@ -94,6 +94,7 @@ constructor(
                     npc = this,
                     lootTrackerEventId = lootTrackerEventId,
                     dropCoords = dropCoords,
+                    lastAttacker = lastHitQueuedBy?.let { uuid -> players.firstOrNull { it.uuid == uuid } },
                 )
             for (hook in deathKillHooks) {
                 hook.onKill(killCtx)

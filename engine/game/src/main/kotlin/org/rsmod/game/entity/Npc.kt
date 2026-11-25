@@ -66,6 +66,9 @@ public class Npc(
 
     override val damageContributions: DamageContributions = DamageContributions()
 
+    /** The uuid of the last player to queue a hit on this npc: in multicombat, who on-kill effects go to. */
+    public var lastHitQueuedBy: Long? = null
+
     public val vars: VarNpcIntMap = VarNpcIntMap()
     public val strVars: VarNpcStrMap = VarNpcStrMap()
 
@@ -372,6 +375,7 @@ public class Npc(
         showAllOps()
         copyStats(type)
         clearHeroPoints()
+        lastHitQueuedBy = null
         pvpInterruptionUntil = -1
         queueList.clear()
         vars.backing.clear()

@@ -143,6 +143,7 @@ public fun Npc.queueHit(
             clientDelay = 0,
             specific = specific,
         )
+    lastHitQueuedBy = source.uuid
     return modifyAndQueueHit(delay, builder, modifier)
 }
 

@@ -97,7 +97,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         return replayed
     }
 
-    /** A sim hit to play back (`TOB_MAIDEN_REPLAY`): its landing tick, whose, on what, and its hitsplats in order. */
+    /** A sim hit to play back (`TOB_MAIDEN_REPLAY`, a run with no blood throws, as the sim has none): its landing tick, whose, on what, and its hitsplats in order. */
     private class SimHit(val t: Int, val who: String, val on: String, val kind: String, val splats: ArrayDeque<Int>)
 
     private val replay: MutableList<SimHit>? =
@@ -115,7 +115,8 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val p = attacker(hit)
         val who = p?.username?.filter { it.isLetter() }?.let { if (it == "ranger") "range" else it }
         val kind = if (p == null) "thrall" else if (hit.type == org.rsmod.game.hit.HitType.Typeless) "veng" else "atk"
-        val e = hits.filter { it.on == on && it.kind == kind && (kind == "thrall" || it.who == who) && kotlin.math.abs(it.t - t) <= if (kind == "thrall") THRALL_SLACK else 1 }.minByOrNull { kotlin.math.abs(it.t - t) }
+        val near = hits.filter { it.kind == kind && (kind == "thrall" || it.who == who) && kotlin.math.abs(it.t - t) <= if (kind == "thrall") THRALL_SLACK else REPLAY_SLACK }
+        val e = (near.filter { it.on == on }.ifEmpty { near.filter { it.on == on.substringBefore('@') + "@?" } }).minByOrNull { kotlin.math.abs(it.t - t) }
         if (e == null) {
             println("replay t$t miss $who $kind on $on ours ${hit.damage}")
             return null
@@ -259,7 +260,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
 
     private fun attack(p: Player) {
         maiden.facePlayer(p)
-        if (throwCooldown == 0 && chance(THROW_CHANCE)) {
+        if (replay == null && !NO_THROWS && throwCooldown == 0 && chance(THROW_CHANCE)) {
             throwCooldown = THROW_COOLDOWN
             throwBlood(p)
             return
@@ -468,6 +469,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val CENTRE = 3
         val PROC_PCT = listOf(70, 50, 30)
         const val THRALL_SLACK = 3
+        const val REPLAY_SLACK = 2
         const val HP = 2625
         val PHASES = listOf("npc.tob_maiden_100", "npc.tob_maiden_70", "npc.tob_maiden_50", "npc.tob_maiden_30")
         const val DYING_B = "npc.tob_maiden_dying_b"
@@ -475,6 +477,9 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val ATTACK_EVERY = 10
         /** 1 in 3 once off cooldown, the community figure (Blert's real solos: 47 of 123, which fits). */
         const val THROW_CHANCE = 1.0 / 3
+
+        /** Tests: no blood throws (`TOB_MAIDEN_NO_THROWS`), as the sim has none. */
+        val NO_THROWS = System.getenv("TOB_MAIDEN_NO_THROWS") != null
         const val THROW_COOLDOWN = 2
         const val BASE_MAX = 36.5
         const val PER_LEAK = 3.5
