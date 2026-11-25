@@ -14,6 +14,7 @@ import org.rsmod.game.interact.InteractionNpc
 import org.rsmod.map.CoordGrid
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -180,6 +181,7 @@ class MaidenCrew(
             val p = b.player
             if (!p.isSlotAssigned || p.hitpoints <= 0 || p in flinching || !room.inArena(room.real(p.coords)) || t < FIRST_ACT) continue
             if (b.role != NyloRole.Mage) spells(b)
+            if (stall(b)) continue
             stepRoute(b)
             if (t >= b.predodgeAt && t - b.predodgeAt <= PREDODGE_TICKS && predodge(b)) continue
             if (dodge(b)) continue
@@ -388,6 +390,11 @@ class MaidenCrew(
         val here = room.real(b.player.coords)
         val next = upcoming(b)
         REACH_OF[next]?.let { reach ->
+            if (b.dps != null && b.dps != MELEE_DPS && params.posts && params.thawPost && southThaw()) {
+                val post = CoordGrid(ROOM_X + MX1 + 1, ROOM_Y - MY1, here.level)
+                if (fromPost(b, here) > POST_NEAR && !room.bloody(post)) walk(b, post)
+                return
+            }
             val gap = room.gapToHer(here)
             if (gap > reach) walk(b, CoordGrid(here.x - (gap - reach), here.z, here.level))
             return
@@ -408,11 +415,24 @@ class MaidenCrew(
 
     /**
      * Tiles from the bot's post by her north-east corner, where the north spawns walk in: the ranger north of her, the
-     * melee on her east side (room to line up its Dinh's without losing a swing).
+     * melee on her east side (room to line up its Dinh's without losing a swing). With a healthy older crab south of her
+     * thawing soon, the ranger keeps to the south end of her east side instead, to catch it on its way in.
      */
     private fun fromPost(b: Bot, c: CoordGrid): Int {
-        val (px, py) = if (!params.posts) MX1 + 1 to MT_Y - 1 else if (b.dps == MELEE_DPS) MX1 + 1 to MT_Y + 1 else MX1 to MT_Y - 1
+        val (px, py) =
+            when {
+                !params.posts -> MX1 + 1 to MT_Y - 1
+                b.dps == MELEE_DPS -> MX1 + 1 to MT_Y + 1
+                params.thawPost && southThaw() -> MX1 + 1 to MY1
+                else -> MX1 to MT_Y - 1
+            }
         return maxOf(abs(c.x - ROOM_X - px), abs(ROOM_Y - c.z - py))
+    }
+
+    private fun southThaw(): Boolean {
+        val w = latestWave() ?: return false
+        if (crabs.any { it.wave == w && it.id in planOf(w).left }) return false
+        return crabs.any { q -> q.wave != w && q.y > SWROW && q.hp >= SPLIT_HP && q.frozenTo in t..t + THAW_LOOK && !pushPast(q) && !freezing(q) }
     }
 
     /**
@@ -647,7 +667,41 @@ class MaidenCrew(
             }
             return
         }
+        if (p in thralled && p.vars["varbit.spellbook"] == ARCEUUS && p.vars["varbit.spellbook_swap_book"] == 1 && b.next - t == SWING - 1) {
+            bots.spell(p, if (p.vars["varbit.arceuus_death_charge_cooldown"] == 0) DEATH_CHARGE else MARK_OF_DARKNESS)
+            trace { "t$t ${b.role} casts back to the Lunars" }
+            return
+        }
         if (p.vars["varbit.vengeance_rebound"] == 0 && p.vars["varbit.vengeance_timelimit"] == 0 && p.vars["varbit.spellbook"] == LUNARS) bots.spell(p, VENGEANCE)
+    }
+
+    /** The standard normal distribution's CDF (a logistic fit, good to about 1%). */
+    private fun phi(z: Double): Double = 1.0 / (1.0 + exp(-PHI_K * z))
+
+    /**
+     * Players stall her hit on them a tick after their swing: a Spellbook Swap locks them till their next swing, and
+     * her hit, held till then, rebounds with that swing's damage - so a Vengeance that could take her past her proc
+     * doesn't proc her off the swing tick. Not when the swing just landing procs her, nor with a crab to get to (the
+     * swap's lock holds them still).
+     */
+    private fun stall(b: Bot): Boolean {
+        val p = b.player
+        if (!params.vengStall || b.dps == null || phase == 0 || b.order != null || b.next - t != SWING - 1) return false
+        if (p.vars["varbit.vengeance_rebound"] != 1 || p.vars["varbit.spellbook"] != LUNARS || p.isDelayed) return false
+        val (lands, max) = room.autos[p] ?: return false
+        if (lands - clock.cycle !in 0 until STALL_TICKS) return false
+        val due = inflight.filter { it.land >= t && it.mean > 0 }
+        val gap = hp - full * phase / 100.0
+        val mean = due.sumOf { it.mean }
+        val sd = sqrt(due.sumOf { it.variance }).coerceAtLeast(1.0)
+        val below = { x: Double -> phi((x - mean) / sd) }
+        val procs = 1 - below(gap)
+        val rebound = (0 until REBOUND_STEPS).sumOf { k -> below(gap) - below(gap - max * REBOUND * (k + 0.5) / REBOUND_STEPS) } / REBOUND_STEPS
+        if (procs > params.stallProcPct / 100.0 || rebound < params.stallRisk / 100.0) return false
+        if (upcoming(b) !in SCYTHE_LINES || !room.besideHer(room.real(p.coords)) || ownCrab(b, b.next) != null || nextCrab(b, b.next) != null) return false
+        trace { "t$t ${b.role} stalls her hit (lands +${lands - clock.cycle}, ${(rebound * 100).toInt()}% it'd proc her)" }
+        bots.spell(p, SPELLBOOK_SWAP, SWAP_TO_ARCEUUS)
+        return true
     }
 
     private val her: Npc
@@ -1343,7 +1397,7 @@ class MaidenCrew(
 
     private fun pushPast(q: Crab): Boolean {
         if (phase == 0) return !params.lateStragglers || reachOf(q) - t >= killTicks() + params.killMargin
-        return phase == 30 && q.frozenTo > 0 && q.hp < 50 && crabs.any { it !== q && inArea(it, q) }
+        return phase == 30 && q.frozenTo > 0 && q.hp < 50 && crabs.any { it !== q && inArea(it, q) && (!params.pileThaw || it.frozenTo <= q.frozenTo) }
     }
 
     /** Roughly how long she lasts once the procs are done, with all three on her (a crab reaching her later doesn't matter). */
@@ -1722,6 +1776,13 @@ class MaidenCrew(
         const val SWAP_TO_ARCEUUS = 4
         const val GREATER_GHOST = "component.magic_spellbook:resurrect_greater_ghost"
         const val VENGEANCE = "component.magic_spellbook:vengeance"
+        const val DEATH_CHARGE = "component.magic_spellbook:death_charge"
+        const val MARK_OF_DARKNESS = "component.magic_spellbook:mark_of_darkness"
+        const val STALL_TICKS = 4
+        const val THAW_LOOK = 10
+        const val REBOUND = 0.75
+        const val REBOUND_STEPS = 4
+        const val PHI_K = 1.702
         const val LUNARS = 2
         const val ARCEUUS = 3
         const val DEATH_CHARGES = 2
@@ -1749,7 +1810,7 @@ class MaidenCrew(
         const val STACK_HP = 100
 
         /** Mean damage a thrust does each crab it pierces, and a scythe does the one crab it's aimed at (our recordings). */
-        const val OBL_CRAB = 26
+        const val OBL_CRAB = 30
         const val SCY_CRAB = 30
         const val MELEE_DPS = 1
         const val STAND_SEARCH = 14
@@ -1909,6 +1970,11 @@ data class MaidenCrewParams(
     val killMargin: Int = 0,
     val thawYields: Boolean = true,
     val oblStack: Boolean = true,
+    val vengStall: Boolean = true,
+    val stallRisk: Int = 15,
+    val stallProcPct: Int = 50,
+    val thawPost: Boolean = false,
+    val pileThaw: Boolean = true,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
@@ -1939,6 +2005,11 @@ data class MaidenCrewParams(
                 killMargin = int("killMargin", d.killMargin),
                 thawYields = flag("thawYields", d.thawYields),
                 oblStack = flag("oblStack", d.oblStack),
+                vengStall = flag("vengStall", d.vengStall),
+                stallRisk = int("stallRisk", d.stallRisk),
+                stallProcPct = int("stallProcPct", d.stallProcPct),
+                thawPost = flag("thawPost", d.thawPost),
+                pileThaw = flag("pileThaw", d.pileThaw),
                 redOffset = int("redOffset", d.redOffset),
                 walkWeight = int("walkWeight", d.walkWeight),
                 dinhWalk = int("dinhWalk", d.dinhWalk),

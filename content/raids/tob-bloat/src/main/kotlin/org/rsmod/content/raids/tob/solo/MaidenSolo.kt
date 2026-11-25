@@ -76,6 +76,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         crabs.clear()
         splats.clear()
         incoming.clear()
+        autos.clear()
         spawns.clear()
         trails.clear()
         maiden = spawn(PHASES[0], CoordGrid(X, Y, 0), hp(HP, entryHp(2500)))
@@ -280,6 +281,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val roll = rand(0, max)
         // the drain is set on her attack tick, by the gear worn then (players flick a crossbow and quiver on for it)
         val drained = if (chance(0.5)) drainStats(p) else emptyList()
+        autos[p] = d.mapClock.cycle + hitDelay to (if (entryMode) max / 2 else max)
         later(lands) {
             val q = p.takeIf { it in party() } ?: return@later
             val dmg = if (prays(q, "magic")) roll / 2 else roll
@@ -287,6 +289,9 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             if (dmg > 0) for (stat in drained) q.statSub(stat, constant = (dmg + 1) / 5, percent = 0)
         }
     }
+
+    /** Her autos on their way: the cycle each lands on its target and the most it can hit. */
+    val autos = HashMap<Player, Pair<Int, Int>>()
 
     /** Her drain goes on the combat stats of the target's highest accuracy bonus. */
     private fun drainStats(p: Player): List<String> {

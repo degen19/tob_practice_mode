@@ -20,7 +20,8 @@ private var Player.swapBook by intVarBit("varbit.spellbook_swap_book")
 /**
  * Spellbook Swap (Lunar, level 96): changes to the Standard, Ancient or Arceuus spellbook for one
  * cast; the cast (see `MagicRuneManager.attemptCast`) or two minutes puts you back on the Lunars.
- * Left-click asks which book; the right-click options pick one straight away.
+ * Left-click asks which book; the right-click options pick one straight away. The cast locks the
+ * caster for [LOCK_TICKS] ticks: no attacks, no walking, and hits on them wait until it ends.
  */
 class SpellbookSwapScript
 @Inject
@@ -68,6 +69,7 @@ constructor(
         queues.add(DURATION_TICKS) {
             if (swappedAt[caster] == stamp && caster.swapBook != 0) revert(caster)
         }
+        delay(LOCK_TICKS)
     }
 
     private fun revert(player: Player) {
@@ -81,5 +83,6 @@ constructor(
         const val CAST_ANIM = "seq.dream_player_spellbook_swap"
         const val CAST_SPOTANIM = "spotanim.dream_spellbook_spotanim"
         const val DURATION_TICKS = 200
+        const val LOCK_TICKS = 4
     }
 }
