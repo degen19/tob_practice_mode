@@ -201,7 +201,7 @@ class MaidenCrew(
                 b.order = null
             }
             if (p.actionDelay > clock.cycle + if (b.dps != null) params.lookahead else 0) {
-                if (params.prePosition) position(b)
+                position(b)
                 continue
             }
             decide(b)
@@ -289,7 +289,7 @@ class MaidenCrew(
                     compareBy(
                         { if (b.dps != null) room.gapToHer(it) else abs(room.gapToHer(it) - gap) },
                         { if (b.dps != null) fromPost(b, it) else 0 },
-                        { if (b.dps != null && params.spawnSide) fromSpawns(it) else 0 },
+                        { if (b.dps != null) fromSpawns(it) else 0 },
                     )
                 ) ?: return false
         trace { "t$t ${b.role} pre-dodges to ${to.x - ROOM_X},${ROOM_Y - to.z}" }
@@ -391,11 +391,6 @@ class MaidenCrew(
         val here = room.real(b.player.coords)
         val next = upcoming(b)
         REACH_OF[next]?.let { reach ->
-            if (b.dps != null && b.dps != MELEE_DPS && params.posts && params.thawPost && southThaw()) {
-                val post = CoordGrid(ROOM_X + MX1 + 1, ROOM_Y - MY1, here.level)
-                if (fromPost(b, here) > POST_NEAR && !room.bloody(post)) walk(b, post)
-                return
-            }
             val gap = room.gapToHer(here)
             if (gap > reach) walk(b, CoordGrid(here.x - (gap - reach), here.z, here.level))
             return
@@ -416,18 +411,10 @@ class MaidenCrew(
 
     /**
      * Tiles from the bot's post by her north-east corner, where the north spawns walk in: the ranger north of her, the
-     * melee on her east side (room to line up its Dinh's without losing a swing). With a healthy older crab south of her
-     * thawing soon, the ranger keeps to the south end of her east side instead, to catch it on its way in.
+     * melee on her east side (room to line up its Dinh's without losing a swing).
      */
     private fun fromPost(b: Bot, c: CoordGrid): Int {
-        val (px, py) =
-            when {
-                !params.posts -> MX1 + 1 to MT_Y - 1
-                params.centrePosts || (params.centreBusy && mageBusy()) -> MX1 + 1 to if (b.dps == MELEE_DPS) CENTRE_LOW else CENTRE_HIGH
-                b.dps == MELEE_DPS -> MX1 + 1 to MT_Y + 1
-                params.thawPost && southThaw() -> MX1 + 1 to MY1
-                else -> MX1 to MT_Y - 1
-            }
+        val (px, py) = if (b.dps == MELEE_DPS) MX1 + 1 to MT_Y + 1 else MX1 to MT_Y - 1
         return maxOf(abs(c.x - ROOM_X - px), abs(ROOM_Y - c.z - py))
     }
 
@@ -437,7 +424,7 @@ class MaidenCrew(
      * crab out of the clump instead, and the proc comes a swing later, once the mage's clump is done.
      */
     private fun holdProc(b: Bot, tt: Int): Crab? {
-        if (!params.holdProc || phase == 0 || b.dps == null) return null
+        if (phase == 0 || b.dps == null) return null
         val w = latestWave() ?: return null
         val done = mage.tfzD[w].orEmpty()
         if (crabs.none { it.wave == w && it.frozenTo < 0 && (it.base in THREES || it.base in FOURS) && clumpOf(it) !in done }) return null
@@ -450,23 +437,6 @@ class MaidenCrew(
         if (due.indexOf(b) >= off) return null
         return crabs.filter { q -> q.base !in THREES && q.base !in FOURS && reachOf(q) > tt + 1 && !freezing(q) && canHit(b, q, tt) }
             .maxWithOrNull(compareBy({ if (tt > it.frozenTo) 1 else 0 }, { it.hp }))
-    }
-
-    /**
-     * The next proc likely on the swings due while the mage still has this wave's clump to freeze: it'll skip a freeze
-     * of the new set, so the DPS wait mid-east, where either a 1 north or a 1 south is a swing away.
-     */
-    private fun mageBusy(): Boolean {
-        val w = latestWave() ?: return false
-        if (phase == 0) return false
-        val done = mage.tfzD[w].orEmpty()
-        return crabs.any { it.wave == w && it.frozenTo < 0 && (it.base in THREES || it.base in FOURS) && clumpOf(it) !in done } && procRisk(t, t + SWING + 1)
-    }
-
-    private fun southThaw(): Boolean {
-        val w = latestWave() ?: return false
-        if (crabs.any { it.wave == w && it.id in planOf(w).left }) return false
-        return crabs.any { q -> q.wave != w && q.y > SWROW && q.hp >= SPLIT_HP && q.frozenTo in t..t + THAW_LOOK && !pushPast(q) && !freezing(q) }
     }
 
     /**
@@ -730,7 +700,7 @@ class MaidenCrew(
      */
     private fun stall(b: Bot): Boolean {
         val p = b.player
-        if (!params.vengStall || b.dps == null || phase == 0 || b.order != null || b.next - t != SWING - 1) return false
+        if (b.dps == null || phase == 0 || b.order != null || b.next - t != SWING - 1) return false
         if (p.vars["varbit.vengeance_rebound"] != 1 || p.vars["varbit.spellbook"] != LUNARS || p.isDelayed) return false
         val (lands, max) = room.autos[p] ?: return false
         if (lands - clock.cycle !in 1 until STALL_TICKS) return false
@@ -819,8 +789,8 @@ class MaidenCrew(
         if (!procRisk(tt, by) && hp * 100 - full * phase > full * STAND_PCT) return null
         val others = crew.filter { it !== b }.minOf { it.next }
         // queued behind the DPS hits: it goes only once their last swings have landed without a proc (seen two ticks on)
-        val seen = params.preloadSlack < 0 || crew.filter { it !== b && it.dps != null }.all { it.next - SWING + PROC_SEEN <= tt }
-        if (seen && tt + atkOf("tfz").speed <= others + PROC_SEEN + max(0, params.preloadSlack) && pileWorth(tt, false).second >= params.preloadWorth) {
+        val seen = crew.filter { it !== b && it.dps != null }.all { it.next - SWING + PROC_SEEN <= tt }
+        if (seen && tt + atkOf("tfz").speed <= others + PROC_SEEN && pileWorth(tt, false).second >= params.preloadWorth) {
             b.force = "ibs:pile"
             return null
         }
@@ -867,8 +837,8 @@ class MaidenCrew(
     /**
      * The melee's Obligator (not in the sim): a thrust pierces 3 tiles in a line, so from the right tile it takes a
      * frozen crab and what's behind it - more crabs of a pile, or her when the crab stands against her. A scythe on a
-     * frozen crab goes as a thrust when its best line reaches [MaidenCrewParams.oblTargets] targets; with
-     * [MaidenCrewParams.oblHer] a scythe on her goes through a frozen crab against her instead.
+     * frozen crab goes as a thrust when its best line reaches [MaidenCrewParams.oblTargets] targets; a scythe on her goes
+     * through a stack of repeat spawns, frozen on one tile, when the thrust is worth more.
      */
     private fun obligate(b: Bot, a: String, tt: Int): String {
         if (!b.owns("obligator")) return a
@@ -880,8 +850,7 @@ class MaidenCrew(
                     crabs.filter { it.frozenTo >= tt + 1 }
                         .mapNotNull { q ->
                             bestLine(b, q)?.takeIf {
-                                (params.oblHer && it.her && it.n >= 2) || (params.oblPileHp in 1..it.crabHp && it.n - (if (it.her) 1 else 0) >= 2) ||
-                                    (params.oblStack && stacked(q) && it.n - (if (it.her) 1 else 0) >= 2)
+                                stacked(q) && it.n - (if (it.her) 1 else 0) >= 2
                             }?.let { q to it }
                         }
                         .maxByOrNull { it.second.crabHp } ?: return a
@@ -967,17 +936,8 @@ class MaidenCrew(
                 }
                 return "scythe"
             }
-            // a crab that walks in before the swing after takes this swing; the ZCB waits for the next one
-            if (a == "zcbs" && b.dps != null && params.zcbYields) {
-                val r = dpsSwing(b, tt)
-                if (r.startsWith("scy") && ':' in r) return r
-            }
-            // a crab of the new wave the mage left to them (it had the last wave's clump to freeze) takes the ranger's ZCB swing
-            if (a == "zcbs" && b.dps != null && b.dps != MELEE_DPS && params.leftYield) leftCrab(b, tt)?.let { q ->
-                return if (reachOf(q) == tt + 1) "scys:${q.key}:${if (q.hp >= magenta()) "N" else "S"}" else "scyk:${q.key}"
-            }
             // a healthy older crab thawing and walking in before the swing after takes this swing; the ZCB waits
-            if (a == "zcbs" && b.dps != null && params.thawYields) thawing(b, tt)?.let { q ->
+            if (a == "zcbs" && b.dps != null) thawing(b, tt)?.let { q ->
                 return if (reachOf(q) == tt + 1) "scys:${q.key}:${if (q.hp >= magenta()) "N" else "S"}" else "scyk:${q.key}"
             }
             // the mage's last freeze done, a claw spec worth more than the ZCB (or all the energy left would buy) goes first
@@ -1240,8 +1200,7 @@ class MaidenCrew(
             if (tt + 5 <= due) {
                 if (w != 70) {
                     val c = barragePrim("old", tt)
-                    val worth = params.clumpFill && pileWorth(tt, true, "old").second * 2 >= params.pileWorth
-                    if (c != null && (worth || aoe3(c).sumOf { it.hp } >= OLD_PILE_HP)) return "ibs:old"
+                    if (c != null && aoe3(c).sumOf { it.hp } >= OLD_PILE_HP) return "ibs:old"
                 }
                 return "tbr"
             }
@@ -1257,7 +1216,6 @@ class MaidenCrew(
      * ticks for to the DPS (the first freeze of the new set on a 9s proc, the first two on a 6s one).
      */
     private fun oldClump(b: Bot, tt: Int): String? {
-        if (!params.oldClumpFirst) return null
         val w = latestWave() ?: return null
         val ow = WAVES.getOrNull(WAVES.indexOf(w) - 1) ?: return null
         val op = procOf(ow) ?: return null
@@ -1317,7 +1275,6 @@ class MaidenCrew(
      * the DPS can't reach first - filling the ticks between, and leaves the rest to the DPS at once.
      */
     private fun oddPlan(b: Bot, tt: Int): String? {
-        if (!params.oddPlan) return null
         val w = latestWave() ?: return null
         val fs = fzTargets(b, w, tt)
         if (fs.isEmpty()) return null
@@ -1548,12 +1505,6 @@ class MaidenCrew(
         )
     }
 
-    /** A 1 / 2 of the new wave left to the DPS, still out and unfrozen when the swing lands, that the bot can reach. */
-    private fun leftCrab(b: Bot, tt: Int): Crab? {
-        val w = latestWave() ?: return null
-        return planOf(w).left.mapNotNull { crabRef("$it@$w") }.filter { q -> tt > q.frozenTo && !freezing(q) && reachOf(q) > tt && canHit(b, q, tt) }.minByOrNull { reachOf(it) }
-    }
-
     /** A healthy older crab out of its freeze by the swing and walking in before the swing after, that the bot can reach. */
     private fun thawing(b: Bot, tt: Int): Crab? {
         val w = latestWave() ?: return null
@@ -1596,7 +1547,6 @@ class MaidenCrew(
      * up to the swing; the game walks it in and swings the same tick), before the crab reaches her.
      */
     private fun canHit(b: Bot, q: Crab, tt: Int): Boolean {
-        if (!params.walkCheck) return true
         val me = room.real(b.player.coords).let { intArrayOf(it.x - ROOM_X, ROOM_Y - it.z) }
         if (tt + 1 > reachOf(q)) return false
         var x = q.x
@@ -1621,8 +1571,8 @@ class MaidenCrew(
     private fun magenta(): Int = MAG_STEPS.indexOfFirst { her.defenceLvl < it }.let { if (it < 0) 35 else 40 - it }
 
     private fun pushPast(q: Crab): Boolean {
-        if (phase == 0) return !params.lateStragglers || reachOf(q) - t >= killTicks() + params.killMargin
-        return phase == 30 && q.frozenTo > 0 && q.hp < 50 && crabs.any { it !== q && inArea(it, q) && (!params.pileThaw || it.frozenTo <= q.frozenTo) }
+        if (phase == 0) return reachOf(q) - t >= killTicks()
+        return phase == 30 && q.frozenTo > 0 && q.hp < 50 && crabs.any { it !== q && inArea(it, q) && it.frozenTo <= q.frozenTo }
     }
 
     /** Roughly how long she lasts once the procs are done, with all three on her (a crab reaching her later doesn't matter). */
@@ -2006,11 +1956,6 @@ class MaidenCrew(
         const val DEATH_CHARGE = "component.magic_spellbook:death_charge"
         const val MARK_OF_DARKNESS = "component.magic_spellbook:mark_of_darkness"
         const val STALL_TICKS = 4
-
-        /** The middle of her east side, where a DPS reaches both the N1 and the S1 for the first swing after a proc. */
-        const val CENTRE_HIGH = 11
-        const val CENTRE_LOW = 12
-        const val THAW_LOOK = 10
         const val REBOUND = 0.75
         const val REBOUND_STEPS = 4
         const val PHI_K = 1.702
@@ -2187,12 +2132,8 @@ class MaidenCrew(
  * Obligator); `parse` reads `name=value,...` and keeps the default for the rest.
  */
 data class MaidenCrewParams(
-    val walkCheck: Boolean = true,
-    val prePosition: Boolean = true,
     val lookahead: Int = 1,
     val oblTargets: Int = 9,
-    val oblHer: Boolean = false,
-    val oblPileHp: Int = 0,
     val pileWorth: Int = 45,
     val preloadWorth: Int = 15,
     val dinhHoldPct: Int = 97,
@@ -2203,68 +2144,27 @@ data class MaidenCrewParams(
     val walkWeight: Int = 30,
     val dinhWalk: Int = 2,
     val dodgeLead: Int = 1,
-    val lateStragglers: Boolean = true,
-    val posts: Boolean = true,
     val casterGap: Int = 4,
-    val clumpFill: Boolean = false,
-    val spawnSide: Boolean = true,
-    val preloadSlack: Int = 0,
-    val zcbYields: Boolean = false,
-    val killMargin: Int = 0,
-    val thawYields: Boolean = true,
-    val oblStack: Boolean = true,
-    val vengStall: Boolean = true,
     val stallRisk: Int = 15,
     val stallProcPct: Int = 50,
-    val thawPost: Boolean = false,
-    val pileThaw: Boolean = true,
-    val oldClumpFirst: Boolean = true,
-    val leftYield: Boolean = false,
-    val oddPlan: Boolean = true,
-    val centrePosts: Boolean = false,
-    val centreBusy: Boolean = false,
-    val holdProc: Boolean = true,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
             val values = text.split(',').mapNotNull { it.split('=').takeIf { kv -> kv.size == 2 }?.let { (k, v) -> k.trim() to v.trim() } }.toMap()
             val d = MaidenCrewParams()
             fun int(name: String, default: Int) = values[name]?.toDoubleOrNull()?.toInt() ?: default
-            fun flag(name: String, default: Boolean) = int(name, if (default) 1 else 0) != 0
             return MaidenCrewParams(
-                walkCheck = flag("walkCheck", d.walkCheck),
-                prePosition = flag("prePosition", d.prePosition),
                 lookahead = int("lookahead", d.lookahead),
                 oblTargets = int("oblTargets", d.oblTargets),
-                oblHer = flag("oblHer", d.oblHer),
-                oblPileHp = int("oblPileHp", d.oblPileHp),
                 pileWorth = int("pileWorth", d.pileWorth),
                 preloadWorth = int("preloadWorth", d.preloadWorth),
                 dinhHoldPct = int("dinhHoldPct", d.dinhHoldPct),
                 dinhCap = int("dinhCap", d.dinhCap),
                 secondDinhMin = int("secondDinhMin", d.secondDinhMin),
                 straggleTicks = int("straggleTicks", d.straggleTicks),
-                lateStragglers = flag("lateStragglers", d.lateStragglers),
-                posts = flag("posts", d.posts),
                 casterGap = int("casterGap", d.casterGap),
-                clumpFill = flag("clumpFill", d.clumpFill),
-                spawnSide = flag("spawnSide", d.spawnSide),
-                preloadSlack = int("preloadSlack", d.preloadSlack),
-                zcbYields = flag("zcbYields", d.zcbYields),
-                killMargin = int("killMargin", d.killMargin),
-                thawYields = flag("thawYields", d.thawYields),
-                oblStack = flag("oblStack", d.oblStack),
-                vengStall = flag("vengStall", d.vengStall),
                 stallRisk = int("stallRisk", d.stallRisk),
                 stallProcPct = int("stallProcPct", d.stallProcPct),
-                thawPost = flag("thawPost", d.thawPost),
-                pileThaw = flag("pileThaw", d.pileThaw),
-                oldClumpFirst = flag("oldClumpFirst", d.oldClumpFirst),
-                leftYield = flag("leftYield", d.leftYield),
-                oddPlan = flag("oddPlan", d.oddPlan),
-                centrePosts = flag("centrePosts", d.centrePosts),
-                centreBusy = flag("centreBusy", d.centreBusy),
-                holdProc = flag("holdProc", d.holdProc),
                 redOffset = int("redOffset", d.redOffset),
                 walkWeight = int("walkWeight", d.walkWeight),
                 dinhWalk = int("dinhWalk", d.dinhWalk),
