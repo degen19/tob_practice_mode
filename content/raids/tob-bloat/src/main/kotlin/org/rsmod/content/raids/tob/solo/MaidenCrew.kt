@@ -928,6 +928,10 @@ class MaidenCrew(
                 val r = dpsSwing(b, tt)
                 if (r.startsWith("scy") && ':' in r) return r
             }
+            // a crab of the new wave the mage left to them (it had the last wave's clump to freeze) takes the ranger's ZCB swing
+            if (a == "zcbs" && b.dps != null && b.dps != MELEE_DPS && params.leftYield) leftCrab(b, tt)?.let { q ->
+                return if (reachOf(q) == tt + 1) "scys:${q.key}:${if (q.hp >= magenta()) "N" else "S"}" else "scyk:${q.key}"
+            }
             // a healthy older crab thawing and walking in before the swing after takes this swing; the ZCB waits
             if (a == "zcbs" && b.dps != null && params.thawYields) thawing(b, tt)?.let { q ->
                 return if (reachOf(q) == tt + 1) "scys:${q.key}:${if (q.hp >= magenta()) "N" else "S"}" else "scyk:${q.key}"
@@ -1090,7 +1094,7 @@ class MaidenCrew(
         val mine = ofWave(w, if (which == "3s") THREES else FOURS)
         if (mine.isEmpty()) return null
         if (mine.any { reachOf(it) <= tt + 1 }) return true
-        val lp = lastProc ?: return false
+        val lp = procOf(w) ?: return false
         if (which == "3s") return if (mine.size == 1) tt >= lp + THREES_DUE else mine.all { c -> mine.all { inArea(c, it) } }
         if (ofWave(w, THREES).any { tt > it.frozenTo && tt > it.immuneTo }) return false
         val has3 = waveHas(w, THREE_RE)
@@ -1113,6 +1117,7 @@ class MaidenCrew(
     }
 
     private fun tfzPick(b: Bot, tt: Int): String? {
+        oldClump(b, tt)?.let { return it }
         val w = latestWave() ?: return null
         val plan = planOf(w)
         val done = b.tfzD.getOrPut(w) { HashSet() }
@@ -1189,6 +1194,65 @@ class MaidenCrew(
         }
         return null
     }
+
+    /**
+     * A proc that comes before the last wave's 3s / 4s are clumped (a 9s 50s, or quicker): the mage still freezes that
+     * clump on its tick - those leak far worse than a single crab - and leaves the new wave's 1s / 2s it hasn't the
+     * ticks for to the DPS (the first freeze of the new set on a 9s proc, the first two on a 6s one).
+     */
+    private fun oldClump(b: Bot, tt: Int): String? {
+        if (!params.oldClumpFirst) return null
+        val w = latestWave() ?: return null
+        val ow = WAVES.getOrNull(WAVES.indexOf(w) - 1) ?: return null
+        val op = procOf(ow) ?: return null
+        val od = b.tfzD.getOrPut(ow) { HashSet() }
+        for (which in listOf("3s", "4s")) {
+            if (which in od) continue
+            val mine = ofWave(ow, if (which == "3s") THREES else FOURS)
+            if (mine.none { tt > it.frozenTo && tt > it.immuneTo && !freezing(it) }) {
+                od += which
+                continue
+            }
+            val speed = atkOf("ibs").speed
+            if (clumpReady(ow, which, tt) == true) {
+                od += which
+                val prim = mine.maxByOrNull { c -> aoe3(c).let { n -> n.count { tt > it.immuneTo && tt > it.frozenTo } * 100 + n.size } } ?: continue
+                trace { "t$tt Mage freezes the $ow $which first" }
+                leaveUnreached(b, w, tt + speed, tt)
+                return "ibs:${prim.key}"
+            }
+            val due = op + if (which == "3s") THREES_DUE else FOURS_DUE
+            if (tt + speed <= due) return null
+            leaveUnreached(b, w, due + speed, tt)
+            return "wait"
+        }
+        return null
+    }
+
+    /**
+     * The new wave's 1s / 2s the mage won't freeze before they reach her, free again on [free] and freezing the rest
+     * in order (the new wave's own clump on its tick first): left to the DPS now, while they've the ticks to get there.
+     */
+    private fun leaveUnreached(b: Bot, w: Int, free: Int, tt: Int) {
+        val plan = planOf(w)
+        val done = b.tfzD.getOrPut(w) { HashSet() }
+        val speed = atkOf("ibs").speed
+        val lp = procOf(w) ?: return
+        val clumps = listOf("3s" to THREES, "4s" to FOURS).filter { (k, ids) -> k !in done && ofWave(w, ids).isNotEmpty() }.map { (k, _) -> lp + if (k == "3s") THREES_DUE else FOURS_DUE }.toMutableList()
+        var f = free
+        for (id in plan.fz) {
+            if (id in done) continue
+            val c = crabRef("$id@$w") ?: continue
+            if (tt <= c.frozenTo) continue
+            while (clumps.isNotEmpty() && f + speed > clumps[0]) f = max(f, clumps.removeAt(0)) + speed
+            if (reachOf(c) <= f + 1) {
+                done += id
+                leave(plan, id, w, tt)
+            } else f += speed
+        }
+    }
+
+    private fun procOf(w: Int): Int? = procAt.getOrNull(WAVES.indexOf(w))?.takeIf { it >= 0 }
 
     /** The tick [mine] first stand in one 3x3 as they walk in (the 30s 4s with no 3s to walk into), if they do. */
     private fun clumpAt(mine: List<Crab>, tt: Int): Int? {
@@ -1327,6 +1391,12 @@ class MaidenCrew(
                 { it.i },
             )
         )
+    }
+
+    /** A 1 / 2 of the new wave left to the DPS, still out and unfrozen when the swing lands, that the bot can reach. */
+    private fun leftCrab(b: Bot, tt: Int): Crab? {
+        val w = latestWave() ?: return null
+        return planOf(w).left.mapNotNull { crabRef("$it@$w") }.filter { q -> tt > q.frozenTo && !freezing(q) && reachOf(q) > tt && canHit(b, q, tt) }.minByOrNull { reachOf(it) }
     }
 
     /** A healthy older crab out of its freeze by the swing and walking in before the swing after, that the bot can reach. */
@@ -1975,6 +2045,8 @@ data class MaidenCrewParams(
     val stallProcPct: Int = 50,
     val thawPost: Boolean = false,
     val pileThaw: Boolean = true,
+    val oldClumpFirst: Boolean = true,
+    val leftYield: Boolean = false,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
@@ -2010,6 +2082,8 @@ data class MaidenCrewParams(
                 stallProcPct = int("stallProcPct", d.stallProcPct),
                 thawPost = flag("thawPost", d.thawPost),
                 pileThaw = flag("pileThaw", d.pileThaw),
+                oldClumpFirst = flag("oldClumpFirst", d.oldClumpFirst),
+                leftYield = flag("leftYield", d.leftYield),
                 redOffset = int("redOffset", d.redOffset),
                 walkWeight = int("walkWeight", d.walkWeight),
                 dinhWalk = int("dinhWalk", d.dinhWalk),
