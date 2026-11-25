@@ -13,6 +13,7 @@ import org.rsmod.game.entity.Player
 import org.rsmod.game.interact.InteractionNpc
 import org.rsmod.map.CoordGrid
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -281,7 +282,7 @@ class MaidenCrew(
             (-FLINCH..FLINCH).flatMap { dx -> (-FLINCH..FLINCH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
                 .filter { maxOf(abs(it.x - here.x), abs(it.z - here.z)) == FLINCH }
                 .filter { room.inArena(it) && !room.under(it) && !room.bloody(it) && !struck(it) && if (beside) room.besideHer(it) else room.gapToHer(it) in gap - 1..gap }
-                .minWithOrNull(compareBy({ if (b.dps != null) room.gapToHer(it) else abs(room.gapToHer(it) - gap) }, { if (b.dps != null) fromCorner(it) else 0 })) ?: return false
+                .minWithOrNull(compareBy({ if (b.dps != null) room.gapToHer(it) else abs(room.gapToHer(it) - gap) }, { if (b.dps != null) fromPost(b, it) else 0 })) ?: return false
         trace { "t$t ${b.role} pre-dodges to ${to.x - ROOM_X},${ROOM_Y - to.z}" }
         walk(b, to)
         return true
@@ -301,7 +302,7 @@ class MaidenCrew(
         val to =
             (-DODGE..DODGE).flatMap { dx -> (-DODGE..DODGE).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
                 .filter { it != here && room.inArena(it) && !room.under(it) && !room.bloody(it) && (!beside || room.besideHer(it)) }
-                .minWithOrNull(compareBy({ if (room.gapToHer(it) - 1 <= RUN) 0 else 1 }, { if (b.dps != null) fromCorner(it) else 0 }, { maxOf(abs(it.x - here.x), abs(it.z - here.z)) })) ?: return false
+                .minWithOrNull(compareBy({ if (room.gapToHer(it) - 1 <= RUN) 0 else 1 }, { if (b.dps != null) fromPost(b, it) else 0 }, { maxOf(abs(it.x - here.x), abs(it.z - here.z)) })) ?: return false
         trace { "t$t ${b.role} steps off blood to ${to.x - ROOM_X},${ROOM_Y - to.z}" }
         val o = b.order
         if (o != null) {
@@ -343,9 +344,30 @@ class MaidenCrew(
             sides.filter { (sx, sy) -> sx in 0..ROOM_W && sy in 0..ROOM_H && !(sx in MT_X..MX1 && sy in MT_Y..MY1) }
                 .map { (sx, sy) -> CoordGrid(sx + ROOM_X, ROOM_Y - sy, here.level) }
                 .filter { !room.bloody(it) && !room.blocked(it) && room.inArena(it) }
-                .minWithOrNull(compareBy({ if (room.besideHer(it)) 0 else 1 }, { maxOf(abs(it.x - here.x), abs(it.z - here.z)) })) ?: return
+                .minWithOrNull(
+                    compareBy(
+                        { if (maxOf(abs(it.x - here.x), abs(it.z - here.z)) <= RUN * (due - t)) 0 else 1 },
+                        { if (cleaves(it.x - ROOM_X, ROOM_Y - it.z, x, y)) 0 else 1 },
+                        { if (room.besideHer(it)) 0 else 1 },
+                        { maxOf(abs(it.x - here.x), abs(it.z - here.z)) },
+                    )
+                ) ?: return
         trace { "t$t ${b.role} moves to ${dest.x - ROOM_X},${ROOM_Y - dest.z} for ${c.key} (swing t$due)" }
         walk(b, dest)
+    }
+
+    /** Whether a scythe from ([sx], [sy]) on the crab at ([cx], [cy]) also catches her: her body on its arc's far tile. */
+    private fun cleaves(sx: Int, sy: Int, cx: Int, cy: Int): Boolean {
+        val (dx, dy) =
+            when {
+                sy < cy -> 0 to 1
+                sy > cy + 1 -> 0 to -1
+                sx < cx -> 1 to 0
+                else -> -1 to 0
+            }
+        val ax = sx + dx
+        val ay = sy + dy
+        return listOf(ax + dy to ay + dx, ax - dy to ay - dx).any { (x, y) -> x in MT_X..MX1 && y in MT_Y..MY1 }
     }
 
     /**
@@ -363,25 +385,37 @@ class MaidenCrew(
         }
         if (atkOf(next).style != 'm') return
         val beside = room.besideHer(here)
-        if (beside && fromCorner(here) <= CORNER_NEAR) return
+        if (beside && fromPost(b, here) <= POST_NEAR) return
         val dist = { c: CoordGrid -> maxOf(abs(c.x - here.x), abs(c.z - here.z)) }
         val open =
             (-REACH..REACH).flatMap { dx -> (-REACH..REACH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
                 .filter { room.besideHer(it) && room.inArena(it) && !room.under(it) && !room.bloody(it) }
         val nearest = open.minOfOrNull(dist) ?: return
         val spare = RUN * (b.next - t - 1)
-        val dest = open.filter { fromCorner(it) <= CORNER_NEAR && dist(it) <= maxOf(if (beside) 0 else nearest, spare) }.minByOrNull(dist) ?: if (beside) return else open.minByOrNull(dist) ?: return
+        val dest = open.filter { fromPost(b, it) <= POST_NEAR && dist(it) <= maxOf(if (beside) 0 else nearest, spare) }.minByOrNull(dist) ?: if (beside) return else open.minByOrNull(dist) ?: return
         trace { "t$t ${b.role} moves beside her to ${dest.x - ROOM_X},${ROOM_Y - dest.z} (swing t${b.next})" }
         walk(b, dest)
     }
 
-    /** Tiles from her north-east corner, where the north spawns walk in. */
-    private fun fromCorner(c: CoordGrid): Int = maxOf(abs(c.x - ROOM_X - (MX1 + 1)), abs(ROOM_Y - c.z - (MT_Y - 1)))
+    /**
+     * Tiles from the bot's post by her north-east corner, where the north spawns walk in: the ranger north of her, the
+     * melee on her east side (room to line up its Dinh's without losing a swing).
+     */
+    private fun fromPost(b: Bot, c: CoordGrid): Int {
+        val (px, py) = if (!params.posts) MX1 + 1 to MT_Y - 1 else if (b.dps == MELEE_DPS) MX1 + 1 to MT_Y + 1 else MX1 to MT_Y - 1
+        return maxOf(abs(c.x - ROOM_X - px), abs(ROOM_Y - c.z - py))
+    }
 
-    /** The line the bot's next swing comes off: spent freezes and the surge skipped, a pile barrage not worth it as its fallback. */
+    /**
+     * The line the bot's next swing comes off: spent freezes, the surge and a ZCB it hasn't the energy for skipped, a
+     * pile barrage not worth it as its fallback.
+     */
     private fun upcoming(b: Bot): String {
         val tt = max(b.next, t)
-        val a = (b.step until b.seq.size).map { b.seq[it] }.firstOrNull { it != "surge" && !(it == "tfz" && tfzSpent(b, tt)) } ?: b.raw()
+        val spec = b.spec + if (!b.surged && "surge" in b.seq.drop(b.step)) SURGE_SPEC else 0
+        val a =
+            (b.step until b.seq.size).map { b.seq[it] }
+                .firstOrNull { it != "surge" && !(it == "tfz" && tfzSpent(b, tt)) && !(it == "zcbs" && spec < atkOf(it).spec) } ?: b.raw()
         if (a != "tpile") return a
         if (phase == 0) return "scythe"
         return if (pileWorth(tt, true, "pile").second * 2 >= params.pileWorth) a else "tbr"
@@ -436,8 +470,9 @@ class MaidenCrew(
 
     /**
      * The mage's spots east of her: tbows from any tile 9-10 out (they land in 4, so a proc off one leaves the barrage
-     * ready on the proc's first tick), a ZCB from 7-8, barrages from 6-7 - toward the middle rows, in reach of the north
-     * and south spawns alike. It stays put on any clean tile that fits, else takes the nearest, walked during the cooldown.
+     * ready on the proc's first tick), a ZCB from 7-8, barrages from 3-4 (by the clump, so they land sooner) - toward
+     * the middle rows, in reach of the north and south spawns alike. It stays put on any clean tile that fits, else
+     * takes the nearest, walked during the cooldown.
      */
     private fun mageStand(b: Bot): Boolean {
         val next = upcoming(b)
@@ -445,7 +480,7 @@ class MaidenCrew(
             when (next) {
                 "tbr" -> TBOW_GAP
                 "zcbs" -> REACH_OF.getValue("zcbs")
-                "tfz", "tpile" -> CASTER_GAP
+                "tfz", "tpile" -> params.casterGap
                 else -> return false
             }
         val here = room.real(b.player.coords)
@@ -738,6 +773,9 @@ class MaidenCrew(
                 else -> return a
             }
         if (line == null || (k != "scythe" && line.n < params.oblTargets)) return a
+        // a thrust that has to walk further than the swing it replaces would lose the tick (and the Dinh's behind it)
+        val here = room.real(b.player.coords)
+        if (maxOf(abs(line.x + ROOM_X - here.x), abs(ROOM_Y - line.y - here.z)) > RUN * max(0, tt - t)) return a
         return "obl:${c.key}:${line.x},${line.y}"
     }
 
@@ -1011,6 +1049,12 @@ class MaidenCrew(
             val after = plan.fz.drop(k + 1).firstOrNull { it !in done }
             if (after != null && lateBy && makesClumpLate(w, done, tt + atkOf("ibs").speed)) {
                 done += after
+                // the DPS hold her north and east: the one they can reach is the north one, so the mage takes the south
+                val south = crabRef("$after@$w")?.takeIf { id.startsWith('N') && after.startsWith('S') && tt > it.frozenTo }
+                if (south != null) {
+                    leave(plan, id, w, tt)
+                    return "ibs:$after@$w"
+                }
                 leave(plan, after, w, tt)
             }
             return "${if (plan.rush && k == 0) "ir" else "ibs"}:$id@$w"
@@ -1232,9 +1276,12 @@ class MaidenCrew(
     private fun magenta(): Int = MAG_STEPS.indexOfFirst { her.defenceLvl < it }.let { if (it < 0) 35 else 40 - it }
 
     private fun pushPast(q: Crab): Boolean {
-        if (phase == 0) return true
+        if (phase == 0) return !params.lateStragglers || reachOf(q) - t >= killTicks()
         return phase == 30 && q.frozenTo > 0 && q.hp < 50 && crabs.any { it !== q && inArea(it, q) }
     }
+
+    /** Roughly how long she lasts once the procs are done, with all three on her (a crab reaching her later doesn't matter). */
+    private fun killTicks(): Int = ceil(hp / (crew.count { it.player.hitpoints > 0 } * SCYTHE_MEAN / SWING)).toInt()
 
     /** A barrage on its way catches the crab (its 3x3 as the crab stands): it's as good as frozen. */
     private fun freezing(q: Crab): Boolean =
@@ -1627,11 +1674,10 @@ class MaidenCrew(
         const val MY1 = 14
         const val SWROW = 14
         const val TBOW_GAP = 10
-        const val CASTER_GAP = 7
         const val MAGE_ROW = 11
         const val MAGE_ROWS = 3
         const val SWING = 5
-        const val CORNER_NEAR = 3
+        const val POST_NEAR = 2
         const val SPLIT_HP = 40
         const val MELEE_DPS = 1
         const val STAND_SEARCH = 14
@@ -1781,6 +1827,9 @@ data class MaidenCrewParams(
     val walkWeight: Int = 30,
     val dinhWalk: Int = 2,
     val dodgeLead: Int = 1,
+    val lateStragglers: Boolean = true,
+    val posts: Boolean = true,
+    val casterGap: Int = 4,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
@@ -1801,6 +1850,9 @@ data class MaidenCrewParams(
                 dinhCap = int("dinhCap", d.dinhCap),
                 secondDinhMin = int("secondDinhMin", d.secondDinhMin),
                 straggleTicks = int("straggleTicks", d.straggleTicks),
+                lateStragglers = flag("lateStragglers", d.lateStragglers),
+                posts = flag("posts", d.posts),
+                casterGap = int("casterGap", d.casterGap),
                 redOffset = int("redOffset", d.redOffset),
                 walkWeight = int("walkWeight", d.walkWeight),
                 dinhWalk = int("dinhWalk", d.dinhWalk),
