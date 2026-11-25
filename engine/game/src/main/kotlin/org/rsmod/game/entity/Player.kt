@@ -98,6 +98,12 @@ public class Player(
 
     /** Work held until this tick's interaction has run (e.g. a weapon switch clicked with a special attack). */
     public val afterInteraction: ArrayList<() -> Unit> = ArrayList(0)
+
+    /**
+     * A stall (Spellbook Swap, Humidify) holds the player's path until this cycle while anything of theirs is queued or
+     * timed (in combat, always); a path walked to a click on something (an interaction already moving) carries on.
+     */
+    public var pathHeldUntil: Int = -1
     public val queueList: PlayerQueueList = PlayerQueueList()
     public val weakQueueList: PlayerQueueList = PlayerQueueList()
     public val engineQueueList: EngineQueueList = EngineQueueList()
@@ -372,7 +378,9 @@ public class Player(
         // the modal is closed. However, if you start an interaction and wait a cycle before
         // opening the modal, the player will not be halted.
         val hasOngoingInteraction = interaction != null && hasMovedPreviousCycle
-        return !hasOngoingInteraction && ui.modals.isNotEmpty() && hasPendingQueue
+        if (hasOngoingInteraction) return false
+        if (ui.modals.isNotEmpty() && hasPendingQueue) return true
+        return currentMapClock < pathHeldUntil && (hasPendingQueue || timerMap.isNotEmpty)
     }
 
     @InternalApi

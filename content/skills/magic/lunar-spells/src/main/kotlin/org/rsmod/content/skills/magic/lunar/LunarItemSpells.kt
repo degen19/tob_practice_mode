@@ -109,6 +109,7 @@ constructor(
         }
         anim("seq.dream_player_humidify_spell")
         spotanim("spotanim.dream_humidify_spell_spotanim", height = 92)
+        player.stall(SHORT_STALL)
         for (slot in slots) {
             val empty = HUMIDIFY.keys.first { inv[slot].isType(it) }
             invReplaceSlot(inv, slot, 1, HUMIDIFY.getValue(empty).objType())

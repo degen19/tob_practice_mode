@@ -679,7 +679,7 @@ class MaidenCrew(
     private fun phi(z: Double): Double = 1.0 / (1.0 + exp(-PHI_K * z))
 
     /**
-     * Players stall her hit on them a tick after their swing: a Spellbook Swap locks them till their next swing, and
+     * Players stall her hit on them a tick after their swing: a Spellbook Swap locks the three ticks up to their next swing, and
      * her hit, held till then, rebounds with that swing's damage - so a Vengeance that could take her past her proc
      * doesn't proc her off the swing tick. Not when the swing just landing procs her, nor with a crab to get to (the
      * swap's lock holds them still).
@@ -689,7 +689,7 @@ class MaidenCrew(
         if (!params.vengStall || b.dps == null || phase == 0 || b.order != null || b.next - t != SWING - 1) return false
         if (p.vars["varbit.vengeance_rebound"] != 1 || p.vars["varbit.spellbook"] != LUNARS || p.isDelayed) return false
         val (lands, max) = room.autos[p] ?: return false
-        if (lands - clock.cycle !in 0 until STALL_TICKS) return false
+        if (lands - clock.cycle !in 1 until STALL_TICKS) return false
         val due = inflight.filter { it.land >= t && it.mean > 0 }
         val gap = hp - full * phase / 100.0
         val mean = due.sumOf { it.mean }

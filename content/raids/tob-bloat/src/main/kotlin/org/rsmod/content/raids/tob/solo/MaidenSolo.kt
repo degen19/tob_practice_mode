@@ -276,12 +276,12 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val hitDelay = AUTO_DELAY + (dist - 1).coerceAtLeast(0) / 3
         // her shadow slides across the floor upright: no climb or drop, no arc
         proj(SHADOW_PROJ, maiden, p, delay = PROJ_START, speed = 0, startHeight = 0, endHeight = 0, angle = 0, offset = hitDelay * 30 - PROJ_START)
-        val lands = hitDelay - 1
+        val lands = hitDelay
         val max = floor(BASE_MAX + PER_LEAK * leaks).toInt()
         val roll = rand(0, max)
         // the drain is set on her attack tick, by the gear worn then (players flick a crossbow and quiver on for it)
         val drained = if (chance(0.5)) drainStats(p) else emptyList()
-        autos[p] = d.mapClock.cycle + hitDelay to (if (entryMode) max / 2 else max)
+        autos[p] = d.mapClock.cycle + lands - 1 to (if (entryMode) max / 2 else max)
         later(lands) {
             val q = p.takeIf { it in party() } ?: return@later
             val dmg = if (prays(q, "magic")) roll / 2 else roll
@@ -290,7 +290,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         }
     }
 
-    /** Her autos on their way: the cycle each lands on its target and the most it can hit. */
+    /** Her autos on their way: the cycle each lands on its target (the queue it's held in takes it a tick early) and the most it can hit. */
     val autos = HashMap<Player, Pair<Int, Int>>()
 
     /** Her drain goes on the combat stats of the target's highest accuracy bonus. */

@@ -51,7 +51,8 @@ class AstralContactScript @Inject constructor(private val caster: LunarCaster) :
         player.lastContact = contact.id
         anim(CAST_ANIM)
         spotanim(CAST_SPOTANIM, height = 92)
-        delay(CAST_TICKS)
+        player.stall(CONTACT_STALL)
+        delay(CONTACT_STALL + 1)
         resetAnim()
         startDialogue {
             chatNpcSpecific(contact.title, contact.head, mesanims.neutral, contact.line)
@@ -75,6 +76,5 @@ class AstralContactScript @Inject constructor(private val caster: LunarCaster) :
         const val INTERFACE = "interface.lunar_contact_npc"
         const val CAST_ANIM = "seq.lunar_human_magic_summon2"
         const val CAST_SPOTANIM = "spotanim.quest_lunar_spellbook_string_jewelery_spot_anim"
-        const val CAST_TICKS = 2
     }
 }
