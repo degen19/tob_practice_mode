@@ -655,9 +655,10 @@ object SoloBarrier {
         with(access) {
             val here = room.real(player.coords)
             val inside = room.inArena(here)
+            val watching = player in room.watchers
             if (!inside) {
                 if (room.cleared) return mes("The room is clear: head on.")
-                if (room.t < 0 && player !in noAsk) {
+                if (room.t < 0 && player !in noAsk && !watching) {
                     val choice = chatMenu("Is your party ready to fight?", "Yes, let's begin.", "No, don't start yet.")
                     if (choice != 0) return
                     SoloRespawn.save(player)
@@ -674,7 +675,7 @@ object SoloBarrier {
                     p.z in zs -> CoordGrid(if (p.x < xs.first) xs.last + 1 else xs.first - 1, p.z, p.level)
                     else -> return
                 }
-            if (!inside && room.t < 0) room.start()
+            if (!inside && room.t < 0 && !watching) room.start()
             val dir =
                 when {
                     dest.x > p.x -> constants.em_face_east
