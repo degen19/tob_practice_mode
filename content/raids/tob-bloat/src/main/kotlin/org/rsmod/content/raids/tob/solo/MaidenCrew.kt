@@ -282,7 +282,13 @@ class MaidenCrew(
             (-FLINCH..FLINCH).flatMap { dx -> (-FLINCH..FLINCH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
                 .filter { maxOf(abs(it.x - here.x), abs(it.z - here.z)) == FLINCH }
                 .filter { room.inArena(it) && !room.under(it) && !room.bloody(it) && !struck(it) && if (beside) room.besideHer(it) else room.gapToHer(it) in gap - 1..gap }
-                .minWithOrNull(compareBy({ if (b.dps != null) room.gapToHer(it) else abs(room.gapToHer(it) - gap) }, { if (b.dps != null) fromPost(b, it) else 0 })) ?: return false
+                .minWithOrNull(
+                    compareBy(
+                        { if (b.dps != null) room.gapToHer(it) else abs(room.gapToHer(it) - gap) },
+                        { if (b.dps != null) fromPost(b, it) else 0 },
+                        { if (b.dps != null && params.spawnSide) fromSpawns(it) else 0 },
+                    )
+                ) ?: return false
         trace { "t$t ${b.role} pre-dodges to ${to.x - ROOM_X},${ROOM_Y - to.z}" }
         walk(b, to)
         return true
@@ -355,6 +361,9 @@ class MaidenCrew(
         trace { "t$t ${b.role} moves to ${dest.x - ROOM_X},${ROOM_Y - dest.z} for ${c.key} (swing t$due)" }
         walk(b, dest)
     }
+
+    /** Tiles from where the north spawns come in past her corner (a DPS side-stepping keeps to their way). */
+    private fun fromSpawns(c: CoordGrid): Int = maxOf(abs(c.x - ROOM_X - (MX1 + 3)), abs(ROOM_Y - c.z - (MT_Y - 3)))
 
     /** Whether a scythe from ([sx], [sy]) on the crab at ([cx], [cy]) also catches her: her body on its arc's far tile. */
     private fun cleaves(sx: Int, sy: Int, cx: Int, cy: Int): Boolean {
@@ -698,8 +707,9 @@ class MaidenCrew(
     /**
      * The sim's freezer stand: with the next proc's list opening on a freeze, the mage won't start an attack that leaves
      * it on cooldown past the proc's first tick when that proc could come first (a 1 in 4 chance, from what's in flight
-     * and the scythes due) or she's within [STAND_PCT] of it. It stands, or preloads a barrage on a pile worth it when
-     * that's done before the others' next hits.
+     * and the scythes due) or she's within [STAND_PCT] of it. It stands, or preloads a barrage on a pile worth it: queued
+     * behind the DPS hits, it goes once they've landed without a proc, and only when it's off cooldown in time for a
+     * proc off their next ones - a proc off theirs gets the freezes on time instead.
      */
     private fun standFor(b: Bot, tt: Int): String? {
         if (room.phase >= WAVES.size) return null
@@ -710,7 +720,9 @@ class MaidenCrew(
         val by = tt + a.speed - 2
         if (!procRisk(tt, by) && hp * 100 - full * phase > full * STAND_PCT) return null
         val others = crew.filter { it !== b }.minOf { it.next }
-        if (tt + atkOf("tfz").speed <= others + 2 && pileWorth(tt, false).second >= params.preloadWorth) {
+        // queued behind the DPS hits: it goes only once their last swings have landed without a proc (seen two ticks on)
+        val seen = params.preloadSlack < 0 || crew.filter { it !== b && it.dps != null }.all { it.next - SWING + PROC_SEEN <= tt }
+        if (seen && tt + atkOf("tfz").speed <= others + PROC_SEEN + max(0, params.preloadSlack) && pileWorth(tt, false).second >= params.preloadWorth) {
             b.force = "ibs:pile"
             return null
         }
@@ -1680,6 +1692,7 @@ class MaidenCrew(
         const val SWING = 5
         const val POST_NEAR = 2
         const val SPLIT_HP = 40
+        const val PROC_SEEN = 2
         const val MELEE_DPS = 1
         const val STAND_SEARCH = 14
         const val CHUNK = 8
@@ -1832,6 +1845,8 @@ data class MaidenCrewParams(
     val posts: Boolean = true,
     val casterGap: Int = 4,
     val clumpFill: Boolean = false,
+    val spawnSide: Boolean = true,
+    val preloadSlack: Int = 0,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
@@ -1856,6 +1871,8 @@ data class MaidenCrewParams(
                 posts = flag("posts", d.posts),
                 casterGap = int("casterGap", d.casterGap),
                 clumpFill = flag("clumpFill", d.clumpFill),
+                spawnSide = flag("spawnSide", d.spawnSide),
+                preloadSlack = int("preloadSlack", d.preloadSlack),
                 redOffset = int("redOffset", d.redOffset),
                 walkWeight = int("walkWeight", d.walkWeight),
                 dinhWalk = int("dinhWalk", d.dinhWalk),
