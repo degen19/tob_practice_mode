@@ -334,14 +334,11 @@ constructor(
             else -> null
         }
 
-    /** `::tob watch [maiden]`: a bot trio plays the room (Nylocas unless named) and you watch from the doorway. */
+    /** `::tob watch [maiden]`: a bot trio plays the room (Nylocas unless named) and you watch from just outside it. */
     private val spectators = HashMap<SoloRoom, MutableList<Player>>()
     private var watchRuns = 0
 
     private fun watched(arg: String?): TobRoom = arg?.let { TobRoom.parse(it) }?.takeIf { it == TobRoom.MAIDEN } ?: TobRoom.NYLOCAS
-
-    /** Spectators waiting outside until their bots pass the barrier (so their room timer starts with the bots'). */
-    private val arriving = HashSet<Player>()
 
     /** Trios whose run is over, kept up while someone is still watching in the room. */
     private val finished = HashSet<SoloRoom>()
@@ -353,11 +350,10 @@ constructor(
         val room = startTrio("w${++watchRuns}", where, "") ?: return player.mes("No room for a bot trio right now.")
         spectators.getOrPut(room) { ArrayList() } += player
         room.watchers += player
-        arriving += player
         player.npcViewDistance = VIEW_DISTANCE
         player.playerViewDistance = VIEW_DISTANCE
-        org.rsmod.game.entity.util.PathingEntityCommon.telejump(player, d.collision, EXIT)
-        player.mes("A bot trio takes on ${where.label}; you'll watch from the doorway as they go in (nothing targets you).")
+        room.jump(player, room.at(room.entry))
+        player.mes("A bot trio takes on ${where.label}; you watch from outside the barrier with them (nothing targets you).")
     }
 
     private fun watching(player: Player): SoloRoom? = spectators.entries.firstOrNull { player in it.value }?.key
@@ -401,7 +397,6 @@ constructor(
         }
         for (p in spectators.remove(room) ?: emptyList()) {
             TobHud.close(p, d.eventBus)
-            arriving -= p
             p.npcViewDistance = null
             p.playerViewDistance = null
         }
@@ -490,10 +485,6 @@ constructor(
             if (hurt > 0) p.statAdd("stat.hitpoints", hurt, 0)
         }
         val watchers = spectators[room].orEmpty()
-        for (p in watchers.filter { it in arriving }) {
-            arriving -= p
-            if (p.isSlotAssigned) org.rsmod.game.entity.util.PathingEntityCommon.telejump(p, d.collision, room.at(room.entry))
-        }
         if (room in finished) {
             if (watchers.none { it.isSlotAssigned && room.contains(it.coords) }) endTrio(room)
             return

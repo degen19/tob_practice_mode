@@ -135,6 +135,7 @@ class MaidenCrew(
     private val swappedAt = HashMap<Player, Int>()
     private val thralled = HashSet<Player>()
     private val opened = HashSet<Player>()
+    private var charged = false
 
     override fun starts(): List<CoordGrid> = crew.indices.map { START_TILES[it % START_TILES.size] }
 
@@ -173,10 +174,12 @@ class MaidenCrew(
             return
         }
         t = room.t - 1
-        if (room.t == 0) {
+        if (!charged) {
+            charged = true
             for (b in crew) {
-                VarPlayerIntMapSetter.set(b.player, "varbit.vengeance_timelimit", 1)
-                b.player.queue(VENG_COOLDOWN, VENG_COOLDOWN_TICKS - VENG_LEAD)
+                if (b.role == NyloRole.Mage) continue
+                VarPlayerIntMapSetter.set(b.player, DC_COOLDOWN, 1)
+                b.player.queue(DC_EXPIRE, DC_LEFT)
             }
         }
         while (procAt.size < room.phase) {
@@ -195,7 +198,7 @@ class MaidenCrew(
             if (!p.isSlotAssigned || p.hitpoints <= 0) continue
             protect(b)
             if (p in flinching || !room.inArena(room.real(p.coords)) || t < FIRST_ACT) continue
-            if (b.role != NyloRole.Mage) spells(b)
+            if (b.role != NyloRole.Mage && spells(b)) continue
             if (stall(b)) continue
             stepRoute(b)
             if (t >= b.predodgeAt && t - b.predodgeAt <= PREDODGE_TICKS && predodge(b)) continue
@@ -237,7 +240,8 @@ class MaidenCrew(
     /**
      * Her next attack, as the sim has it: it goes at whoever is closest to her centre, so when someone with Vengeance up
      * isn't, the ones in front without it flinch two tiles out on her attack tick - if that puts the Vengeance player in
-     * front of them all, and none of them has a swing due that tick (players flinch between swings). Her target flicks a crossbow and quiver on for the tick, so her drain goes on Ranged.
+     * front of them all, and none of them has a swing due that tick (players flinch between swings). Anyone too low to
+     * take a prayed max hit flinches the same way behind someone who can. Her target flicks a crossbow and quiver on for the tick, so her drain goes on Ranged.
      */
     private fun herAttack(): Set<Player> {
         if (!room.attacksNext) return emptySet()
@@ -247,10 +251,13 @@ class MaidenCrew(
         val near = party.withIndex().map { (i, p) -> Triple(p, room.centreDist(room.real(p.coords)), i) }.sortedWith(compareBy({ it.second }, { it.third }))
         var target = near.first().first
         val flinching = HashSet<Player>()
-        for ((k, q) in near.withIndex()) {
-            if (q.first.vars["varbit.vengeance_rebound"] != 1) continue
+        val safe = { p: Player -> p.hitpoints > room.autoMax / 2 + TANK_MARGIN }
+        val tanks = near.indices.filter { near[it].first.vars["varbit.vengeance_rebound"] == 1 && safe(near[it].first) } + near.indices.filter { safe(near[it].first) }
+        for (k in tanks) {
+            if (k == 0) break
+            val q = near[k]
             val before = near.subList(0, k)
-            if (before.any { b -> b.first !in bots || b.first.actionDelay <= clock.cycle || !(q.second < b.second + FLINCH || (q.second == b.second + FLINCH && q.third < b.third)) }) break
+            if (before.any { b -> b.first !in bots || b.first.actionDelay <= clock.cycle || !(q.second < b.second + FLINCH || (q.second == b.second + FLINCH && q.third < b.third)) }) continue
             before.forEach { flinching += it.first }
             target = q.first
             break
@@ -668,7 +675,8 @@ class MaidenCrew(
         if (o.move == Move.Barrage && !onHer) barrages += land to o.target
     }
 
-    private fun spells(b: Bot) {
+    /** Its Lunar and Arceuus casts; true when it swaps books for a Death Charge (a stall of its own). */
+    private fun spells(b: Bot): Boolean {
         val p = b.player
         if (p in opened && p !in thralled) {
             if (p.vars["varbit.arceuus_resurrection_active"] == 1) {
@@ -684,14 +692,20 @@ class MaidenCrew(
                 bots.spell(p, SPELLBOOK_SWAP, SWAP_TO_ARCEUUS)
                 swappedAt[p] = t
             }
-            return
+            return false
         }
         if (p in thralled && p.vars["varbit.spellbook"] == ARCEUUS && p.vars["varbit.spellbook_swap_book"] == 1 && b.next - t == SWING - 1) {
-            bots.spell(p, if (p.vars["varbit.arceuus_death_charge_cooldown"] == 0) DEATH_CHARGE else MARK_OF_DARKNESS)
+            bots.spell(p, if (p.vars[DC_COOLDOWN] == 0) DEATH_CHARGE else MARK_OF_DARKNESS)
             trace { "t$t ${b.role} casts back to the Lunars" }
-            return
+            return false
+        }
+        if (p in thralled && p.vars[DC_COOLDOWN] == 0 && p.vars["varbit.spellbook"] == LUNARS && b.next - t == SWING - 1 && b.order == null && !p.isDelayed) {
+            trace { "t$t ${b.role} swaps back for a fresh Death Charge" }
+            bots.spell(p, SPELLBOOK_SWAP, SWAP_TO_ARCEUUS)
+            return true
         }
         if (p.vars["varbit.vengeance_rebound"] == 0 && p.vars["varbit.vengeance_timelimit"] == 0 && p.vars["varbit.spellbook"] == LUNARS) bots.spell(p, VENGEANCE)
+        return false
     }
 
     /**
@@ -2144,6 +2158,8 @@ class MaidenCrew(
         const val W_OUT = 1.2
         const val ORDER_TICKS = 6
         const val FLINCH = 2
+        /** Hitpoints over a prayed max hit that a tank keeps for the blood under it. */
+        const val TANK_MARGIN = 5
         const val PREDODGE_TICKS = 2
 
         /** Tiles a bot runs in the tick before its swing (the game walks it in and swings on the same tick). */
@@ -2151,10 +2167,10 @@ class MaidenCrew(
 
         /** A surge potion's special attack energy. */
         const val SURGE_SPEC = 25
-        const val VENG_COOLDOWN = "queue.vengeance_cooldown"
-        const val VENG_COOLDOWN_TICKS = 50
-        /** Ticks before the room starts that they cast the Vengeance they walk in with. */
-        const val VENG_LEAD = 5
+        const val DC_COOLDOWN = "varbit.arceuus_death_charge_cooldown"
+        const val DC_EXPIRE = "queue.death_charge_expire"
+        /** The Death Charge the DPS cast outside: about 55 of its 60 seconds left when the room starts. */
+        const val DC_LEFT = 92
 
         /** A crab with no more than this left can die to a hit landing first, taking a Dinh's on it as its target with it. */
         const val SAFE_HP = 30
