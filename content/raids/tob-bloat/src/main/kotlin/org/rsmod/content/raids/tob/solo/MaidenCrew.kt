@@ -1539,7 +1539,7 @@ class MaidenCrew(
                         !(q.hp <= SHARED_HP && designated(q, tt)?.let { it !== b } == true)
                 }
                 .map { it to reachOf(it) }
-                .filter { (q, r) -> r in tt + 1..tt + params.straggleTicks && canHit(b, q, tt) }
+                .filter { (q, r) -> (r in tt + 1..tt + params.straggleTicks || preThaw(q, tt)) && canHit(b, q, tt) }
                 .sortedWith(compareBy<Pair<Crab, Int>> { if (it.second <= tt + 5) 0 else 1 }.thenByDescending { it.first.hp }.thenBy { it.second })
                 .toList()
         for ((q, r) in st0) {
@@ -1576,11 +1576,11 @@ class MaidenCrew(
         )
     }
 
-    /** A healthy older crab out of its freeze by the swing and walking in before the swing after, that the bot can reach. */
+    /** A healthy older crab out of its freeze by the swing and walking in before the swing after (or thawing before the swing after, hit while it still stands), that the bot can reach. */
     private fun thawing(b: Bot, tt: Int): Crab? {
         val w = latestWave() ?: return null
         return crabs.filter { q ->
-            q.wave != w && q.frozenTo > 0 && q.frozenTo <= tt && q.hp >= SPLIT_HP && reachOf(q) in tt + 1..tt + SWING &&
+            q.wave != w && q.frozenTo > 0 && q.hp >= SPLIT_HP && ((q.frozenTo <= tt && reachOf(q) in tt + 1..tt + SWING) || preThaw(q, tt)) &&
                 !freezing(q) && !clumpCovers(q, tt) && canHit(b, q, tt) && !(q.hp <= SHARED_HP && designated(q, tt)?.let { it !== b } == true)
         }.maxByOrNull { it.hp }
     }
@@ -1631,6 +1631,13 @@ class MaidenCrew(
         val gap = maxOf(x - me[0], me[0] - (x + 1), y - me[1], me[1] - (y + 1), 0)
         return gap - 1 <= 2 * max(lead, tt - t)
     }
+
+    /**
+     * A healthy single still frozen when the swing lands, thawing before the swing after: once it walks it's out of
+     * reach before it heals her, so players hit it on the last swing while it stands.
+     */
+    private fun preThaw(q: Crab, tt: Int): Boolean =
+        q.frozenTo in tt + 1..tt + SWING && q.base !in THREES && q.base !in FOURS && q.hp >= SPLIT_HP && !pushPast(q)
 
     private fun clumpOf(q: Crab): String = if (q.base in THREES) "3s" else "4s"
 
