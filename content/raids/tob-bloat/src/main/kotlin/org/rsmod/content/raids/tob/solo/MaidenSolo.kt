@@ -251,7 +251,10 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
 
     /** Whether her next step is an attack (as a bot sees it between ticks). */
     val attacksNext: Boolean
-        get() = t >= FIRST_ATTACK && (t - FIRST_ATTACK) % ATTACK_EVERY == 0
+        get() = attacksAt(t)
+
+    /** Whether she attacks on room tick [tick]. */
+    fun attacksAt(tick: Int): Boolean = tick >= FIRST_ATTACK && (tick - FIRST_ATTACK) % ATTACK_EVERY == 0
 
     /** Her centre tile (real), and tiles from it: 3 is the red ring round her, 4 orange and so on. */
     val centre: CoordGrid

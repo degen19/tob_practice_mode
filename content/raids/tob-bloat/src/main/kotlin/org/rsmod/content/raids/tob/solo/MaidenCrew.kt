@@ -679,7 +679,10 @@ class MaidenCrew(
         if (o.move == Move.Barrage && !onHer) barrages += land to o.target
     }
 
-    /** Its Lunar and Arceuus casts; true when it swaps books for a Death Charge (a stall of its own). */
+    /**
+     * Its Lunar and Arceuus casts; true when it swaps books for a Death Charge: on the tick after a swing, so the stall
+     * ends as its next swing is due, and not when her attack falls inside it (no drain it can't flick for).
+     */
     private fun spells(b: Bot): Boolean {
         val p = b.player
         if (p in opened && p !in thralled) {
@@ -703,7 +706,7 @@ class MaidenCrew(
             trace { "t$t ${b.role} casts back to the Lunars" }
             return false
         }
-        if (p in thralled && p.vars[DC_COOLDOWN] == 0 && p.vars["varbit.spellbook"] == LUNARS && b.next - t == SWING - 1 && b.order == null && !p.isDelayed) {
+        if (p in thralled && p.vars[DC_COOLDOWN] == 0 && p.vars["varbit.spellbook"] == LUNARS && b.next - t == SWING - 1 && b.order == null && !p.isDelayed && (1..SHORT_STALL).none { room.attacksAt(t + 1 + it) }) {
             trace { "t$t ${b.role} swaps back for a fresh Death Charge" }
             bots.spell(p, SPELLBOOK_SWAP, SWAP_TO_ARCEUUS)
             return true
@@ -1567,7 +1570,7 @@ class MaidenCrew(
             }
         }
         val mdone = mage.tfzD[w]
-        val taken = covered(tt)
+        val taken = inflightKeys(tt)
         val planned = { q: Crab ->
             q.wave == w && tt > q.frozenTo &&
                 if (q.id in plan.fz) mdone?.contains(q.id) != true else if (q.base in THREES || q.base in FOURS) mdone?.contains(clumpOf(q)) != true else false
@@ -1581,7 +1584,7 @@ class MaidenCrew(
         val st0 =
             crabs.asSequence()
                 .filter { q ->
-                    (tt > q.frozenTo || q.frozenTo <= tt + 5 || preThaw(q, tt)) && !planned(q) && q.key !in taken && !clumpCovers(q, tt) && !dinCovers(q) && !pushPast(q) && !freezing(q) &&
+                    (tt > q.frozenTo || q.frozenTo <= tt + 5) && !planned(q) && q.key !in taken && !clumpCovers(q, tt) && !dinCovers(q) && !pushPast(q) && !freezing(q) &&
                         !(q.meta.rushed && mdone?.contains("4s") != true && q.wave == w) &&
                         !(q.wave == w && q.id in plan.left && crew.none { d -> d.dpsD[w]?.contains(q.id) == true }) &&
                         !(q.meta.scyBy >= 0 && q.meta.scyBy != b.i && q.hp <= SHARED_HP) &&
@@ -1684,16 +1687,11 @@ class MaidenCrew(
     }
 
     /**
-     * A healthy single still frozen when the swing lands, thawing before the swing after - or on its own (not in a pile
-     * the barrages and cleave take care of) and thawing within the swings it takes to kill: once it walks it's soon out
-     * of reach and heals her, so a DPS with nothing more pressing goes over and hits it while it stands.
+     * A healthy single still frozen when the swing lands, thawing before the swing after: once it walks it's out of
+     * reach before it heals her, so players hit it on the last swing while it stands.
      */
-    private fun preThaw(q: Crab, tt: Int): Boolean {
-        if (q.frozenTo <= tt) return false
-        val alone = !adjacent(q.x, q.y) && crabs.none { it !== q && inArea(it, q) }
-        val swings = if (alone) ceil(q.hp / CRAB_SWING.toDouble()).toInt() else 1
-        return q.frozenTo <= tt + SWING * swings && q.base !in THREES && q.base !in FOURS && q.hp >= SPLIT_HP && !pushPast(q)
-    }
+    private fun preThaw(q: Crab, tt: Int): Boolean =
+        q.frozenTo in tt + 1..tt + SWING && q.base !in THREES && q.base !in FOURS && q.hp >= SPLIT_HP && !pushPast(q)
 
     private fun clumpOf(q: Crab): String = if (q.base in THREES) "3s" else "4s"
 
@@ -1746,13 +1744,6 @@ class MaidenCrew(
      * Crabs being hit (in flight, or ordered this tick); barrages count only before they're cast, standing in for the
      * sim's freeze going on at once - a cast one has frozen its crab, and the sim's Dinh's pick never skips them.
      */
-    /** Crabs the hits on their way (or ordered) already take down to no more than a swing's worth. */
-    private fun covered(tt: Int): Set<String> {
-        val hits = inflight.filter { it.land >= tt && it.crab != null }.map { it.crab } + crew.mapNotNull { b -> b.order?.target?.takeIf { it !== her } }
-        val red = red()
-        return crabs.filter { q -> hits.count { it === q.npc } * CRAB_SWING >= q.hp - red }.map { it.key }.toSet()
-    }
-
     private fun inflightKeys(tt: Int, ordered: Boolean = true): Set<String> {
         val npcs = inflight.filter { it.land >= tt && it.crab != null }.map { it.crab } + crew.mapNotNull { b -> b.order?.takeIf { ordered || it.move != Move.Barrage }?.target?.takeIf { it !== her } }
         return crabs.filter { it.npc in npcs }.map { it.key }.toSet()
@@ -1805,7 +1796,6 @@ class MaidenCrew(
             val first = if (tgt == null) SPLAT.toDouble() else weight(tgt) * min(tgt.hp, 2 * SPLAT)
             first + live.filter { it !== tgt && near(x, y, it) }.map { weight(it) * min(it.hp, SPLAT) }.sortedDescending().take(DINH_HITS - 1).sum()
         }
-        val herNear = { x: Int, y: Int -> x - 5 <= MX1 && x + 5 >= MT_X && y - 5 <= MY1 && y + 5 >= MT_Y }
         val blocked = { x: Int, y: Int -> x < 0 || y < 0 || x > ROOM_W || y > ROOM_H || (x in MT_X..MX1 && y in MT_Y..MY1) }
         val under = { x: Int, y: Int -> live.any { x >= it.x && x <= it.x + 1 && y >= it.y && y <= it.y + 1 } }
         val opts = ArrayList<DinOpt>()
@@ -1823,8 +1813,8 @@ class MaidenCrew(
                 for ((x, y) in tiles) {
                     if (blocked(x, y) || under(x, y) || far(x, y)) continue
                     val n = live.count { near(x, y, it) }
-                    if (n < 2 && !herNear(x, y)) continue
-                    val sc = worth(c, x, y) + (if (c.wave == w0) 0.5 else 0.0) + if (herNear(x, y)) SPLAT else 0
+                    if (n < 2) continue
+                    val sc = worth(c, x, y) + if (c.wave == w0) 0.5 else 0.0
                     if (best == null || n > best.n || (n == best.n && sc > best.value)) best = DinOpt(c.key, intArrayOf(x, y), n, sc)
                 }
             }
@@ -2180,8 +2170,6 @@ class MaidenCrew(
         const val SHARED_HP = 60
         /** The 50s with both its N1 and N2 left to the DPS: both kill the N1, then the melee Dinh's the N2. */
         private val N_PAIR = setOf("N1", "N2")
-        /** A scythe swing's mean on a crab. */
-        const val CRAB_SWING = 35
         /** Dinh's worth per hp on a pile crab (barrages and cleave get it anyway) and on one frozen out of the pile (the double hit may save a scythe on it later). */
         const val W_PILE = 0.3
         const val W_OUT = 1.2
@@ -2197,6 +2185,8 @@ class MaidenCrew(
         /** A surge potion's special attack energy. */
         const val SURGE_SPEC = 25
         const val DC_COOLDOWN = "varbit.arceuus_death_charge_cooldown"
+        /** Spellbook Swap's stall: the ticks after the cast that it locks. */
+        const val SHORT_STALL = 3
         const val DC_EXPIRE = "queue.death_charge_expire"
         /** The Death Charge the DPS cast outside: about 55 of its 60 seconds left when the room starts. */
         const val DC_LEFT = 92
