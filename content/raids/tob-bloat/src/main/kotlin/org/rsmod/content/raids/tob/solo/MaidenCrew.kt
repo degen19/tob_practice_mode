@@ -855,6 +855,11 @@ class MaidenCrew(
                 }
                 return "scythe"
             }
+            // a crab that walks in before the swing after takes this swing; the ZCB waits for the next one
+            if (a == "zcbs" && b.dps != null && params.zcbYields) {
+                val r = dpsSwing(b, tt)
+                if (r.startsWith("scy") && ':' in r) return r
+            }
             if (a == "zcbs" && b.role == NyloRole.Mage && zcbProcs(tt)) {
                 trace { "t$tt Mage keeps its ZCB: it would proc her" }
                 return "tbr"
@@ -1178,7 +1183,7 @@ class MaidenCrew(
                     val lord = leftOrder(b, w, tt)
                     val dl = crew.firstOrNull { d -> d !== b && d.dps != null && d.raw() in DINH_LINES && d.spec >= DINH_COST && d.sw50 >= 1 && d.next <= tt + 1 }
                     val dk = if (dl != null) dinPick(0, from = dl) else null
-                    lord.withIndex().firstOrNull { (k, x) -> x !in done && rch(x) >= (if (k == 0) tt + 2 else tt + 1) && (k == 0 || dk?.key != "$x@$w") }?.value
+                    lord.withIndex().firstOrNull { (k, x) -> x !in done && rch(x) >= tt + 1 && (k == 0 || dk?.key != "$x@$w") }?.value
                 }
             }
         if (id != null && id !in done) {
@@ -1289,7 +1294,7 @@ class MaidenCrew(
     private fun magenta(): Int = MAG_STEPS.indexOfFirst { her.defenceLvl < it }.let { if (it < 0) 35 else 40 - it }
 
     private fun pushPast(q: Crab): Boolean {
-        if (phase == 0) return !params.lateStragglers || reachOf(q) - t >= killTicks()
+        if (phase == 0) return !params.lateStragglers || reachOf(q) - t >= killTicks() + params.killMargin
         return phase == 30 && q.frozenTo > 0 && q.hp < 50 && crabs.any { it !== q && inArea(it, q) }
     }
 
@@ -1847,6 +1852,8 @@ data class MaidenCrewParams(
     val clumpFill: Boolean = false,
     val spawnSide: Boolean = true,
     val preloadSlack: Int = 0,
+    val zcbYields: Boolean = false,
+    val killMargin: Int = 0,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
@@ -1873,6 +1880,8 @@ data class MaidenCrewParams(
                 clumpFill = flag("clumpFill", d.clumpFill),
                 spawnSide = flag("spawnSide", d.spawnSide),
                 preloadSlack = int("preloadSlack", d.preloadSlack),
+                zcbYields = flag("zcbYields", d.zcbYields),
+                killMargin = int("killMargin", d.killMargin),
                 redOffset = int("redOffset", d.redOffset),
                 walkWeight = int("walkWeight", d.walkWeight),
                 dinhWalk = int("dinhWalk", d.dinhWalk),
