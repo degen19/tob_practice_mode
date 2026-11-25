@@ -1229,7 +1229,8 @@ class MaidenCrew(
                     (tt > q.frozenTo || q.frozenTo <= tt + 5) && !planned(q) && q.key !in taken && !clumpCovers(q, tt) && !dinCovers(q) && !pushPast(q) && !freezing(q) &&
                         !(q.meta.rushed && mdone?.contains("4s") != true && q.wave == w) &&
                         !(q.wave == w && q.id in plan.left && crew.none { d -> d.dpsD[w]?.contains(q.id) == true }) &&
-                        !(q.meta.scyBy >= 0 && q.meta.scyBy != b.i && q.hp <= SHARED_HP)
+                        !(q.meta.scyBy >= 0 && q.meta.scyBy != b.i && q.hp <= SHARED_HP) &&
+                        !(q.hp <= SHARED_HP && designated(q, tt)?.let { it !== b } == true)
                 }
                 .map { it to reachOf(it) }
                 .filter { (q, r) -> r in tt + 1..tt + params.straggleTicks && canHit(b, q, tt) }
@@ -1249,12 +1250,32 @@ class MaidenCrew(
         return "scythe"
     }
 
+    /**
+     * Who takes a crab only worth one swing (both DPS due on it): the one with Death Charge up, then the one without
+     * Vengeance (that one stays on her to take her hit), then the one without a special due on that swing, then the
+     * nearer, then orb order.
+     */
+    private fun designated(q: Crab, tt: Int): Bot? {
+        val due = crew.filter { it.dps != null && it.player.hitpoints > 0 && abs(it.next - tt) <= 1 && reachOf(q) > it.next && canHit(it, q, max(it.next, t + 1)) }
+        if (due.size < 2) return due.firstOrNull()
+        val dist = { d: Bot -> room.real(d.player.coords).let { maxOf(abs(it.x - ROOM_X - q.x), abs(ROOM_Y - it.z - q.y)) } }
+        return due.minWithOrNull(
+            compareBy<Bot>(
+                { if (it.player.vars["varbit.arceuus_death_charge_active"] == 1) 0 else 1 },
+                { if (it.player.vars["varbit.vengeance_rebound"] == 1) 1 else 0 },
+                { if (atkOf(upcoming(it)).spec > 0) 1 else 0 },
+                { dist(it) },
+                { it.i },
+            )
+        )
+    }
+
     /** A healthy older crab out of its freeze by the swing and walking in before the swing after, that the bot can reach. */
     private fun thawing(b: Bot, tt: Int): Crab? {
         val w = latestWave() ?: return null
         return crabs.filter { q ->
             q.wave != w && q.frozenTo > 0 && q.frozenTo <= tt && q.hp >= SPLIT_HP && reachOf(q) in tt + 1..tt + SWING &&
-                !freezing(q) && !clumpCovers(q, tt) && canHit(b, q, tt)
+                !freezing(q) && !clumpCovers(q, tt) && canHit(b, q, tt) && !(q.hp <= SHARED_HP && designated(q, tt)?.let { it !== b } == true)
         }.maxByOrNull { it.hp }
     }
 
