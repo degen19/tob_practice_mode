@@ -65,6 +65,8 @@ class MaidenCrew(
         var surged = false
         var swungAt = 0
         var predodgeAt = -1
+        var aimed: Npc? = null
+        var aimedFor = -1
         var sw50 = 0
         var dinPos: IntArray? = null
         var dinNext: DinOpt? = null
@@ -100,7 +102,7 @@ class MaidenCrew(
         fun copy(x: Int = this.x, y: Int = this.y, hp: Int = this.hp) = Crab(npc, id, wave, x, y, hp, frozenTo, immuneTo, born, meta)
     }
 
-    private class WavePlan(val fz: List<String>, val left: List<String>, val rush: Boolean) {
+    private class WavePlan(val fz: List<String>, var left: List<String>, val rush: Boolean) {
         var lord: List<String>? = null
     }
 
@@ -115,6 +117,7 @@ class MaidenCrew(
     private val spawned = HashMap<Int, MutableSet<String>>()
     private val plans = HashMap<Int, WavePlan>()
     private val inflight = ArrayList<Inflight>()
+    private val barrages = ArrayList<Pair<Int, Npc>>()
     private val procAt = ArrayList<Int>()
     private var crabs: List<Crab> = emptyList()
     private var t = 0
@@ -164,6 +167,7 @@ class MaidenCrew(
         }
         snapshot()
         inflight.removeAll { it.land < t }
+        barrages.removeAll { it.first < t }
         for (b in crew) thrown(b)
         if (TRACING) for (b in crew) swung(b)
         val flinching = herAttack()
@@ -171,7 +175,7 @@ class MaidenCrew(
             val p = b.player
             if (!p.isSlotAssigned || p.hitpoints <= 0 || p in flinching || !room.inArena(room.real(p.coords)) || t < FIRST_ACT) continue
             if (b.role != NyloRole.Mage) spells(b)
-            if (t - b.predodgeAt <= PREDODGE_TICKS && predodge(b)) continue
+            if (t >= b.predodgeAt && t - b.predodgeAt <= PREDODGE_TICKS && predodge(b)) continue
             if (dodge(b)) continue
             val o = b.order
             if (o != null) {
@@ -193,6 +197,18 @@ class MaidenCrew(
             }
             decide(b)
         }
+        for (b in crew) unaimed(b)
+    }
+
+    /** A swing going off this cycle at a crab no order of this swing picked (the game's next swing on its last target) is stopped. */
+    private fun unaimed(b: Bot) {
+        val p = b.player
+        if (p.actionDelay > clock.cycle) return
+        val target = current(p)?.takeIf { it !== her } ?: return
+        if (b.aimed === target && b.aimedFor >= p.actionDelay) return
+        if (b.order?.let { it.target === target && !it.held } == true) return
+        trace { "t$t ${b.role} stray swing at ${crabs.firstOrNull { it.npc === target }?.key} stopped" }
+        p.clearInteractionRoute()
     }
 
     /**
@@ -219,7 +235,7 @@ class MaidenCrew(
         for (p in flinching) flinch(p)
         val tank = bots[target]
         if (tank != null && tank.player.actionDelay > clock.cycle) flick(tank.player)
-        if (tank != null && tank.player !in flinching) tank.predodgeAt = t
+        for (b in crew) if (b.player !in flinching) b.predodgeAt = t + 1
         trace { "t$t her attack: ${tank?.role ?: target.username}, flinching ${flinching.mapNotNull { bots[it]?.role }} ${near.joinToString { "${bots[it.first]?.role}:${it.second}" }}" }
         return flinching
     }
@@ -240,9 +256,10 @@ class MaidenCrew(
     }
 
     /**
-     * Players pre-dodge her: on her attack tick her target slides two tiles, so a blood throw at its tile lands behind
-     * it - along her side for a bot beside her, along its row for one at range (the same reach to her either way). A
-     * swing due now goes first and the step a tick later, still ahead of the splat.
+     * Players pre-dodge her: on her attack tick everyone slides two tiles, so a blood throw's spots (every player's tile,
+     * three round the furthest) land behind them - along her side for a bot beside her, at the same reach (or a tile
+     * closer) for one at range, clear of the others' tiles. A swing due now goes first and the step a tick
+     * later, still ahead of the splat.
      */
     private fun predodge(b: Bot): Boolean {
         val p = b.player
@@ -252,10 +269,14 @@ class MaidenCrew(
         val here = room.real(p.coords)
         val beside = room.besideHer(here)
         val gap = room.gapToHer(here)
+        val party = room.party().map { room.real(it.coords) }
+        val far = party.maxByOrNull { room.gapToHer(it) }
+        val struck = { c: CoordGrid -> c in party || (far != null && far != here && maxOf(abs(c.x - far.x), abs(c.z - far.z)) <= 1) }
         val to =
-            listOf(0 to FLINCH, 0 to -FLINCH, FLINCH to 0, -FLINCH to 0, FLINCH to FLINCH, FLINCH to -FLINCH, -FLINCH to FLINCH, -FLINCH to -FLINCH)
-                .map { (dx, dz) -> CoordGrid(here.x + dx, here.z + dz, here.level) }
-                .firstOrNull { room.inArena(it) && !room.under(it) && !room.bloody(it) && if (beside) room.besideHer(it) else room.gapToHer(it) == gap } ?: return false
+            (-FLINCH..FLINCH).flatMap { dx -> (-FLINCH..FLINCH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
+                .filter { maxOf(abs(it.x - here.x), abs(it.z - here.z)) == FLINCH }
+                .filter { room.inArena(it) && !room.under(it) && !room.bloody(it) && !struck(it) && if (beside) room.besideHer(it) else room.gapToHer(it) in gap - 1..gap }
+                .minByOrNull { abs(room.gapToHer(it) - gap) } ?: return false
         trace { "t$t ${b.role} pre-dodges to ${to.x - ROOM_X},${ROOM_Y - to.z}" }
         bots.walk(p, room.at(to))
         return true
@@ -316,7 +337,7 @@ class MaidenCrew(
         val dest =
             sides.filter { (sx, sy) -> sx in 0..ROOM_W && sy in 0..ROOM_H && !(sx in MT_X..MX1 && sy in MT_Y..MY1) }
                 .map { (sx, sy) -> CoordGrid(sx + ROOM_X, ROOM_Y - sy, here.level) }
-                .filter { !room.bloody(it) }
+                .filter { !room.bloody(it) && !room.blocked(it) && room.inArena(it) }
                 .minWithOrNull(compareBy({ if (room.besideHer(it)) 0 else 1 }, { maxOf(abs(it.x - here.x), abs(it.z - here.z)) })) ?: return
         trace { "t$t ${b.role} moves to ${dest.x - ROOM_X},${ROOM_Y - dest.z} for ${c.key} (swing t$due)" }
         bots.walk(b.player, room.at(dest))
@@ -349,7 +370,8 @@ class MaidenCrew(
         val tt = max(b.next, t)
         val a = (b.step until b.seq.size).map { b.seq[it] }.firstOrNull { it != "surge" && !(it == "tfz" && tfzSpent(b, tt)) } ?: b.raw()
         if (a != "tpile") return a
-        return if (pileWorth(tt, true, if (phase == 0) "old" else "pile").second * 2 >= params.pileWorth) a else if (phase == 0) "scythe" else "tbr"
+        if (phase == 0) return "scythe"
+        return if (pileWorth(tt, true, "pile").second * 2 >= params.pileWorth) a else "tbr"
     }
 
     /**
@@ -545,6 +567,7 @@ class MaidenCrew(
         val (mean, sd) = MEAN_HIT[o.move] ?: (0.0 to 0.0)
         val onHer = o.target === her
         inflight += Inflight(land, if (onHer) mean else 0.0, if (onHer) sd * sd else 0.0, o.target.takeIf { !onHer && o.move != Move.Barrage })
+        if (o.move == Move.Barrage && !onHer) barrages += land to o.target
     }
 
     private fun spells(b: Bot) {
@@ -646,6 +669,12 @@ class MaidenCrew(
 
     /** The sim's `procRisk`: a 1 in 4 chance or more that what lands by [by] takes her past her next proc. */
     private fun procRisk(tt: Int, by: Int): Boolean {
+        val (mean, v) = landing(tt, by)
+        return (hp - mean - RISK_Z * sqrt(v)) * 100 < full * phase
+    }
+
+    /** The mean and variance of what lands on her from [tt] to [by]: hits in flight and the DPS's scythes due. */
+    private fun landing(tt: Int, by: Int): Pair<Double, Double> {
         var mean = 0.0
         var v = 0.0
         for (h in inflight) if (h.land in tt..by && h.mean > 0) {
@@ -661,7 +690,18 @@ class MaidenCrew(
                 f += 5
             }
         }
-        return (hp - mean - RISK_Z * sqrt(v)) * 100 < full * phase
+        return mean to v
+    }
+
+    /**
+     * Whether the mage's ZCB would be what procs her (what else lands by then leaves her above it): a proc off its own
+     * spec puts its freezes a tick late, so it tbows and keeps the ZCB for after them.
+     */
+    private fun zcbProcs(tt: Int): Boolean {
+        if (phase == 0) return false
+        val left = hp - landing(tt, tt + LAND_DELAY.getValue(Move.Zcb) - 1).first
+        val line = full * phase / 100.0
+        return left >= line && left - min(ZCB_CAP, hp * ZCB_PCT / 100) < line
     }
 
     /**
@@ -742,10 +782,19 @@ class MaidenCrew(
                 }
                 return dpsSwing(b, tt)
             }
-            if (a == "tpile") {
-                val id = if (phase == 0) "old" else "pile"
-                return if (pileWorth(tt, true, id).second * 2 >= params.pileWorth) "ibs:$id" else if (phase == 0) "scythe" else "tbr"
+            // after the 30s the mage's freezes are its last barrages: on to her (the sim pulls up on the older piles)
+            if (a == "tpile" && phase == 0) {
+                if (!last) {
+                    b.step++
+                    continue
+                }
+                return "scythe"
             }
+            if (a == "zcbs" && b.role == NyloRole.Mage && zcbProcs(tt)) {
+                trace { "t$tt Mage keeps its ZCB: it would proc her" }
+                return "tbr"
+            }
+            if (a == "tpile") return if (pileWorth(tt, true, "pile").second * 2 >= params.pileWorth) "ibs:pile" else "tbr"
             if (a == "tfz" || a == "tdps") {
                 val r = if (a == "tfz") tfzPick(b, tt) else dpsSwing(b, tt)
                 if (r == "wait" || r == "tbr" || r == "ibs:old" || r?.startsWith("aya:") == true) return r
@@ -911,6 +960,7 @@ class MaidenCrew(
             if (tt < lp + FOURS_DUE) return false
         }
         val threes = (if (has3) ofWave(w, THREES) else ofWave(w, listOf("S2"))).filter { tt <= it.frozenTo }
+        if (threes.isEmpty() && w != 30 && tt < lp + FOURS_DUE) return false
         return if (threes.isNotEmpty()) mine.any { c -> threes.any { inArea(it, c) } } else mine.all { it.y + 1 == SWROW } && mine.all { c -> mine.all { inArea(c, it) } }
     }
 
@@ -937,7 +987,17 @@ class MaidenCrew(
             val c = crabRef("$id@$w")
             if (id == "S2" && anchorS2 && c != null && abs(c.y + 1 - SWROW) > 1 && reachOf(c) > tt + 1) return "wait"
             done += id
+            val lateBy = !anchorS2 && w != 30
+            if (c != null && lateBy && makesClumpLate(w, done, tt)) {
+                leave(plan, id, w, tt)
+                continue
+            }
             if (c == null || tt <= c.frozenTo) continue
+            val after = plan.fz.drop(k + 1).firstOrNull { it !in done }
+            if (after != null && lateBy && makesClumpLate(w, done, tt + atkOf("ibs").speed)) {
+                done += after
+                leave(plan, after, w, tt)
+            }
             return "${if (plan.rush && k == 0) "ir" else "ibs"}:$id@$w"
         }
         if (anchorS2 && w != 30 && "S2" in done && "aya" !in done) {
@@ -973,9 +1033,32 @@ class MaidenCrew(
                 }
                 return "tbr"
             }
+            if (w != 30 && "aya" !in done && tt + atkOf("aya").speed <= due) {
+                done += "aya"
+                val loose = crabs.filter { tt > it.frozenTo && it.base !in THREES && it.base !in FOURS }.maxByOrNull { it.hp }
+                return "aya:${loose?.key ?: "maiden"}"
+            }
             return "wait"
         }
         return null
+    }
+
+    /** A 1 / 2 the late mage won't get to goes to the DPS, as soon as that's known (they have the ticks to reach it). */
+    private fun leave(plan: WavePlan, id: String, w: Int, tt: Int) {
+        plan.left = plan.left + id
+        plan.lord = null
+        trace { "t$tt Mage leaves $id@$w to the DPS: the clump comes first" }
+    }
+
+    /**
+     * Whether freezing a 1 / 2 now leaves the next cast past the wave's clump tick (the 3s on proc + 11, the 4s on
+     * proc + 16): a mage late off the proc skips it for the DPS and keeps the 3s and 4s in one clump.
+     */
+    private fun makesClumpLate(w: Int, done: Set<String>, tt: Int): Boolean {
+        val lp = lastProc ?: return false
+        val which = listOf("3s", "4s").firstOrNull { it !in done && ofWave(w, if (it == "3s") THREES else FOURS).isNotEmpty() } ?: return false
+        val due = lp + if (which == "3s") THREES_DUE else FOURS_DUE
+        return tt < due && tt + atkOf("ibs").speed > due
     }
 
     /* ---- the DPS */
@@ -1029,7 +1112,7 @@ class MaidenCrew(
         val st0 =
             crabs.asSequence()
                 .filter { q ->
-                    (tt > q.frozenTo || q.frozenTo <= tt + 5) && !planned(q) && q.key !in taken && !clumpCovers(q, tt) && !dinCovers(q) && !pushPast(q) &&
+                    (tt > q.frozenTo || q.frozenTo <= tt + 5) && !planned(q) && q.key !in taken && !clumpCovers(q, tt) && !dinCovers(q) && !pushPast(q) && !freezing(q) &&
                         !(q.meta.rushed && mdone?.contains("4s") != true && q.wave == w) &&
                         !(q.wave == w && q.id in plan.left && crew.none { d -> d.dpsD[w]?.contains(q.id) == true }) &&
                         !(q.meta.scyBy >= 0 && q.meta.scyBy != b.i && q.hp <= SHARED_HP)
@@ -1085,6 +1168,10 @@ class MaidenCrew(
         if (phase == 0) return true
         return phase == 30 && q.frozenTo > 0 && q.hp < 50 && crabs.any { it !== q && inArea(it, q) }
     }
+
+    /** A barrage on its way catches the crab (its 3x3 as the crab stands): it's as good as frozen. */
+    private fun freezing(q: Crab): Boolean =
+        barrages.any { (land, npc) -> land > q.immuneTo && crabs.firstOrNull { it.npc === npc }?.let { inArea(it, q) } == true }
 
     private fun clumpCovers(q: Crab, tt: Int): Boolean {
         val w = latestWave() ?: return false
@@ -1338,6 +1425,8 @@ class MaidenCrew(
     private fun fire(b: Bot, o: Order) {
         val p = b.player
         o.walkTo = null
+        b.aimed = o.target
+        b.aimedFor = max(clock.cycle, p.actionDelay)
         trace { "t$t ${b.role} fires ${o.move} at ${crabs.firstOrNull { it.npc === o.target }?.key ?: "her"} from ${room.real(p.coords).let { "${it.x - ROOM_X},${ROOM_Y - it.z}" }} energy ${b.spec} delay ${p.actionDelay - clock.cycle} weapon ${p.worn[3]?.id}" }
         for ((slot, obj) in o.move.set.worn) {
             val id = obj.asRSCM(RSCMType.OBJ)
@@ -1405,6 +1494,8 @@ class MaidenCrew(
         val DINH_POOL = setOf("N1", "N2", "N3", "S1", "S2", "S3")
         val DINH_LINES = setOf("tdin", "dinhs")
         const val THREES_DUE = 11
+        const val ZCB_CAP = 110
+        const val ZCB_PCT = 22
         const val FOURS_DUE = 16
         const val OLD_PILE_HP = 100
         const val PILE_CRAB_CAP = 20

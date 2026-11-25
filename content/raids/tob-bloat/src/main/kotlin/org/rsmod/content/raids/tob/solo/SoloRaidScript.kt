@@ -75,6 +75,7 @@ constructor(
 
     override fun ScriptContext.startup() {
         raids.travel = { p, r, a -> travel(p, r, a) }
+        raids.rewatch = { p -> rewatch(p) }
         if (System.getenv("TOB_NODEATH") != null) org.rsmod.api.player.PracticeSettings.noDeaths = true
         onEvent<GameLifecycle.StartCycle> { tickRooms() }
         onEvent<GameLifecycle.LateCycle> {
@@ -129,12 +130,14 @@ constructor(
         val arg = args.getOrNull(0)?.lowercase() ?: return player.mes("::tob maiden | bloat | nylo | sote | xarpus | verzik | stop")
         when (arg) {
             "stop" -> {
+                if (stopWatching(player)) return
                 val room = raids.byOwner[player.username] ?: return player.mes("You're not in the Theatre.")
                 close(room)
                 org.rsmod.api.player.SurgeCooldown.clear(player)
                 TobHud.close(player, d.eventBus)
                 protectedAccess.launch(player) { telejump(EXIT, TeleportType.Exempt) }
                 player.npcViewDistance = null
+                player.playerViewDistance = null
                 player.mes("You leave the Theatre.")
             }
             "where" -> {
@@ -216,7 +219,8 @@ constructor(
         if (System.getenv("TOB_MAPDUMP") != null) dumpMap(solo)
         val (chestAt, angle) = solo.chest
         d.locRepo.add(solo.at(chestAt), CHEST, Int.MAX_VALUE, angle, LocShape.CentrepieceStraight)
-        player.npcViewDistance = NPC_VIEW
+        player.npcViewDistance = VIEW_DISTANCE
+        player.playerViewDistance = VIEW_DISTANCE
         TobHud.open(player, d.eventBus)
         val dest = solo.at(solo.entry)
         if (access != null) access.telejump(dest, TeleportType.Exempt) else protectedAccess.launch(player) { telejump(dest, TeleportType.Exempt) }
@@ -334,14 +338,59 @@ constructor(
 
     private fun watched(arg: String?): TobRoom = arg?.let { TobRoom.parse(it) }?.takeIf { it == TobRoom.MAIDEN } ?: TobRoom.NYLOCAS
 
-    /** Watching from your own room leaves it first, as ::tob stop does. */
+    /** Spectators waiting outside until their bots pass the barrier (so their room timer starts with the bots'). */
+    private val arriving = HashSet<Player>()
+
+    /** Trios whose run is over, kept up while someone is still watching in the room. */
+    private val finished = HashSet<SoloRoom>()
+
+    /** Watching from your own room (or another trio) leaves it first, as ::tob stop does. */
     private fun watch(player: Player, where: TobRoom) {
-        if (spectators.values.any { player in it }) return player.mes("You're already watching a trio.")
+        watching(player)?.let { endTrio(it) }
         raids.byOwner[player.username]?.let { close(it) }
         val room = startTrio("w${++watchRuns}", where, "") ?: return player.mes("No room for a bot trio right now.")
         spectators.getOrPut(room) { ArrayList() } += player
-        protectedAccess.launch(player) { telejump(room.at(room.entry), TeleportType.Exempt) }
-        player.mes("A bot trio takes on ${where.label}; you're watching from the doorway (nothing targets you).")
+        arriving += player
+        player.npcViewDistance = VIEW_DISTANCE
+        player.playerViewDistance = VIEW_DISTANCE
+        org.rsmod.game.entity.util.PathingEntityCommon.telejump(player, d.collision, EXIT)
+        player.mes("A bot trio takes on ${where.label}; you'll watch from the doorway as they go in (nothing targets you).")
+    }
+
+    private fun watching(player: Player): SoloRoom? = spectators.entries.firstOrNull { player in it.value }?.key
+
+    /** The potato's Restart room while watching: a fresh trio walks in from outside. */
+    private fun rewatch(player: Player): Boolean {
+        val room = watching(player) ?: return false
+        watch(player, room.id)
+        return true
+    }
+
+    private fun stopWatching(player: Player): Boolean {
+        val room = watching(player) ?: return false
+        endTrio(room)
+        protectedAccess.launch(player) { telejump(EXIT, TeleportType.Exempt) }
+        player.mes("You stop watching.")
+        return true
+    }
+
+    private fun endTrio(room: SoloRoom) {
+        val crew = listOf(room.owner) + room.helpers
+        trios.remove(room)
+        readied.remove(room)
+        finished.remove(room)
+        auto.remove(room.owner)
+        close(room)
+        for (p in crew) {
+            raids.undying -= p
+            SoloBarrier.noAsk -= p
+            bots.remove(p)
+        }
+        for (p in spectators.remove(room) ?: emptyList()) {
+            arriving -= p
+            p.npcViewDistance = null
+            p.playerViewDistance = null
+        }
     }
 
     private fun spawnCrewBot(name: String, role: NyloRole, sets: List<GearSet>, maiden: Boolean): Player? {
@@ -402,26 +451,24 @@ constructor(
             val hurt = p.statBase("stat.hitpoints") - p.stat("stat.hitpoints")
             if (hurt > 0) p.statAdd("stat.hitpoints", hurt, 0)
         }
-        trio.tick()
-        val linger = if (room in spectators) WATCH_LINGER else 0
-        val done = trio.doneAt()
-        if (done >= 0 && room.t >= done + linger) {
-            logger.info { "${room.id.name.lowercase()} trio ${room.owner.username}: ${trio.summary()}" }
-            trios.remove(room)
-            readied.remove(room)
-            auto.remove(room.owner)
-            close(room)
-            for (p in crew) {
-                raids.undying -= p
-                SoloBarrier.noAsk -= p
-                bots.remove(p)
-            }
-            for (p in spectators.remove(room) ?: emptyList()) {
-                if (!p.isSlotAssigned) continue
-                p.mes("The bots are done: ${trio.summary()}.")
-                protectedAccess.launch(p) { telejump(EXIT, TeleportType.Exempt) }
-            }
+        val watchers = spectators[room].orEmpty()
+        for (p in watchers.filter { it in arriving }) {
+            arriving -= p
+            if (p.isSlotAssigned) org.rsmod.game.entity.util.PathingEntityCommon.telejump(p, d.collision, room.at(room.entry))
         }
+        if (room in finished) {
+            if (watchers.none { it.isSlotAssigned && room.contains(it.coords) }) endTrio(room)
+            return
+        }
+        trio.tick()
+        val linger = if (watchers.isNotEmpty()) WATCH_LINGER else 0
+        val done = trio.doneAt()
+        if (done < 0 || room.t < done + linger) return
+        logger.info { "${room.id.name.lowercase()} trio ${room.owner.username}: ${trio.summary()}" }
+        val staying = watchers.filter { it.isSlotAssigned }
+        if (staying.isEmpty()) return endTrio(room)
+        for (p in staying) p.mes("The bots are done: ${trio.summary()}. Restart room on the potato for another run; ::tob stop to leave.")
+        finished += room
     }
 
     /** Crews whose bots have potted up outside the barrier. */
@@ -509,7 +556,8 @@ constructor(
 
     companion object {
         const val CHEST = "loc.tob_midway_chest_closed"
-        const val NPC_VIEW = 32
+        /** NPCs and players in a room drawn from this far (3x the game's 15): the whole room, end to end. */
+        const val VIEW_DISTANCE = 45
         const val SELF_TEST_AT = 30
         /** NPCs whose hits are judged when thrown (Vasilias's colour, Xarpus's gaze, a nylocas' damage on its way). */
         val QUEUE_WATCHED =

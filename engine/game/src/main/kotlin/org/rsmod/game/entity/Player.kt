@@ -211,6 +211,7 @@ public class Player(
     public var regionRebuildPending: Boolean = false
     public var lastMapBuildComplete: Int = Int.MIN_VALUE
     public var npcViewDistance: Int? = null
+    public var playerViewDistance: Int? = null
 
     public val activeAreas: ShortArraySet = ShortArraySet()
     public val pendingAreas: ShortArrayList = ShortArrayList()

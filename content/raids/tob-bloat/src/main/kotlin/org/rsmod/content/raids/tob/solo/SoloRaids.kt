@@ -107,6 +107,9 @@ class SoloRaids {
     /** Set by [SoloRaidScript]: take a player to a room (closing the one they're in); pass the script's access from inside one. */
     var travel: ((Player, TobRoom, ProtectedAccess?) -> Unit)? = null
 
+    /** Set by [SoloRaidScript]: the potato's Restart room for someone watching a bot trio (false: they aren't). */
+    var rewatch: ((Player) -> Boolean)? = null
+
     fun isLive(room: SoloRoom): Boolean = byOwner[room.owner.username] === room
 
     /** The map clock on the tick each player last stood on a room's exit line, by username (see [TobRoom.lineX]). */

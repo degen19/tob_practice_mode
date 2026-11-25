@@ -27,6 +27,7 @@ class RottenPotatoScript @Inject constructor(private val solo: SoloRaids) : Plug
         onOpHeld3(POTATO) { toggleNpcHp() }
         onOpHeld4(POTATO) { toggleSupplies() }
         onOpHeld5(POTATO) {
+            if (solo.rewatch?.invoke(player) == true) return@onOpHeld5 mes("A fresh trio heads in from outside.")
             val room = solo.forPlayer(player) ?: return@onOpHeld5 mes("You can only restart a room from inside the Theatre.")
             room.restart(this)
             mes("${room.id.label} restarted.")

@@ -28,6 +28,8 @@ class RspAvatarSync(private val infos: Infos) {
 
     private var knownNpcViewDistance: Int? = null
 
+    private var knownPlayerViewDistance: Int? = null
+
     private val knownWornObjCustomisations = mutableMapOf<Wearpos, WornObjCustomisation>()
 
     private val playerInfo
@@ -43,6 +45,7 @@ class RspAvatarSync(private val infos: Infos) {
 
     fun updateExtendedInfo(player: Player) {
         player.syncNpcViewDistance()
+        player.syncPlayerViewDistance()
         player.applyExactMove()
         player.applyPublicMessage()
         player.applyFacePathingEntity()
@@ -102,6 +105,15 @@ class RspAvatarSync(private val infos: Infos) {
             npcInfo.setZoneSearchRadius(maxOf(DEFAULT_NPC_ZONE_SEARCH_RADIUS, radius))
         }
         knownNpcViewDistance = distance
+    }
+
+    private fun Player.syncPlayerViewDistance() {
+        val distance = playerViewDistance
+        if (distance == knownPlayerViewDistance) {
+            return
+        }
+        playerInfo.avatar.setPreferredResizeRange(distance ?: DEFAULT_PLAYER_VIEW_DISTANCE)
+        knownPlayerViewDistance = distance
     }
 
     private fun Player.applyPublicMessage() {
@@ -344,5 +356,6 @@ class RspAvatarSync(private val infos: Infos) {
     private companion object {
         private const val ZONE_SIZE = 8
         private const val DEFAULT_NPC_ZONE_SEARCH_RADIUS = 3
+        private const val DEFAULT_PLAYER_VIEW_DISTANCE = 15
     }
 }

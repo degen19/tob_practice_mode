@@ -62,6 +62,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
 
     private val crabs = ArrayList<Crab>()
     private val splats = ArrayList<Splat>()
+    private val incoming = HashMap<CoordGrid, Int>()
     private val spawns = ArrayList<Spawn>()
     private val trails = LinkedHashMap<CoordGrid, Pair<LocInfo, Int>>()
 
@@ -74,6 +75,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         bled = 0
         crabs.clear()
         splats.clear()
+        incoming.clear()
         spawns.clear()
         trails.clear()
         maiden = spawn(PHASES[0], CoordGrid(X, Y, 0), hp(HP, entryHp(2500)))
@@ -299,20 +301,29 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         }
     }
 
+    /**
+     * Her blood throw (the wiki): a spot on every player's tile, and three on the one standing furthest from her - theirs
+     * and two beside it. Players step off as she throws, so the spots land where they stood.
+     */
     private fun throwBlood(p: Player) {
         maiden.anim(THROW_SEQ)
         recordAttack(maiden, 2)
-        val target = real(p.coords)
+        val party = party()
         val tiles = LinkedHashSet<CoordGrid>()
-        tiles += target
+        for (q in party) tiles += real(q.coords)
+        val far = party.maxByOrNull { boxDist(real(it.coords).x, real(it.coords).z, X, Y, X + SIZE - 1, Y + SIZE - 1) } ?: p
+        val at = real(far.coords)
+        var extra = 0
         var tries = 0
-        while (tiles.size < 3 && tries++ < 40) {
-            val c = CoordGrid(target.x + rand(-2, 2), target.z + rand(-2, 2), 0)
-            if (inArena(c) && boxDist(c.x, c.z, X, Y, X + SIZE - 1, Y + SIZE - 1) > 0 && !blocked(c)) tiles += c
+        while (extra < FAR_EXTRA && tries++ < 40) {
+            val c = CoordGrid(at.x + rand(-1, 1), at.z + rand(-1, 1), 0)
+            if (inArena(c) && boxDist(c.x, c.z, X, Y, X + SIZE - 1, Y + SIZE - 1) > 0 && !blocked(c) && tiles.add(c)) extra++
         }
         for (tile in tiles) {
             val lands = projTiles(BLOOD_PROJ, CoordGrid(X + SIZE / 2, Y + SIZE / 2, 0), tile, delay = PROJ_START, speed = BLOOD_SPEED, startHeight = 110, endHeight = 0, angle = 40)
+            incoming.merge(tile, 1, Int::plus)
             later(lands) {
+                incoming.computeIfPresent(tile) { _, n -> (n - 1).takeIf { it > 0 } }
                 gfx(SPLAT_GFX[rand(SPLAT_GFX.size)], tile)
                 splats += Splat(tile, t + SPLAT_TICKS)
             }
@@ -350,8 +361,8 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     /** Standing in her blood: it hurts, heals her 1:1 with the damage you take, and drains prayer. */
     private fun bleed(p: Player) {
         val dmg = rand(1, BLOOD_BASE + BLOOD_PER_LEAK * leaks)
-        // she heals exactly what the blood takes from you, as it lands
-        val dealt = hurt(p, dmg, source = maiden)
+        // she heals exactly what the blood takes from you, as it lands; sourceless, so Vengeance doesn't fire off it
+        val dealt = hurt(p, dmg)
         val hpBefore = p.hitpoints
         later(1) {
             bled += minOf(dealt, hpBefore)
@@ -426,7 +437,8 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     val tally = java.util.TreeMap<String, Int>()
 
     /** Whether her blood (a splat or a spawn's trail) is on [tile] (a real tile). */
-    fun bloody(tile: CoordGrid): Boolean = splats.any { it.tile == tile } || trails.containsKey(tile)
+    /** Blood on the tile, or a spot of hers still in the air for it. */
+    fun bloody(tile: CoordGrid): Boolean = splats.any { it.tile == tile } || trails.containsKey(tile) || incoming.containsKey(tile)
 
     /** Whether [tile] (a real tile) is under her. */
     fun under(tile: CoordGrid): Boolean = tile.x in X until X + SIZE && tile.z in Y until Y + SIZE
@@ -486,6 +498,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val BLOOD_BASE = 10
         const val BLOOD_PER_LEAK = 2
         const val SPLAT_TICKS = 10
+        const val FAR_EXTRA = 2
         const val TRAIL_TICKS = 42
         const val CRAB = "npc.maiden_elemental"
         const val CRAB_HP = 75
