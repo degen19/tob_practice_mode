@@ -78,7 +78,6 @@ constructor(
     val players: PlayerList,
     val eventBus: org.rsmod.events.EventBus,
     val bonuses: org.rsmod.api.player.bonus.WornBonuses,
-    val bossBar: org.rsmod.api.bossbar.plugin.BossHpBarScript,
 )
 
 /** Every live solo room, by owner. */

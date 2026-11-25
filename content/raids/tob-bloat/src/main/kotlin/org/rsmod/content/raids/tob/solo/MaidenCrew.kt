@@ -273,12 +273,17 @@ class MaidenCrew(
         return flinching
     }
 
+    /** Two tiles out from her centre, never onto her blood: straight out first, else the nearest clean tile as far. */
     private fun flinch(p: Player) {
         val here = room.real(p.coords)
         val dx = Integer.signum(here.x - room.centre.x).takeIf { it != 0 } ?: 1
         val dz = Integer.signum(here.z - room.centre.z)
+        val out = room.centreDist(here) + FLINCH
+        val ring = (-FLINCH..FLINCH).flatMap { ax -> (-FLINCH..FLINCH).map { az -> CoordGrid(here.x + ax, here.z + az, here.level) } }
+        val dest = (listOf(CoordGrid(here.x + dx * FLINCH, here.z + dz * FLINCH, here.level)) + ring.sortedBy { maxOf(abs(it.x - here.x - dx * FLINCH), abs(it.z - here.z - dz * FLINCH)) })
+            .firstOrNull { room.centreDist(it) >= out && room.inArena(it) && !room.blocked(it) && !room.bloody(it) } ?: return
         VarPlayerIntMapSetter.set(p, "varp.option_run", 1)
-        bots.walk(p, room.at(CoordGrid(here.x + dx * FLINCH, here.z + dz * FLINCH, here.level)))
+        bots.walk(p, room.at(dest))
     }
 
     private fun flick(p: Player) {
@@ -357,8 +362,9 @@ class MaidenCrew(
         val due = b.next
         if (due <= t) return
         val own = ownCrab(b, due)
-        // the sim's DPS on their one crab: her while the next swing still catches it, so the swing due goes on her from beside her
-        if (own != null && planOf(own.wave).left.size == 1 && !(own.wave == 50 && b.lists[2].any { it.startsWith("tdin") }) && reachOf(own) > due + SWING + 1) return toHer(b)
+        // the DPS on their one crab: her while the next swing still catches it as it steps beside her (Blert: that swing
+        // lands as she'd heal and kills it first), so the swing due goes on her from beside her
+        if (own != null && planOf(own.wave).left.size == 1 && !(own.wave == 50 && b.lists[2].any { it.startsWith("tdin") }) && reachOf(own) > due + SWING) return toHer(b)
         val c = own ?: nextCrab(b, due) ?: return toHer(b)
         var x = c.x
         var y = c.y
@@ -1559,7 +1565,7 @@ class MaidenCrew(
             }
         if (id != null && id !in done) {
             val c = crabRef("$id@$w")?.takeIf { canHit(b, it, tt) }
-            if (plan.left.size == 1 && !(w == 50 && b.lists[2].any { it.startsWith("tdin") }) && c != null && reachOf(c) > tt + SWING + 1 && !beside(b, c)) return "scythe"
+            if (plan.left.size == 1 && !(w == 50 && b.lists[2].any { it.startsWith("tdin") }) && c != null && reachOf(c) > tt + SWING && !beside(b, c)) return "scythe"
             if (c != null && reachOf(c) == tt + 1 && c.hp >= blue()) {
                 done += id
                 return "scys:${c.key}:${if (c.hp >= magenta()) "N" else "S"}"
