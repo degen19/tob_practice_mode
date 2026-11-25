@@ -780,7 +780,12 @@ class MaidenCrew(
                 "scyk", "scyc", "scys" -> crabRef(a.split(':')[1])?.takeIf { it.frozenTo >= tt + 1 }?.let { it to bestLine(b, it) } ?: return a
                 "scythe" ->
                     crabs.filter { it.frozenTo >= tt + 1 }
-                        .mapNotNull { q -> bestLine(b, q)?.takeIf { (params.oblHer && it.her && it.n >= 2) || (params.oblPileHp in 1..it.crabHp && it.n - (if (it.her) 1 else 0) >= 2) }?.let { q to it } }
+                        .mapNotNull { q ->
+                            bestLine(b, q)?.takeIf {
+                                (params.oblHer && it.her && it.n >= 2) || (params.oblPileHp in 1..it.crabHp && it.n - (if (it.her) 1 else 0) >= 2) ||
+                                    (params.oblStack && stacked(q) && it.n - (if (it.her) 1 else 0) >= 2)
+                            }?.let { q to it }
+                        }
                         .maxByOrNull { it.second.crabHp } ?: return a
                 else -> return a
             }
@@ -792,6 +797,10 @@ class MaidenCrew(
     }
 
     private class Line(val x: Int, val y: Int, val n: Int, val her: Boolean, val crabHp: Int)
+
+    /** A frozen crab with the same spawn from another proc frozen on its very tiles: one thrust takes both. */
+    private fun stacked(q: Crab): Boolean =
+        crabs.any { it.wave != q.wave && it.id == q.id && it.x == q.x && it.y == q.y && it.frozenTo > t && it.hp + q.hp >= STACK_HP }
 
     /** The tile beside [c] whose thrust through it hits the most (crabs, and her), nearest the bot on a tie. */
     private fun bestLine(b: Bot, c: Crab): Line? {
@@ -859,6 +868,10 @@ class MaidenCrew(
             if (a == "zcbs" && b.dps != null && params.zcbYields) {
                 val r = dpsSwing(b, tt)
                 if (r.startsWith("scy") && ':' in r) return r
+            }
+            // a healthy older crab thawing and walking in before the swing after takes this swing; the ZCB waits
+            if (a == "zcbs" && b.dps != null && params.thawYields) thawing(b, tt)?.let { q ->
+                return if (reachOf(q) == tt + 1) "scys:${q.key}:${if (q.hp >= magenta()) "N" else "S"}" else "scyk:${q.key}"
             }
             if (a == "zcbs" && b.role == NyloRole.Mage && zcbProcs(tt)) {
                 trace { "t$tt Mage keeps its ZCB: it would proc her" }
@@ -1234,6 +1247,15 @@ class MaidenCrew(
             }
         }
         return "scythe"
+    }
+
+    /** A healthy older crab out of its freeze by the swing and walking in before the swing after, that the bot can reach. */
+    private fun thawing(b: Bot, tt: Int): Crab? {
+        val w = latestWave() ?: return null
+        return crabs.filter { q ->
+            q.wave != w && q.frozenTo > 0 && q.frozenTo <= tt && q.hp >= SPLIT_HP && reachOf(q) in tt + 1..tt + SWING &&
+                !freezing(q) && !clumpCovers(q, tt) && canHit(b, q, tt)
+        }.maxByOrNull { it.hp }
     }
 
     /**
@@ -1698,6 +1720,7 @@ class MaidenCrew(
         const val POST_NEAR = 2
         const val SPLIT_HP = 40
         const val PROC_SEEN = 2
+        const val STACK_HP = 100
         const val MELEE_DPS = 1
         const val STAND_SEARCH = 14
         const val CHUNK = 8
@@ -1854,6 +1877,8 @@ data class MaidenCrewParams(
     val preloadSlack: Int = 0,
     val zcbYields: Boolean = false,
     val killMargin: Int = 0,
+    val thawYields: Boolean = false,
+    val oblStack: Boolean = false,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
@@ -1882,6 +1907,8 @@ data class MaidenCrewParams(
                 preloadSlack = int("preloadSlack", d.preloadSlack),
                 zcbYields = flag("zcbYields", d.zcbYields),
                 killMargin = int("killMargin", d.killMargin),
+                thawYields = flag("thawYields", d.thawYields),
+                oblStack = flag("oblStack", d.oblStack),
                 redOffset = int("redOffset", d.redOffset),
                 walkWeight = int("walkWeight", d.walkWeight),
                 dinhWalk = int("dinhWalk", d.dinhWalk),
