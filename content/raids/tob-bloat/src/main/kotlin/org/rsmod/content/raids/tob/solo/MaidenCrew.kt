@@ -64,6 +64,7 @@ class MaidenCrew(
         var din2Done = false
         var surged = false
         var swungAt = 0
+        var predodgeAt = -1
         var sw50 = 0
         var dinPos: IntArray? = null
         var force: String? = null
@@ -168,6 +169,7 @@ class MaidenCrew(
             val p = b.player
             if (!p.isSlotAssigned || p.hitpoints <= 0 || p in flinching || !room.inArena(room.real(p.coords)) || t < FIRST_ACT) continue
             if (b.role != NyloRole.Mage) spells(b)
+            if (t - b.predodgeAt <= PREDODGE_TICKS && predodge(b)) continue
             if (dodge(b)) continue
             val o = b.order
             if (o != null) {
@@ -209,6 +211,7 @@ class MaidenCrew(
         for (p in flinching) flinch(p)
         val tank = bots[target]
         if (tank != null && tank.player.actionDelay > clock.cycle) flick(tank.player)
+        if (tank != null && tank.player !in flinching) tank.predodgeAt = t
         trace { "t$t her attack: ${tank?.role ?: target.username}, flinching ${flinching.mapNotNull { bots[it]?.role }} ${near.joinToString { "${bots[it.first]?.role}:${it.second}" }}" }
         return flinching
     }
@@ -226,6 +229,27 @@ class MaidenCrew(
             val id = obj.asRSCM(RSCMType.OBJ)
             if (p.worn[slot.slot]?.id != id) bots.equip(p, slot.slot, id)
         }
+    }
+
+    /**
+     * Players pre-dodge her: on her attack tick her target slides two tiles, so a blood throw at its tile lands behind
+     * it - along her side for a bot beside her, along its row for one at range (the same reach to her either way). A
+     * swing due now goes first and the step a tick later, still ahead of the splat.
+     */
+    private fun predodge(b: Bot): Boolean {
+        val p = b.player
+        if (b.order != null || p.actionDelay <= clock.cycle + 1) return false
+        b.predodgeAt = -1
+        val here = room.real(p.coords)
+        val beside = room.besideHer(here)
+        val gap = room.gapToHer(here)
+        val to =
+            listOf(0 to FLINCH, 0 to -FLINCH, FLINCH to 0, -FLINCH to 0, FLINCH to FLINCH, FLINCH to -FLINCH, -FLINCH to FLINCH, -FLINCH to -FLINCH)
+                .map { (dx, dz) -> CoordGrid(here.x + dx, here.z + dz, here.level) }
+                .firstOrNull { room.inArena(it) && !room.under(it) && !room.bloody(it) && if (beside) room.besideHer(it) else room.gapToHer(it) == gap } ?: return false
+        trace { "t$t ${b.role} pre-dodges to ${to.x - ROOM_X},${ROOM_Y - to.z}" }
+        bots.walk(p, room.at(to))
+        return true
     }
 
     /**
@@ -376,7 +400,7 @@ class MaidenCrew(
         for ((m, v) in snap) m.scyBy = v
         b.dpsD.clear()
         b.dpsD.putAll(dd)
-        return if (a.startsWith("scy")) crabRef(a.split(':')[1]) else null
+        return if (a.startsWith("scy") && ':' in a) crabRef(a.split(':')[1]) else null
     }
 
     /** Ticks a bot has to run before the swing being picked (a dry run ahead of it). */
@@ -1291,6 +1315,7 @@ class MaidenCrew(
         const val W_S2 = 1.2
         const val ORDER_TICKS = 6
         const val FLINCH = 2
+        const val PREDODGE_TICKS = 2
 
         /** In over the barrier on tick 0, the sim's players start running in on tick 1 (a tbow prefire on 5). */
         const val FIRST_ACT = 1
