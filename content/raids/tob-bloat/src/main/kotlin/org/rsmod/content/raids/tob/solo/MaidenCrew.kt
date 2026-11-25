@@ -1877,8 +1877,8 @@ data class MaidenCrewParams(
     val preloadSlack: Int = 0,
     val zcbYields: Boolean = false,
     val killMargin: Int = 0,
-    val thawYields: Boolean = false,
-    val oblStack: Boolean = false,
+    val thawYields: Boolean = true,
+    val oblStack: Boolean = true,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
