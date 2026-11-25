@@ -139,7 +139,7 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
         val total = (if (id == TobRoom.MAIDEN) 0 else d.raids.raidTicks[owner.username] ?: 0) + t
         d.raids.raidTicks[owner.username] = total
         val mode = if (entryMode) "Entry" else "Normal"
-        owner.mes("Wave '${id.label}' ($mode Mode) complete! Duration: <col=ff0000>${raidTime(t)}</col> Total: <col=ff0000>${raidTime(total)}</col>")
+        mes("Wave '${id.label}' ($mode Mode) complete! Duration: <col=ff0000>${raidTime(t)}</col> Total: <col=ff0000>${raidTime(total)}</col>")
         owner.mes("The vampyres are impressed by your prowess. <col=ff0000>Check the chest</col> to see what they've sent you.")
         refresh(owner)
     }
@@ -246,6 +246,7 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     }
 
     private fun hud() {
+        for (w in watchers) if (w.isSlotAssigned) TobHud.update(w, progress())
         val p = player() ?: return
         TobHud.update(p, progress())
         if (id in TIMED_ROOMS) p.say("${if (instanceTick == 0) INSTANCE_CYCLE else instanceTick}")
@@ -327,6 +328,7 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     open fun reset() {
         cleanup()
         cleared = false
+        announced = false
         t = -1
         build()
     }
@@ -567,7 +569,13 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     var resets = 0
         internal set
 
-    fun mes(text: String) = owner.mes(text)
+    fun mes(text: String) {
+        owner.mes(text)
+        for (w in watchers) if (w.isSlotAssigned) w.mes(text)
+    }
+
+    /** Players watching (a bot trio's spectators): they get the room's messages and its HUD. */
+    val watchers = ArrayList<Player>()
 
     fun rand(n: Int): Int = d.random.of(0, n - 1)
 

@@ -1,5 +1,6 @@
 package org.rsmod.content.raids.tob.solo
 
+import org.rsmod.api.player.clearInteractionRoute
 import org.rsmod.api.player.righthand
 import org.rsmod.api.player.syncPrayerOverrides
 import com.github.michaelbull.logging.InlineLogger
@@ -322,15 +323,16 @@ constructor(
             room.helpers += bot!!
             org.rsmod.game.entity.util.PathingEntityCommon.telejump(bot, d.collision, room.at(room.entry))
         }
-        val members = crew.map { it.second!! to it.first }
-        trios[room] =
-            when (room) {
-                is MaidenSolo -> MaidenCrew(room, members, bots, d.mapClock, barrageButton, rushButton, MaidenCrewParams.parse(params))
-                is NyloSolo -> NyloCrew(room, members, bots, d.mapClock, barrageButton, NyloCrewParams.parse(params))
-                else -> return null
-            }
+        trios[room] = crewFor(room, crew.map { it.second!! to it.first }, params) ?: return null
         return room
     }
+
+    private fun crewFor(room: SoloRoom, members: List<Pair<Player, NyloRole>>, params: String): BotCrew? =
+        when (room) {
+            is MaidenSolo -> MaidenCrew(room, members, bots, d.mapClock, barrageButton, rushButton, MaidenCrewParams.parse(params))
+            is NyloSolo -> NyloCrew(room, members, bots, d.mapClock, barrageButton, NyloCrewParams.parse(params))
+            else -> null
+        }
 
     /** `::tob watch [maiden]`: a bot trio plays the room (Nylocas unless named) and you watch from the doorway. */
     private val spectators = HashMap<SoloRoom, MutableList<Player>>()
@@ -350,6 +352,7 @@ constructor(
         raids.byOwner[player.username]?.let { close(it) }
         val room = startTrio("w${++watchRuns}", where, "") ?: return player.mes("No room for a bot trio right now.")
         spectators.getOrPut(room) { ArrayList() } += player
+        room.watchers += player
         arriving += player
         player.npcViewDistance = VIEW_DISTANCE
         player.playerViewDistance = VIEW_DISTANCE
@@ -359,10 +362,19 @@ constructor(
 
     private fun watching(player: Player): SoloRoom? = spectators.entries.firstOrNull { player in it.value }?.key
 
-    /** The potato's Restart room while watching: a fresh trio walks in from outside. */
+    /** The potato's Restart room while watching: the room and its bots start over from outside the barrier; you stay put. */
     private fun rewatch(player: Player): Boolean {
         val room = watching(player) ?: return false
-        watch(player, room.id)
+        val crew = NyloRole.entries.zip(listOf(room.owner) + room.helpers)
+        room.reset()
+        finished -= room
+        readied -= room
+        val maiden = room.id == TobRoom.MAIDEN
+        for ((role, bot) in crew) {
+            refit(bot, role, maiden)
+            org.rsmod.game.entity.util.PathingEntityCommon.telejump(bot, d.collision, room.at(room.entry))
+        }
+        trios[room] = crewFor(room, crew.map { (role, bot) -> bot to role }, "") ?: return false
         return true
     }
 
@@ -381,12 +393,14 @@ constructor(
         finished.remove(room)
         auto.remove(room.owner)
         close(room)
+        room.watchers.clear()
         for (p in crew) {
             raids.undying -= p
             SoloBarrier.noAsk -= p
             bots.remove(p)
         }
         for (p in spectators.remove(room) ?: emptyList()) {
+            TobHud.close(p, d.eventBus)
             arriving -= p
             p.npcViewDistance = null
             p.playerViewDistance = null
@@ -394,9 +408,33 @@ constructor(
     }
 
     private fun spawnCrewBot(name: String, role: NyloRole, sets: List<GearSet>, maiden: Boolean): Player? {
+        val bot = bots.spawn(name, EXIT, NyloLoadout.worn(sets), packFor(role, sets, maiden)) ?: return null
+        kit(bot, role, maiden)
+        return bot
+    }
+
+    private fun packFor(role: NyloRole, sets: List<GearSet>, maiden: Boolean): List<String> {
         val extra = if (!maiden) emptyList() else if (role == NyloRole.Mage) NyloLoadout.ANCIENT_RUNES + NyloLoadout.SURGE + NyloLoadout.DIAMOND_BOLTS else NyloLoadout.LUNAR_RUNES + NyloLoadout.SURGE + NyloLoadout.BOOK
-        val pack = (NyloLoadout.pack(role, sets) + extra).distinct()
-        val bot = bots.spawn(name, EXIT, NyloLoadout.worn(sets), pack) ?: return null
+        return (NyloLoadout.pack(role, sets) + extra).distinct()
+    }
+
+    /** Back to a fresh bot's gear and pack (a restarted room: supplies, charges and ammo as they walked in with). */
+    private fun refit(bot: Player, role: NyloRole, maiden: Boolean) {
+        val sets = if (maiden) NyloLoadout.maidenSets(role) else NyloLoadout.sets(role)
+        for (slot in 0 until bot.worn.size) bot.worn[slot] = null
+        for (slot in 0 until bot.inv.size) bot.inv[slot] = null
+        for ((slot, obj) in NyloLoadout.worn(sets)) bot.worn[slot] = org.rsmod.game.inv.InvObj(obj)
+        for ((i, obj) in packFor(role, sets, maiden).withIndex()) bot.inv[i] = org.rsmod.game.inv.InvObj(obj)
+        kit(bot, role, maiden)
+        bot.clearInteractionRoute()
+        bot.resetFaceEntity()
+        bot.frozen = false
+        bot.actionDelay = d.mapClock.cycle
+        org.rsmod.api.player.SurgeCooldown.clear(bot)
+        bot.rebuildAppearance()
+    }
+
+    private fun kit(bot: Player, role: NyloRole, maiden: Boolean) {
         val stacks = NyloLoadout.SPELL_RUNES + NyloLoadout.CHINCHOMPAS + NyloLoadout.DIAMOND_BOLTS
         for (slot in 0 until bot.inv.size) {
             val obj = bot.inv[slot] ?: continue
@@ -411,7 +449,6 @@ constructor(
         val book = if (role == NyloRole.Mage) ANCIENTS else if (maiden) LUNARS else null
         book?.let { org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(bot, "varbit.spellbook", it) }
         bot.varMoveSpeed = org.rsmod.game.movement.MoveSpeed.Run
-        return bot
     }
 
     /** A bot walking in as a team does: fully potted (super combat, ranging, saturated heart), full spec, prayers up. */

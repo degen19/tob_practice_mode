@@ -68,6 +68,8 @@ class MaidenCrew(
         var swungAt = 0
         var predodgeAt = -1
         var aimed: Npc? = null
+        val route = ArrayDeque<CoordGrid>()
+        var routeAt: CoordGrid? = null
         var aimedFor = -1
         var sw50 = 0
         var dinPos: IntArray? = null
@@ -177,6 +179,7 @@ class MaidenCrew(
             val p = b.player
             if (!p.isSlotAssigned || p.hitpoints <= 0 || p in flinching || !room.inArena(room.real(p.coords)) || t < FIRST_ACT) continue
             if (b.role != NyloRole.Mage) spells(b)
+            stepRoute(b)
             if (t >= b.predodgeAt && t - b.predodgeAt <= PREDODGE_TICKS && predodge(b)) continue
             if (dodge(b)) continue
             val o = b.order
@@ -278,9 +281,9 @@ class MaidenCrew(
             (-FLINCH..FLINCH).flatMap { dx -> (-FLINCH..FLINCH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
                 .filter { maxOf(abs(it.x - here.x), abs(it.z - here.z)) == FLINCH }
                 .filter { room.inArena(it) && !room.under(it) && !room.bloody(it) && !struck(it) && if (beside) room.besideHer(it) else room.gapToHer(it) in gap - 1..gap }
-                .minByOrNull { if (b.dps != null) room.gapToHer(it) else abs(room.gapToHer(it) - gap) } ?: return false
+                .minWithOrNull(compareBy({ if (b.dps != null && !northEast(it)) 1 else 0 }, { if (b.dps != null) room.gapToHer(it) else abs(room.gapToHer(it) - gap) })) ?: return false
         trace { "t$t ${b.role} pre-dodges to ${to.x - ROOM_X},${ROOM_Y - to.z}" }
-        bots.walk(p, room.at(to))
+        walk(b, to)
         return true
     }
 
@@ -298,13 +301,13 @@ class MaidenCrew(
         val to =
             (-DODGE..DODGE).flatMap { dx -> (-DODGE..DODGE).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
                 .filter { it != here && room.inArena(it) && !room.under(it) && !room.bloody(it) && (!beside || room.besideHer(it)) }
-                .minWithOrNull(compareBy({ if (room.gapToHer(it) - 1 <= RUN) 0 else 1 }, { maxOf(abs(it.x - here.x), abs(it.z - here.z)) })) ?: return false
+                .minWithOrNull(compareBy({ if (room.gapToHer(it) - 1 <= RUN) 0 else 1 }, { if (b.dps != null && !northEast(it)) 1 else 0 }, { maxOf(abs(it.x - here.x), abs(it.z - here.z)) })) ?: return false
         trace { "t$t ${b.role} steps off blood to ${to.x - ROOM_X},${ROOM_Y - to.z}" }
         val o = b.order
         if (o != null) {
             b.order = Order(o.move, o.target, t, to, o.issued)
         }
-        bots.walk(p, room.at(to))
+        walk(b, to)
         return true
     }
 
@@ -342,7 +345,7 @@ class MaidenCrew(
                 .filter { !room.bloody(it) && !room.blocked(it) && room.inArena(it) }
                 .minWithOrNull(compareBy({ if (room.besideHer(it)) 0 else 1 }, { maxOf(abs(it.x - here.x), abs(it.z - here.z)) })) ?: return
         trace { "t$t ${b.role} moves to ${dest.x - ROOM_X},${ROOM_Y - dest.z} for ${c.key} (swing t$due)" }
-        bots.walk(b.player, room.at(dest))
+        walk(b, dest)
     }
 
     /**
@@ -355,17 +358,25 @@ class MaidenCrew(
         val next = upcoming(b)
         REACH_OF[next]?.let { reach ->
             val gap = room.gapToHer(here)
-            if (gap > reach) bots.walk(b.player, room.at(CoordGrid(here.x - (gap - reach), here.z, here.level)))
+            if (gap > reach) walk(b, CoordGrid(here.x - (gap - reach), here.z, here.level))
             return
         }
-        if (atkOf(next).style != 'm' || room.besideHer(here)) return
-        val dest =
+        if (atkOf(next).style != 'm') return
+        val beside = room.besideHer(here)
+        if (beside && northEast(here)) return
+        val dist = { c: CoordGrid -> maxOf(abs(c.x - here.x), abs(c.z - here.z)) }
+        val open =
             (-REACH..REACH).flatMap { dx -> (-REACH..REACH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
                 .filter { room.besideHer(it) && room.inArena(it) && !room.under(it) && !room.bloody(it) }
-                .minByOrNull { maxOf(abs(it.x - here.x), abs(it.z - here.z)) } ?: return
+        val nearest = open.minOfOrNull(dist) ?: return
+        val spare = RUN * (b.next - t - 1)
+        val dest = open.filter { northEast(it) && dist(it) <= maxOf(if (beside) 0 else nearest, spare) }.minByOrNull(dist) ?: if (beside) return else open.minByOrNull(dist) ?: return
         trace { "t$t ${b.role} moves beside her to ${dest.x - ROOM_X},${ROOM_Y - dest.z} (swing t${b.next})" }
-        bots.walk(b.player, room.at(dest))
+        walk(b, dest)
     }
+
+    /** North or east of her: where the N1 walks in (DPS stand there to reach it). */
+    private fun northEast(c: CoordGrid): Boolean = ROOM_Y - c.z < MT_Y || c.x - ROOM_X > MX1
 
     /** The line the bot's next swing comes off: spent freezes and the surge skipped, a pile barrage not worth it as its fallback. */
     private fun upcoming(b: Bot): String {
@@ -420,17 +431,17 @@ class MaidenCrew(
         val dest = CoordGrid(at[0] + ROOM_X, ROOM_Y - at[1], 0)
         if (room.real(b.player.coords) == dest) return
         trace { "t$t ${b.role} moves to ${at[0]},${at[1]} for its Dinh's (swing t${b.next})" }
-        bots.walk(b.player, room.at(dest))
+        walk(b, dest)
     }
 
     /**
-     * The sim's mage spots on her east side: tbows from 9-10 tiles (they land in 4, so a proc off one leaves the
-     * barrage ready on the proc's first tick), a ZCB from as far as it reaches (8: a tick sooner than the sim has it),
-     * barrages from the caster spot 7 out. Walked during the cooldown, a tile up or down the row when it's bloody.
+     * The mage's spots east of her: tbows from any tile 9-10 out (they land in 4, so a proc off one leaves the barrage
+     * ready on the proc's first tick), a ZCB from 7-8, barrages from 6-7 - toward the middle rows, in reach of the north
+     * and south spawns alike. It stays put on any clean tile that fits, else takes the nearest, walked during the cooldown.
      */
     private fun mageStand(b: Bot): Boolean {
         val next = upcoming(b)
-        val gap =
+        val far =
             when (next) {
                 "tbr" -> TBOW_GAP
                 "zcbs" -> REACH_OF.getValue("zcbs")
@@ -438,15 +449,16 @@ class MaidenCrew(
                 else -> return false
             }
         val here = room.real(b.player.coords)
-        val me = intArrayOf(here.x - ROOM_X, ROOM_Y - here.z)
-        val x = MX1 + gap
-        if (me[0] == x && abs(me[1] - MAGE_ROW) <= 1) return true
+        val fits = { c: CoordGrid ->
+            room.gapToHer(c) in far - 1..far && c.x - ROOM_X > MX1 && abs(ROOM_Y - c.z - MAGE_ROW) <= MAGE_ROWS && room.inArena(c) && !room.bloody(c)
+        }
+        if (fits(here)) return true
         val dest =
-            listOf(MAGE_ROW, MAGE_ROW - 1, MAGE_ROW + 1).map { CoordGrid(x + ROOM_X, ROOM_Y - it, here.level) }
-                .firstOrNull { !room.bloody(it) } ?: return true
-        if (dest == here) return true
-        trace { "t$t ${b.role} moves to $x,${ROOM_Y - dest.z} for its $next (swing t${b.next})" }
-        bots.walk(b.player, room.at(dest))
+            (-STAND_SEARCH..STAND_SEARCH).flatMap { dx -> (-STAND_SEARCH..STAND_SEARCH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
+                .filter(fits)
+                .minWithOrNull(compareBy({ maxOf(abs(it.x - here.x), abs(it.z - here.z)) }, { abs(ROOM_Y - it.z - MAGE_ROW) })) ?: return true
+        trace { "t$t ${b.role} moves to ${dest.x - ROOM_X},${ROOM_Y - dest.z} for its $next (swing t${b.next})" }
+        walk(b, dest)
         return true
     }
 
@@ -1429,26 +1441,109 @@ class MaidenCrew(
     private fun hold(b: Bot) {
         b.player.clearInteractionRoute()
         b.order = null
+        b.route.clear()
+    }
+
+    /**
+     * A scythe on her from off her side: the game walks to the nearest tile beside her, blood or not. When blood is that
+     * near, the bot runs to a clean one itself first - if its swing isn't due yet (the run costs nothing).
+     */
+    private fun cleanBeside(b: Bot): CoordGrid? {
+        val here = room.real(b.player.coords)
+        if (room.besideHer(here)) return null
+        val ticks = b.player.actionDelay - clock.cycle
+        if (ticks <= 0) return null
+        val dist = { c: CoordGrid -> maxOf(abs(c.x - here.x), abs(c.z - here.z)) }
+        val open =
+            (-REACH..REACH).flatMap { dx -> (-REACH..REACH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
+                .filter { room.besideHer(it) && room.inArena(it) && !room.under(it) }
+        val nearest = open.minOfOrNull(dist) ?: return null
+        if (open.none { dist(it) <= nearest && room.bloody(it) }) return null
+        return open.filter { !room.bloody(it) && dist(it) <= RUN * ticks }.minByOrNull(dist)
+    }
+
+    /** Walks [b] to [dest] (a real tile) never ending a tick in her blood: round it when the way runs through, two tiles a tick. */
+    private fun walk(b: Bot, dest: CoordGrid) {
+        b.route.clear()
+        b.routeAt = null
+        val path = safePath(room.real(b.player.coords), dest)
+        if (path == null || path.size <= RUN) return bots.walk(b.player, room.at(dest))
+        b.route.addAll(path)
+        stepRoute(b)
+    }
+
+    /** The route's next run (its tile at the end of this tick), while the bot is still where the last one left it. */
+    private fun stepRoute(b: Bot) {
+        if (b.route.isEmpty()) return
+        val at = b.routeAt
+        if (at != null && room.real(b.player.coords) != at) {
+            b.route.clear()
+            return
+        }
+        var end = b.route.removeFirst()
+        repeat(RUN - 1) { if (b.route.isNotEmpty()) end = b.route.removeFirst() }
+        b.routeAt = end
+        bots.walk(b.player, room.at(end))
+    }
+
+    /**
+     * The shortest walk from [from] to [to] round her whose tiles at the end of each tick (every second step, and the
+     * last) are clear of blood; null when there's none.
+     */
+    private fun safePath(from: CoordGrid, to: CoordGrid): List<CoordGrid>? {
+        if (from == to) return null
+        val open = { c: CoordGrid -> room.inArena(c) && !room.under(c) }
+        val prev = HashMap<Pair<CoordGrid, Int>, Pair<CoordGrid, Int>?>()
+        val queue = ArrayDeque<Pair<CoordGrid, Int>>()
+        val start = from to 0
+        prev[start] = null
+        queue += start
+        while (queue.isNotEmpty()) {
+            val cur = queue.removeFirst()
+            val (c, step) = cur
+            for (dx in -1..1) for (dz in -1..1) {
+                if (dx == 0 && dz == 0) continue
+                val n = CoordGrid(c.x + dx, c.z + dz, c.level)
+                if (!open(n) || (dx != 0 && dz != 0 && (!open(CoordGrid(c.x + dx, c.z, c.level)) || !open(CoordGrid(c.x, c.z + dz, c.level))))) continue
+                val s = (step + 1) % RUN
+                if ((s == 0 || n == to) && room.bloody(n) && n != to) continue
+                val key = n to s
+                if (key in prev) continue
+                prev[key] = cur
+                if (n == to) {
+                    val path = ArrayList<CoordGrid>()
+                    var k: Pair<CoordGrid, Int>? = key
+                    while (k != null && k != start) {
+                        path += k.first
+                        k = prev[k]
+                    }
+                    return path.reversed()
+                }
+                queue += key
+            }
+        }
+        return null
     }
 
     private fun act(b: Bot, move: Move, target: Npc, walkTo: CoordGrid? = null) {
         val p = b.player
-        // a special picked a tick early goes on the tick it's ready: switched in sooner, its spec bar doesn't hold
+        val to = walkTo ?: if (move == Move.Scythe && target === her) cleanBeside(b) else null
         // a special picked a tick early is clicked on the tick it's ready: switched in sooner, its spec toggle doesn't hold
-        val o = Order(move, target, t, walkTo?.takeIf { room.real(p.coords) != it }, max(clock.cycle, p.actionDelay), held = move.spec && p.actionDelay > clock.cycle)
+        val o = Order(move, target, t, to?.takeIf { room.real(p.coords) != it }, max(clock.cycle, p.actionDelay), held = move.spec && p.actionDelay > clock.cycle)
         b.order = o
         val dest = o.walkTo
         if (o.held) {
             // on its way in now with what it holds, so it's beside the target when the special goes
-            if (dest != null) bots.walk(p, room.at(dest)) else bots.attack(p, target)
+            if (dest != null) walk(b, dest) else bots.attack(p, target)
             return
         }
-        if (dest == null) fire(b, o) else bots.walk(p, room.at(dest))
+        if (dest == null) fire(b, o) else walk(b, dest)
     }
 
     private fun fire(b: Bot, o: Order) {
         val p = b.player
         o.walkTo = null
+        b.route.clear()
         b.aimed = o.target
         b.aimedFor = max(clock.cycle, p.actionDelay)
         trace { "t$t ${b.role} fires ${o.move} at ${crabs.firstOrNull { it.npc === o.target }?.key ?: "her"} from ${room.real(p.coords).let { "${it.x - ROOM_X},${ROOM_Y - it.z}" }} energy ${b.spec} delay ${p.actionDelay - clock.cycle} weapon ${p.worn[3]?.id}" }
@@ -1501,7 +1596,9 @@ class MaidenCrew(
         const val SWROW = 14
         const val TBOW_GAP = 10
         const val CASTER_GAP = 7
-        const val MAGE_ROW = 10
+        const val MAGE_ROW = 11
+        const val MAGE_ROWS = 3
+        const val STAND_SEARCH = 14
         const val CHUNK = 8
         const val CHUNK_Y0 = 3
         const val FAR_CHUNK = 99
