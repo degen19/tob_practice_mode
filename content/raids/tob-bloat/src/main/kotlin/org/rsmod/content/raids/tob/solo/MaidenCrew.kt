@@ -1636,7 +1636,8 @@ class MaidenCrew(
 
     /**
      * The wave's unfrozen 1s / 2s in the order the bot goes for them: the one reaching her first (both DPS on it), then
-     * the other - unless the other walks in before the swing after, when the melee takes it and the ranger the first.
+     * the other - unless the other walks in before the swing after, when the melee takes it and the ranger the first (not
+     * the 50s N1 and N2: both kill the N1, and the N2 is the melee's Dinh's).
      */
     private fun leftOrder(b: Bot, w: Int, tt: Int): List<String> {
         val plan = planOf(w)
@@ -1645,6 +1646,7 @@ class MaidenCrew(
         if (b.dps != MELEE_DPS || lord.size < 2) return lord
         val done = b.dpsD[w].orEmpty()
         val (first, second) = lord[0] to lord[1]
+        if (w == WAVES[1] && lord.toSet() == N_PAIR && rch(second) > tt + SWING + 1) return lord
         if (first in done || second in done || rch(second) !in tt + 1..tt + SWING) return lord
         return listOf(second, first) + lord.drop(2)
     }
@@ -1682,11 +1684,16 @@ class MaidenCrew(
     }
 
     /**
-     * A healthy single still frozen when the swing lands: once it thaws and walks it's soon out of reach and heals her,
-     * so a DPS with nothing more pressing goes over and hits it while it stands.
+     * A healthy single still frozen when the swing lands, thawing before the swing after - or on its own (not in a pile
+     * the barrages and cleave take care of) and thawing within the swings it takes to kill: once it walks it's soon out
+     * of reach and heals her, so a DPS with nothing more pressing goes over and hits it while it stands.
      */
-    private fun preThaw(q: Crab, tt: Int): Boolean =
-        q.frozenTo > tt && q.base !in THREES && q.base !in FOURS && q.hp >= SPLIT_HP && !pushPast(q)
+    private fun preThaw(q: Crab, tt: Int): Boolean {
+        if (q.frozenTo <= tt) return false
+        val alone = !adjacent(q.x, q.y) && crabs.none { it !== q && inArea(it, q) }
+        val swings = if (alone) ceil(q.hp / CRAB_SWING.toDouble()).toInt() else 1
+        return q.frozenTo <= tt + SWING * swings && q.base !in THREES && q.base !in FOURS && q.hp >= SPLIT_HP && !pushPast(q)
+    }
 
     private fun clumpOf(q: Crab): String = if (q.base in THREES) "3s" else "4s"
 
@@ -1817,7 +1824,7 @@ class MaidenCrew(
                     if (blocked(x, y) || under(x, y) || far(x, y)) continue
                     val n = live.count { near(x, y, it) }
                     if (n < 2 && !herNear(x, y)) continue
-                    val sc = worth(c, x, y) + if (c.wave == w0) 0.5 else 0.0
+                    val sc = worth(c, x, y) + (if (c.wave == w0) 0.5 else 0.0) + if (herNear(x, y)) SPLAT else 0
                     if (best == null || n > best.n || (n == best.n && sc > best.value)) best = DinOpt(c.key, intArrayOf(x, y), n, sc)
                 }
             }
@@ -2171,6 +2178,8 @@ class MaidenCrew(
         const val DINH_REACH = 5
         const val DINH_COST = 50
         const val SHARED_HP = 60
+        /** The 50s with both its N1 and N2 left to the DPS: both kill the N1, then the melee Dinh's the N2. */
+        private val N_PAIR = setOf("N1", "N2")
         /** A scythe swing's mean on a crab. */
         const val CRAB_SWING = 35
         /** Dinh's worth per hp on a pile crab (barrages and cleave get it anyway) and on one frozen out of the pile (the double hit may save a scythe on it later). */

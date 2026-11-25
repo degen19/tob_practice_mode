@@ -46,6 +46,12 @@ constructor(private val spells: MagicSpellRegistry, private val runes: MagicRune
     PluginScript() {
     override fun ScriptContext.startup() {
         onPlayerQueue(EXPIRE_QUEUE) { expire() }
+        org.rsmod.api.player.SpellResets.register { player ->
+            player.clearQueue(EXPIRE_QUEUE)
+            player.deathChargeCooldown = false
+            player.deathChargeActive = false
+            player.deathChargeCharges = 0
+        }
         onIfOverlayButton("component.magic_spellbook:death_charge") { cast() }
         onOpHeld1(RITE_OBJ) { readRite() }
     }

@@ -53,6 +53,11 @@ constructor(
         onIfOverlayButton("component.magic_spellbook:vengeance") { cast() }
         onEvent<PlayerHitEvents.Impact> { rebound(player, hit) }
         onPlayerQueue(COOLDOWN_QUEUE) { player.vengeanceCooldown = false }
+        org.rsmod.api.player.SpellResets.register { player ->
+            player.clearQueue(COOLDOWN_QUEUE)
+            player.vengeanceActive = false
+            player.vengeanceCooldown = false
+        }
         onPlayerLogin {
             player.vengeanceActive = false
             player.vengeanceCooldown = false

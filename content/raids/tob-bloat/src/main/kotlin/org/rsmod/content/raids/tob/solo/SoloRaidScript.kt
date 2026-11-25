@@ -353,6 +353,7 @@ constructor(
         player.npcViewDistance = VIEW_DISTANCE
         player.playerViewDistance = VIEW_DISTANCE
         room.jump(player, room.at(room.entry))
+        TobHud.open(player, d.eventBus)
         player.mes("A bot trio takes on ${where.label}; you watch from outside the barrier with them (nothing targets you).")
     }
 
@@ -421,6 +422,8 @@ constructor(
         for ((slot, obj) in NyloLoadout.worn(sets)) bot.worn[slot] = org.rsmod.game.inv.InvObj(obj)
         for ((i, obj) in packFor(role, sets, maiden).withIndex()) bot.inv[i] = org.rsmod.game.inv.InvObj(obj)
         kit(bot, role, maiden)
+        for (stat in BOT_STATS) bot.statMap.setCurrentLevel(stat, bot.statBase(stat).toByte())
+        org.rsmod.api.player.SpellResets.reset(bot)
         bot.clearInteractionRoute()
         bot.resetFaceEntity()
         bot.frozen = false
@@ -517,6 +520,7 @@ constructor(
         }
         if (room.instanceTick != Math.floorMod(TRIO_START_TICK - CLICK_LEAD, INSTANCE_CYCLE)) return
         val (tile, barrier) = room.findLocs(BARRIER).minByOrNull { (at, _) -> maxOf(kotlin.math.abs(at.x - room.entry.x), kotlin.math.abs(at.z - room.entry.z)) } ?: return
+        room.passAt = d.mapClock.cycle
         for (p in team) bots.opLoc(p, barrier.id, room.at(tile))
     }
 
@@ -599,6 +603,7 @@ constructor(
                 "npc.tob_xarpus_static", "npc.tob_xarpus_feeding")
         const val RUNES = 100_000
         val MELEE_STATS = listOf("stat.attack", "stat.strength", "stat.defence")
+        val BOT_STATS = MELEE_STATS + listOf("stat.hitpoints", "stat.ranged", "stat.magic", "stat.prayer")
         const val SUPER_COMBAT_BOOST = 5
         const val SUPER_COMBAT_PERCENT = 15
         const val RANGING_BOOST = 4
@@ -658,6 +663,7 @@ object SoloBarrier {
             val watching = player in room.watchers
             if (!inside) {
                 if (room.cleared) return mes("The room is clear: head on.")
+                if (watching && room.t < 0 && room.passAt != player.currentMapClock) return mes("Your party's leader goes in first.")
                 if (room.t < 0 && player !in noAsk && !watching) {
                     val choice = chatMenu("Is your party ready to fight?", "Yes, let's begin.", "No, don't start yet.")
                     if (choice != 0) return

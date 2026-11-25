@@ -78,6 +78,11 @@ constructor(
             onIfOverlayButton("component.magic_spellbook:${kind.component}") { cast(kind) }
         }
         onEvent<GameLifecycle.StartCycle> { tick() }
+        org.rsmod.api.player.SpellResets.register { player ->
+            live[player]?.let { dismiss(it, expired = false) }
+            cooldownUntil.remove(player)
+            player.thrallCooldown = false
+        }
         onPlayerLogin {
             player.thrallActive = false
             player.thrallCooldown = false
