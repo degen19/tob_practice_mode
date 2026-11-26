@@ -862,7 +862,8 @@ class MaidenCrew(
     private fun decide(b: Bot) {
         val tt = b.next
         curT = tt
-        val stand = if (b.role.freezes && b.force == null) standFor(b, tt) else null
+        // a four's mage rapid-bows on through (its freezes go a tick after the melee freeze's)
+        val stand = if (b.role.freezes && b.force == null && !(quad && b.role == NyloRole.Mage)) standFor(b, tt) else null
         val a = onTime(b, stand ?: obligate(b, nextAct(b, tt), tt), tt)
         b.walkedFor = null
         trace { "t$tt ${b.role}@${room.real(b.player.coords).let { "${it.x - ROOM_X},${ROOM_Y - it.z}" }} $a${if (a.startsWith("dinhs")) " from ${b.dinPos?.joinToString(",")}" else ""}" }
@@ -1280,7 +1281,7 @@ class MaidenCrew(
             val south =
                 when {
                     !here("N1") && here("S2") && w == WAVES[0] -> mutableListOf("rush:S2", "fill")
-                    !here("N1") && here("S2") && w == WAVES[1] -> mutableListOf("old", "S2")
+                    !here("N1") && w == WAVES[1] -> mutableListOf("old", if (here("S2")) "S2" else "fill")
                     else -> mutableListOf(if (here("N1")) "N1" else "fill", if (here("S2")) "S2" else "fill")
                 }
             val how: String
@@ -1330,7 +1331,7 @@ class MaidenCrew(
             when (it) {
                 "fill" -> {
                     idx += k
-                    return fill(b, w, tt)
+                    fill(b, w, tt)?.let { f -> return f }
                 }
                 "zcbs" -> {
                     idx += k
@@ -1372,14 +1373,18 @@ class MaidenCrew(
         return null
     }
 
-    /** A missing crab's slot: a tbow on the 70s; after, the melee freeze's ZCB (if it hasn't), else the old pile. */
-    private fun fill(b: Bot, w: Int, tt: Int): String {
+    /**
+     * A missing crab's slot: a tbow on the 70s; on the 50s a tbow, or the melee freeze's ZCB (if it hasn't); on the 30s
+     * straight on to the next freeze (null) - catching every crab comes first.
+     */
+    private fun fill(b: Bot, w: Int, tt: Int): String? {
         if (w == WAVES[0]) return "tbr"
+        if (w == WAVES[2]) return null
         if (b.role == NyloRole.Freezer && !b.zcbDone) {
             if (b.spec < atkOf("zcbs").spec && !b.surged) drink(b)
             if (b.spec >= atkOf("zcbs").spec) return "zcbs"
         }
-        return oldPile(w, tt) ?: "tbr"
+        return "tbr"
     }
 
     private fun oldPile(w: Int, tt: Int): String? {
@@ -1448,7 +1453,7 @@ class MaidenCrew(
     private fun chinPick(b: Bot, tt: Int): String? {
         val w = latestWave() ?: return null
         val st = b.chins.getOrPut(w) {
-            val pile = barragePrim("pile", tt)
+            val pile = clumpPrim(tt, false)
             val z = pile?.let { aoe3(it) } ?: emptyList()
             val n = if (pile == null) 0 else if (z.size >= CHIN_BIG_N && z.sumOf { it.hp } >= CHIN_BIG_HP) 5 else 3
             trace { "t$tt ${b.role} chins: $n at the clump (${z.size} crabs, ${z.sumOf { it.hp }} left)" }
@@ -1460,9 +1465,21 @@ class MaidenCrew(
             return "tba"
         }
         if (k >= n) return null
-        val target = (if (k == 0) barragePrim("old", tt) else barragePrim("4s", tt) ?: barragePrim("pile", tt)) ?: return null
+        val target = clumpPrim(tt, k > 0) ?: return null
         st[1]++
         return "${if (n == 3 && k == 0) "china" else "chin"}:${target.key}"
+    }
+
+    /**
+     * Where a chin goes: the clump - the older waves' 3s and 4s by her - or, with [newest], the newest 4s walking in to it
+     * (the clump if they're gone). Never a lone crab out by the spawns.
+     */
+    private fun clumpPrim(tt: Int, newest: Boolean): Crab? {
+        val w = latestWave() ?: return null
+        val clump = { c: Crab -> c.base in CLUMP_IDS && (newest || c.wave != w) }
+        val pick = { ok: (Crab) -> Boolean -> crabs.filter(ok).maxByOrNull { c -> aoe3(c).count(clump) * 100 + aoe3(c).sumOf { it.hp } } }
+        if (newest) pick { it.wave == w && it.base in FOURS_BASE }?.let { return it }
+        return pick { clump(it) && it.wave != w } ?: pick(clump)
     }
 
     /** The ranger after the 30s: a ZCB where its energy (with a surge) runs to one, else a claw spec; else nothing. */
@@ -2211,20 +2228,25 @@ class MaidenCrew(
                 .sortedWith(compareBy<Crab> { chunkOrder(prim.x, prim.y + 1, it.x, it.y + 1) }.thenByDescending { it.meta.entered }.thenBy { it.meta.idx })
                 .take(BARRAGE_CAP - 1)
 
-    private fun barragePrim(id: String, tt: Int): Crab? {
+    /**
+     * The crab a barrage on [id] goes at (its splash the most it can freeze); for a caster at [from], a crab it isn't
+     * under among the best (the game would push it out first).
+     */
+    private fun barragePrim(id: String, tt: Int, from: CoordGrid? = null): Crab? {
+        val under = { c: Crab -> from != null && (from.x - ROOM_X) in c.x..c.x + 1 && (ROOM_Y - from.z) in c.y..c.y + 1 }
         if (id == "old" || id == "pile") {
             val w = latestWave()
-            return crabs.filter { id == "pile" || it.wave != w }.maxByOrNull { c ->
+            return crabs.filter { id == "pile" || it.wave != w }.maxWithOrNull(compareBy<Crab> { c ->
                 val n = aoe3(c)
                 n.count { tt > it.immuneTo && tt > it.frozenTo } * 30 + n.sumOf { it.hp }
-            }
+            }.thenBy { if (under(it)) 0 else 1 })
         }
         if (id == "3s" || id == "4s") {
             val w = latestWave() ?: return null
-            return ofWave(w, if (id == "3s") THREES else FOURS).maxByOrNull { c ->
+            return ofWave(w, if (id == "3s") THREES else FOURS).maxWithOrNull(compareBy<Crab> { c ->
                 val n = aoe3(c)
                 n.count { tt > it.immuneTo && tt > it.frozenTo } * 100 + n.size
-            }
+            }.thenBy { if (under(it)) 0 else 1 })
         }
         return crabRef(id)
     }
@@ -2279,7 +2301,7 @@ class MaidenCrew(
     private fun perform(b: Bot, a: String, tt: Int) {
         val k = a.substringBefore(':')
         val ref = a.split(':').getOrNull(1)
-        val crab = ref?.let { if (k == "ibs" || k == "ir") barragePrim(it, tt) else crabRef(it) }
+        val crab = ref?.let { if (k == "ibs" || k == "ir") barragePrim(it, tt, room.real(b.player.coords)) else crabRef(it) }
         when (k) {
             "wait" -> hold(b)
             "tbr" -> act(b, Move.Tbow, her)
@@ -2738,6 +2760,8 @@ class MaidenCrew(
         val QUAD_LINES = setOf("qfz", "qscy", "qn12", "qs1", "qchin", "qspec")
         val N12 = listOf("N1", "N2")
         val S1S = listOf("S1")
+        val CLUMP_IDS = setOf("N3", "S3", "N4", "S4")
+        val FOURS_BASE = setOf("N4", "S4")
         const val QUAD_MAGE_GAP = 8
         const val CHIN_BIG_N = 4
         const val CHIN_BIG_HP = 150

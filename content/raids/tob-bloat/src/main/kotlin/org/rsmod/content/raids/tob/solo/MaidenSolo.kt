@@ -14,8 +14,8 @@ import kotlin.math.floor
 import kotlin.math.min
 
 /**
- * The Maiden of Sugadinti (2625 hitpoints and crabs of 75 for a trio and under, 3062 / 87 for a four, 3500 / 100 for a
- * five; blood spawns 90), for the owner and any
+ * The Maiden of Sugadinti (2625 hitpoints, crabs of 75 and blood spawns of 90 for a trio and under; 3062 / 87 / 105 for a
+ * four, as Blert's fours have; 3500 / 100 / 120 for a five), for the owner and any
  * bots raiding with them: each attack goes at one of the party at random.
  *
  * - She attacks every 10 ticks from tick 9, at whoever is closest to her centre (ties to the first in the party): Blackstorm at you (36 + 3.5 per crab that reached her; Protect from Magic
@@ -86,16 +86,19 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         maiden = spawn(PHASES[0], CoordGrid(X, Y, 0), hp(HP, entryHp(2500)))
     }
 
-    /** Her hitpoints and her crabs' by the party going in: 87.5% of the five-player 3500 / 100 for a four, 75% under. */
+    /** Her hitpoints, her crabs' and her blood spawns' by the party going in: 87.5% of the five's for a four, 75% under. */
     override fun onStart() {
-        val team = party().size
+        // the whole team, not just whoever's through the barrier on the tick she starts
+        val team = 1 + helpers.count { it.isSlotAssigned }
         val hp = hp(if (team >= 5) HP_5 else if (team == 4) HP_4 else HP, entryHp(2500))
         maiden.baseHitpointsLvl = hp
         maiden.hitpoints = hp
         crabHp = if (team >= 5) CRAB_HP_5 else if (team == 4) CRAB_HP_4 else CRAB_HP
+        spawnHp = if (team >= 5) SPAWN_HP_5 else if (team == 4) SPAWN_HP_4 else SPAWN_HP
     }
 
     private var crabHp = CRAB_HP
+    private var spawnHp = SPAWN_HP
 
     override fun floor(npc: Npc): Int? = if (npc === maiden && dead < 0) 1 else null
 
@@ -370,7 +373,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             if (t >= s.until) {
                 it.remove()
                 if (chance(if (s.stoodOn) 0.2 else 0.1)) {
-                    val n = spawn(BLOOD_SPAWN, s.tile, hp(SPAWN_HP))
+                    val n = spawn(BLOOD_SPAWN, s.tile, hp(spawnHp))
                     spawns += Spawn(n)
                 }
                 continue
@@ -571,6 +574,8 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val LEAK_DESPAWN = 2
         const val BLOOD_SPAWN = "npc.maiden_blood_slug"
         const val SPAWN_HP = 90
+        const val SPAWN_HP_4 = 105
+        const val SPAWN_HP_5 = 120
         const val AUTO_SEQ = "seq.maiden_attack_special"
         const val THROW_SEQ = "seq.maiden_attack_blood"
         const val DEATH_A = "seq.maiden_death_a"
