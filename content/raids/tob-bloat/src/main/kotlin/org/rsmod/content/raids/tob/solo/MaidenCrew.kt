@@ -1271,7 +1271,8 @@ class MaidenCrew(
      * freeze's ZCB) after. No N1 but an S2: on the 70s the mage ice rushes it, on the 50s it barrages the 70s N1 in the
      * pile first. Late to the first freeze: one tick, the late one also takes the 3s and the other the 4s (both a tick late:
      * the mage the 3s); two or more, the late one the 4s and the other the 3s. On the 30s a melee freeze on time that
-     * still has its ZCB to do throws it in a missing crab's slot, else after the 3s (the mage takes the 4s).
+     * still has its ZCB to do throws it in a missing crab's slot, else after the 3s (the mage takes the 4s). A proc while
+     * the melee freeze still owes the last wave's clump (a 9s): a mage with no N1 freezes its S1 first, then the S2.
      */
     private fun qPlan(w: Int): QPlan =
         qPlans.getOrPut(w) {
@@ -1282,10 +1283,12 @@ class MaidenCrew(
             val late = { b: Bot? -> b?.let { max(0, max(it.next, start.getValue(it.role)) - start.getValue(it.role)) } ?: 0 }
             val lN = late(frz)
             val lS = late(mage)
+            val owes = frz != null && owesOld(frz, w)
             val north = mutableListOf(if (here("S1")) "S1" else "fill", if (here("N2")) "N2" else "fill")
             val south =
                 when {
                     !here("N1") && here("S2") && w == WAVES[0] -> mutableListOf("rush:S2", "fill")
+                    !here("N1") && here("S1") && owes -> mutableListOf("S1", if (here("S2")) "S2" else "fill").also { north.removeAt(0) }
                     !here("N1") && w == WAVES[1] -> mutableListOf("old", if (here("S2")) "S2" else "fill")
                     else -> mutableListOf(if (here("N1")) "N1" else "fill", if (here("S2")) "S2" else "fill")
                 }
@@ -1429,6 +1432,14 @@ class MaidenCrew(
             done += id
             leave(planOf(w), id, w, tt)
         }
+    }
+
+    /** Whether [b] still has a clump of the wave before [w] to freeze (crabs of it unfrozen). */
+    private fun owesOld(b: Bot, w: Int): Boolean {
+        val ow = WAVES.getOrNull(WAVES.indexOf(w) - 1) ?: return false
+        val list = qPlans[ow]?.lists?.get(b.role) ?: return false
+        val idx = b.qI[ow].orEmpty()
+        return list.withIndex().any { (k, it) -> k !in idx && (it == "3s" || it == "4s") && ofWave(ow, if (it == "3s") THREES else FOURS).any { c -> t > c.frozenTo } }
     }
 
     private fun fzDone(w: Int): Set<String> = crew.filter { it.role.freezes }.flatMapTo(HashSet()) { it.tfzD[w].orEmpty() }
