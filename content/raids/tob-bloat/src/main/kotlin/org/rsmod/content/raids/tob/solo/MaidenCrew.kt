@@ -57,6 +57,9 @@ class MaidenCrew(
 
         val spec: Boolean
             get() = cost > 0
+
+        val melee: Boolean
+            get() = this == Scythe || this == Obligator || this == Dinh || this == Claws
     }
 
     /** A line's attack: its speed (ticks to the next), style, whether it goes at a crab, and its spec cost (in %). */
@@ -95,7 +98,7 @@ class MaidenCrew(
         fun owns(weapon: String): Boolean = weapon in OWNS.getValue(role)
     }
 
-    private class Order(val move: Move, val target: Npc, val at: Int, var walkTo: CoordGrid?, val issued: Int, var held: Boolean = false)
+    private class Order(val move: Move, val target: Npc, val at: Int, var walkTo: CoordGrid?, val issued: Int, var held: Boolean = false, var meeting: Boolean = false)
 
     private class Meta(val wave: Int, val idx: Int) {
         var chunk = ""
@@ -207,7 +210,9 @@ class MaidenCrew(
             val o = b.order
             if (o != null) {
                 if (o.target.isSlotAssigned && o.target.hitpoints > 0 && t - o.at <= ORDER_TICKS) {
-                    if (o.held) {
+                    if (o.meeting) {
+                        fire(b, o)
+                    } else if (o.held) {
                         if (p.actionDelay <= clock.cycle) {
                             o.held = false
                             o.walkTo = null
@@ -328,12 +333,13 @@ class MaidenCrew(
 
     /**
      * Off her blood: a bot standing in a splat or a trail, or where one is coming, steps to the nearest clean tile
-     * (beside her if it was), and its order goes on from there.
+     * (beside her if it was), and its order goes on from there - after a swing going off this tick.
      */
     private fun dodge(b: Bot): Boolean {
         val p = b.player
         val here = room.real(p.coords)
         if (!room.bloody(here) || b.order?.walkTo?.let { !room.bloody(it) } == true || p.routeDestination.isNotEmpty()) return false
+        if (p.actionDelay <= clock.cycle && (b.order != null || current(p) != null)) return false
         val beside = room.besideHer(here)
         val to =
             (-DODGE..DODGE).flatMap { dx -> (-DODGE..DODGE).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
@@ -364,14 +370,7 @@ class MaidenCrew(
         // lands as she'd heal and kills it first), so the swing due goes on her from beside her
         if (own != null && planOf(own.wave).left.size == 1 && !(own.wave == 50 && b.lists[2].any { it.startsWith("tdin") }) && reachOf(own) > due + SWING) return toHer(b)
         val c = own ?: nextCrab(b, due) ?: return toHer(b)
-        var x = c.x
-        var y = c.y
-        for (k in t + 1..due) {
-            if (k <= c.frozenTo || adjacent(x, y)) continue
-            val sw = y + 1
-            x -= 1
-            if (sw < SWROW) y++ else if (sw > SWROW) y--
-        }
+        val (x, y) = crabAt(c, due)
         val here = room.real(b.player.coords)
         val me = intArrayOf(here.x - ROOM_X, ROOM_Y - here.z)
         b.walkedFor = c.key
@@ -391,6 +390,26 @@ class MaidenCrew(
                 ) ?: return
         trace { "t$t ${b.role} moves to ${dest.x - ROOM_X},${ROOM_Y - dest.z} for ${c.key} (swing t$due)" }
         walk(b, dest)
+    }
+
+    /** A crab stands on [c] (a real tile) at [due]: a cast from under one has the game push them out first. */
+    private fun underCrab(c: CoordGrid, due: Int): Boolean {
+        val cx = c.x - ROOM_X
+        val cy = ROOM_Y - c.z
+        return crabs.any { q -> crabAt(q, due).let { (x, y) -> cx in x..x + 1 && cy in y..y + 1 } }
+    }
+
+    /** Where the crab is (its crew tile) by [due], walking in on her. */
+    private fun crabAt(c: Crab, due: Int): Pair<Int, Int> {
+        var x = c.x
+        var y = c.y
+        for (k in t + 1..due) {
+            if (k <= c.frozenTo || adjacent(x, y)) continue
+            val sw = y + 1
+            x -= 1
+            if (sw < SWROW) y++ else if (sw > SWROW) y--
+        }
+        return x to y
     }
 
     /** Tiles from where the north spawns come in past her corner (a DPS side-stepping keeps to their way). */
@@ -547,7 +566,7 @@ class MaidenCrew(
             }
         val here = room.real(b.player.coords)
         val fits = { c: CoordGrid ->
-            room.gapToHer(c) in far - 1..far && c.x - ROOM_X > MX1 && abs(ROOM_Y - c.z - MAGE_ROW) <= MAGE_ROWS && room.inArena(c) && !room.bloody(c)
+            room.gapToHer(c) in far - 1..far && c.x - ROOM_X > MX1 && abs(ROOM_Y - c.z - MAGE_ROW) <= MAGE_ROWS && room.inArena(c) && !room.bloody(c) && !underCrab(c, b.next)
         }
         if (fits(here)) return true
         val dest =
@@ -578,8 +597,10 @@ class MaidenCrew(
     }
 
     /** Whether the bot stands beside the crab (on a side, where it can swing at it). */
-    private fun beside(b: Bot, c: Crab): Boolean {
-        val r = room.real(b.player.coords)
+    private fun beside(b: Bot, c: Crab): Boolean = besideAt(room.real(b.player.coords), c)
+
+    /** A melee hit from [r] (a real tile) reaches the crab where the snapshot has it. */
+    private fun besideAt(r: CoordGrid, c: Crab): Boolean {
         val x = r.x - ROOM_X
         val y = ROOM_Y - r.z
         val gx = maxOf(c.x - x, x - (c.x + 1), 0)
@@ -2135,7 +2156,7 @@ class MaidenCrew(
         val dest = o.walkTo
         if (o.held) {
             // on its way in now with what it holds, so it's beside the target when the special goes
-            if (dest != null) walk(b, dest) else bots.attack(p, target)
+            if (dest != null) walk(b, dest) else if (target === her) bots.attack(p, target)
             return
         }
         if (dest == null) fire(b, o) else walk(b, dest)
@@ -2143,6 +2164,7 @@ class MaidenCrew(
 
     private fun fire(b: Bot, o: Order) {
         val p = b.player
+        if (!within(b, o)) return
         o.walkTo = null
         b.route.clear()
         b.aimed = o.target
@@ -2160,6 +2182,72 @@ class MaidenCrew(
             Move.Rush -> bots.cast(p, o.target, rush)
             else -> if (current(p) !== o.target || o.move.spec) bots.attack(p, o.target)
         }
+    }
+
+    /**
+     * Players walk themselves to where they and a crab meet and click it as it gets there, never letting the game drag
+     * them (onto blood, or out from under it): a melee hit on a crab walking in waits for it (its step beside them
+     * comes before their click), and anything else out of reach walks first to the nearest clean tile in reach. False
+     * while it waits or walks.
+     */
+    private fun within(b: Bot, o: Order): Boolean {
+        val p = b.player
+        if (o.target === her) return true
+        val waited = o.meeting
+        o.meeting = false
+        if (o.move == Move.Barrage || o.move == Move.Rush) {
+            val here = room.real(p.coords)
+            val d = castDist(here, o.target)
+            if (d > 0 && d <= CAST_RANGE && bots.sees(p.coords, o.target.coords, o.target.size)) return true
+            // from under it the game steps them out to the nearest tile clear of it first: fine unless that's blood
+            if (d == 0 && pushOuts(here, o.target).none { room.bloody(it) }) return true
+            // out of range or sight the game walks them in as it casts: fine with no blood that walk could end on
+            if (d > 0 && (-RUN..RUN).none { dx -> (-RUN..RUN).any { dz -> room.bloody(CoordGrid(here.x + dx, here.z + dz, here.level)) } }) return true
+            return walkFor(b, o) { castDist(it, o.target) in 1..CAST_RANGE && bots.sees(room.at(it), o.target.coords, o.target.size) }
+        }
+        if (!o.move.melee) return true
+        val c = crabs.firstOrNull { it.npc === o.target } ?: return true
+        if (besideAt(room.real(p.coords), c)) return true
+        if (c.frozenTo < t + 1 && p.actionDelay >= clock.cycle - MEET_WAIT) {
+            if (!waited) trace { "t$t ${b.role} waits for ${c.key} to meet it" }
+            o.meeting = true
+            return false
+        }
+        return walkFor(b, o) { besideAt(it, c) }
+    }
+
+    private fun walkFor(b: Bot, o: Order, ok: (CoordGrid) -> Boolean): Boolean {
+        val here = room.real(b.player.coords)
+        val to = (-REACH..REACH).flatMap { dx -> (-REACH..REACH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
+            .filter { room.inArena(it) && !room.under(it) && !room.blocked(it) && !room.bloody(it) && ok(it) }
+            .minByOrNull { maxOf(abs(it.x - here.x), abs(it.z - here.z)) } ?: return true
+        trace { "t$t ${b.role} walks to ${to.x - ROOM_X},${ROOM_Y - to.z} to reach ${crabs.firstOrNull { it.npc === o.target }?.key}" }
+        o.walkTo = to
+        walk(b, to)
+        return false
+    }
+
+
+    /** Tiles from [at] (a real tile) to the crab where it stands as the cast goes (0: under it). */
+    private fun castDist(at: CoordGrid, n: Npc): Int {
+        val (x0, z0) = footprint(n)
+        return maxOf(x0 - at.x, at.x - (x0 + n.size - 1), z0 - at.z, at.z - (z0 + n.size - 1), 0)
+    }
+
+    /** The crab's south-west tile (real) as the cast goes: where the snapshot has it. */
+    private fun footprint(n: Npc): Pair<Int, Int> {
+        val c = crabs.firstOrNull { it.npc === n } ?: return room.real(n.coords).let { it.x to it.z }
+        return c.x + ROOM_X to ROOM_Y - c.y - (n.size - 1)
+    }
+
+    /** The nearest tiles clear of the crab, for one under it. */
+    private fun pushOuts(at: CoordGrid, n: Npc): List<CoordGrid> {
+        val (x0, z0) = footprint(n)
+        val ring = (x0 - 1..x0 + n.size).flatMap { x -> (z0 - 1..z0 + n.size).map { z -> CoordGrid(x, z, at.level) } }
+            .filter { it.x !in x0 until x0 + n.size || it.z !in z0 until z0 + n.size }
+            .filter { room.inArena(it) && !room.under(it) && !room.blocked(it) }
+        val near = ring.minOfOrNull { maxOf(abs(it.x - at.x), abs(it.z - at.z)) } ?: return emptyList()
+        return ring.filter { maxOf(abs(it.x - at.x), abs(it.z - at.z)) == near }
     }
 
     private fun current(p: Player): Npc? = (p.interaction as? InteractionNpc)?.target
@@ -2302,6 +2390,8 @@ class MaidenCrew(
         val REACH_OF = mapOf("ralos" to 7, "zcbs" to 8, "zcb" to 8, "bp" to 5, "ax" to 7)
         val FLICK = listOf(dev.openrune.util.Wearpos.RightHand to "obj.zaryte_xbow", dev.openrune.util.Wearpos.Back to "obj.dizanas_quiver_infinite")
         const val WALK_TICKS = 3
+        const val CAST_RANGE = 10
+        const val MEET_WAIT = 1
         const val TALLIED = 4
         const val OBL_REACH = 3
         const val OBL_MAX = 3

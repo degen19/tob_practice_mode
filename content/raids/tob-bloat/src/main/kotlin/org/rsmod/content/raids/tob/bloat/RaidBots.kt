@@ -19,6 +19,7 @@ import org.rsmod.api.net.rsprot.handlers.OpNpcHandler
 import org.rsmod.api.random.GameRandom
 import org.rsmod.api.registry.player.PlayerRegistry
 import org.rsmod.api.registry.player.isSuccess
+import org.rsmod.api.route.RayCastValidator
 import org.rsmod.content.other.bots.BotLooks
 import org.rsmod.events.EventBus
 import org.rsmod.game.MapClock
@@ -53,6 +54,7 @@ constructor(
     private val opLoc: OpLocHandler,
     private val button: If3ButtonHandler,
     private val prayers: PrayerRepository,
+    private val rayCast: RayCastValidator,
 ) {
     private val bots = ArrayList<Player>()
     private var nextId = BOT_ID_BASE
@@ -122,6 +124,9 @@ constructor(
     fun cast(player: Player, npc: Npc, component: Int) {
         opNpcT.handle(player, OpNpcT(npc.slotId, false, CombinedId(component ushr 16, component and 0xFFFF), -1, -1))
     }
+
+    /** A spell or shot from [from] reaches an NPC of [size] at [to] (its south-west tile) without moving. */
+    fun sees(from: CoordGrid, to: CoordGrid, size: Int): Boolean = rayCast.hasLineOfSight(from, to, destWidth = size, destLength = size)
 
     /** Cast the spell on [component] (a spellbook button, packed) on another player. */
     fun cast(player: Player, target: Player, component: Int) {

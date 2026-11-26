@@ -448,22 +448,11 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     /** `TOB_TRIO_TRACE`: her damage taken by phase, attacker and hit type, for comparing with the sim. */
     val tally = java.util.TreeMap<String, Int>()
 
-    /**
-     * Her blood on [tile] (a real tile), a spot of hers still in the air for it, or a blood spawn on it or stepping onto
-     * it (it leaves its trail where it stood).
-     */
-    fun bloody(tile: CoordGrid): Boolean =
-        splats.any { it.tile == tile } || trails.containsKey(tile) || incoming.containsKey(tile) || spawns.any { s -> s.npc.isSlotAssigned && s.npc.hitpoints > 0 && treads(s.npc, tile) }
+    /** Her blood on [tile] (a real tile), or a spot of hers still in the air for it. */
+    fun bloody(tile: CoordGrid): Boolean = splats.any { it.tile == tile } || trails.containsKey(tile) || incoming.containsKey(tile)
 
     /** A live blood spawn on [tile] (a real tile). */
     fun spawnOn(tile: CoordGrid): Boolean = spawns.any { s -> s.npc.isSlotAssigned && s.npc.hitpoints > 0 && real(s.npc.coords) == tile }
-
-    private fun treads(n: Npc, tile: CoordGrid): Boolean {
-        val r = real(n.coords)
-        if (r == tile) return true
-        val dest = n.routeDestination.lastOrNull()?.let { real(it) } ?: return false
-        return CoordGrid(r.x + Integer.signum(dest.x - r.x), r.z + Integer.signum(dest.z - r.z), r.level) == tile
-    }
 
     /** Whether [tile] (a real tile) is under her. */
     fun under(tile: CoordGrid): Boolean = tile.x in X until X + SIZE && tile.z in Y until Y + SIZE
