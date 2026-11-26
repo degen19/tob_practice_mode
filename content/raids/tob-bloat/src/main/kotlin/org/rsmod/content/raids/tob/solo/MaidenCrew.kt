@@ -42,6 +42,10 @@ class MaidenCrew(
 ) : BotCrew {
     enum class Move(val set: GearSet, val stance: Int, val cost: Int = 0, val ammo: String? = null) {
         Tbow(NyloLoadout.TBOW, 1),
+        TbowAcc(NyloLoadout.TBOW, 0),
+        Maul(NyloLoadout.MAUL, 0, 500),
+        Chins(NyloLoadout.CHINS, 1),
+        ChinsAcc(NyloLoadout.CHINS, 0),
         Blowpipe(NyloLoadout.BLOWPIPE, 1),
         Crossbows(NyloLoadout.CROSSBOWS, 1, ammo = NyloLoadout.DIAMOND_BOLTS),
         Ralos(NyloLoadout.RALOS, 1, 500),
@@ -59,7 +63,7 @@ class MaidenCrew(
             get() = cost > 0
 
         val melee: Boolean
-            get() = this == Scythe || this == Obligator || this == Dinh || this == Claws
+            get() = this == Scythe || this == Obligator || this == Dinh || this == Claws || this == Maul
     }
 
     /** A line's attack: its speed (ticks to the next), style, whether it goes at a crab, and its spec cost (in %). */
@@ -67,7 +71,7 @@ class MaidenCrew(
 
     private inner class Bot(val player: Player, val role: NyloRole, val i: Int) {
         val dps: Int? = DPS_SLOT[role]
-        val lists = LISTS.getValue(role)
+        val lists = (if (quad) QUAD_LISTS else LISTS).getValue(role)
         var seq: List<String> = lists[0]
         var step = 0
         var dinDone = false
@@ -85,6 +89,9 @@ class MaidenCrew(
         var walkedFor: String? = null
         var force: String? = null
         val tfzD = HashMap<Int, MutableSet<String>>()
+        val qI = HashMap<Int, MutableSet<Int>>()
+        val chins = HashMap<Int, IntArray>()
+        var zcbDone = false
         val dpsD = HashMap<Int, MutableSet<String>>()
         var order: Order? = null
         val spec: Int
@@ -95,7 +102,7 @@ class MaidenCrew(
 
         fun raw(): String = seq[min(step, seq.size - 1)]
 
-        fun owns(weapon: String): Boolean = weapon in OWNS.getValue(role)
+        fun owns(weapon: String): Boolean = weapon in (if (quad) QUAD_OWNS else OWNS).getValue(role)
     }
 
     private class Order(val move: Move, val target: Npc, val at: Int, var walkTo: CoordGrid?, val issued: Int, var held: Boolean = false, var meeting: Boolean = false)
@@ -120,11 +127,18 @@ class MaidenCrew(
 
     private class DinOpt(val key: String, val pos: IntArray, val n: Int, val value: Double)
 
+    /** A four's freezes for a wave: each freezer's list, in order, and the tick each one's first can go. */
+    private class QPlan(val lists: Map<NyloRole, List<String>>, val start: Map<NyloRole, Int>, val how: String)
+
     private class Inflight(val land: Int, val mean: Double, val variance: Double, val crab: Npc?)
 
     private val leaks = HashSet<Npc>()
+
+    /** A four: two freezers (the mage south, the melee freeze north) and the two DPS, on the four's procedure. */
+    private val quad = members.size == 4
     private val crew = members.mapIndexed { i, (p, r) -> Bot(p, r, i) }
     private val mage = crew.first { it.role == NyloRole.Mage }
+    private val qPlans = HashMap<Int, QPlan>()
     private val metas = HashMap<Npc, Meta>()
     private val spawned = HashMap<Int, MutableSet<String>>()
     private val plans = HashMap<Int, WavePlan>()
@@ -159,7 +173,7 @@ class MaidenCrew(
         VarPlayerIntMapSetter.set(bot, "varp.option_run", 1)
         VarPlayerIntMapSetter.set(bot, "varbit.option_acceptaid", 1)
         bot.runEnergy = FULL_RUN
-        if (crew.first { it.player === bot }.role == NyloRole.Mage) return
+        if (crew.first { it.player === bot }.role.freezes) return
         VarPlayerIntMapSetter.set(bot, "varbit.death_charge_scroll_used", 1)
         VarPlayerIntMapSetter.set(bot, "varbit.death_charge_charges", DEATH_CHARGES)
         VarPlayerIntMapSetter.set(bot, "varbit.arceuus_death_charge_active", 1)
@@ -181,7 +195,7 @@ class MaidenCrew(
         if (!charged) {
             charged = true
             for (b in crew) {
-                if (b.role == NyloRole.Mage) continue
+                if (b.role.freezes) continue
                 VarPlayerIntMapSetter.set(b.player, DC_COOLDOWN, 1)
                 b.player.queue(DC_EXPIRE, DC_LEFT)
             }
@@ -202,7 +216,7 @@ class MaidenCrew(
             if (!p.isSlotAssigned || p.hitpoints <= 0) continue
             protect(b)
             if (p in flinching || !room.inArena(room.real(p.coords)) || t < FIRST_ACT) continue
-            if (b.role != NyloRole.Mage && spells(b)) continue
+            if (!b.role.freezes && spells(b)) continue
             if (stall(b)) continue
             stepRoute(b)
             if (dodgeDue(b) && predodge(b)) continue
@@ -435,7 +449,7 @@ class MaidenCrew(
      * within its range, walked during the cooldown.
      */
     private fun toHer(b: Bot) {
-        if (b.role == NyloRole.Mage && mageStand(b)) return
+        if (b.role.freezes && mageStand(b)) return
         val here = room.real(b.player.coords)
         val next = upcoming(b)
         REACH_OF[next]?.let { reach ->
@@ -560,9 +574,9 @@ class MaidenCrew(
         val next = upcoming(b)
         val far =
             when (next) {
-                "tbr" -> TBOW_GAP
+                "tbr", "tba" -> if (quad && b.role == NyloRole.Mage) QUAD_MAGE_GAP else TBOW_GAP
                 "zcbs" -> REACH_OF.getValue("zcbs")
-                "tfz", "tpile" -> params.casterGap
+                "tfz", "tpile", "qfz" -> params.casterGap
                 else -> return false
             }
         val here = room.real(b.player.coords)
@@ -757,7 +771,7 @@ class MaidenCrew(
         val gives = p.hitpoints * 3 / 4
         if (gives < HEAL_MIN || p.hitpoints * 100 < p.baseHitpointsLvl * HEAL_FLOOR_PCT) return null
         val here = room.centreDist(room.real(p.coords))
-        return crew.filter { it !== b && it.role != NyloRole.Mage && it.player.hitpoints > p.hitpoints }
+        return crew.filter { it !== b && !it.role.freezes && it.player.hitpoints > p.hitpoints }
             .map { it.player }
             .filter { room.centreDist(room.real(it.coords)) <= here }
             .firstOrNull { it.baseHitpointsLvl - it.hitpoints >= gives }
@@ -843,7 +857,7 @@ class MaidenCrew(
     private fun decide(b: Bot) {
         val tt = b.next
         curT = tt
-        val stand = if (b.role == NyloRole.Mage && b.force == null) standFor(b, tt) else null
+        val stand = if (b.role.freezes && b.force == null) standFor(b, tt) else null
         val a = onTime(b, stand ?: obligate(b, nextAct(b, tt), tt), tt)
         b.walkedFor = null
         trace { "t$tt ${b.role}@${room.real(b.player.coords).let { "${it.x - ROOM_X},${ROOM_Y - it.z}" }} $a${if (a.startsWith("dinhs")) " from ${b.dinPos?.joinToString(",")}" else ""}" }
@@ -879,6 +893,7 @@ class MaidenCrew(
         if (room.phase >= WAVES.size) return null
         val cur = b.raw()
         if (cur == "tfz" && !tfzSpent(b, tt)) return null
+        if (cur == "qfz" && !qfzSpent(b)) return null
         val a = atkOf(cur)
         if (a.style == 'm' || a.speed <= 1) return null
         val by = tt + a.speed - 2
@@ -1055,15 +1070,29 @@ class MaidenCrew(
                 trace { "t$tt Mage claws instead of its ZCB" }
                 return "claws"
             }
-            if (a == "zcbs" && b.role == NyloRole.Mage && zcbProcs(tt)) {
+            if (a == "zcbs" && b.role.freezes && zcbProcs(tt)) {
                 trace { "t$tt Mage keeps its ZCB: it would proc her" }
                 return "tbr"
             }
             if (a == "tpile") return if (pileWorth(tt, true, "pile").second * 2 >= params.pileWorth) "ibs:pile" else "tbr"
+            if (a in QUAD_LINES) {
+                val r = quadLine(b, a, tt)
+                if (r == null) {
+                    if (!last) {
+                        b.step++
+                        continue
+                    }
+                    return fallback(b, a)
+                }
+                if (a == "qfz" && (r == "wait" || r == "tbr" || r == "ibs:old")) return r
+                // the chins line stays until its chins (and the accurate tbow after three) are thrown
+                if (a == "qchin" && !last) b.step--
+                a = r
+            }
             if (a == "tfz" || a == "tdps") {
                 val r = if (a == "tfz") tfzPick(b, tt) else dpsSwing(b, tt)
                 // a free hit in the 30s freezes (a crab missing from the list) goes to the ZCB the mage has the energy for
-                if (r == "tbr" && b.role == NyloRole.Mage && phase == 0 && b.owns("zcb") && b.spec >= atkOf("zcbs").spec) {
+                if (r == "tbr" && b.role.freezes && phase == 0 && b.owns("zcb") && b.spec >= atkOf("zcbs").spec) {
                     trace { "t$tt Mage ZCBs its free hit" }
                     return "zcbs"
                 }
@@ -1095,7 +1124,7 @@ class MaidenCrew(
             }
             val atk = atkOf(a)
             val why = invalid(a, tt)
-            val has = if (atk.style == 'f') b.role == NyloRole.Mage else weaponOf(a)?.let { b.owns(it) } ?: true
+            val has = if (atk.style == 'f') b.role.freezes else weaponOf(a)?.let { b.owns(it) } ?: true
             val energy = atk.spec == 0 || b.spec >= atk.spec
             if (has && energy && why == null) {
                 if (!last) b.step++
@@ -1212,12 +1241,237 @@ class MaidenCrew(
         return null
     }
 
+    /* ---- a four's procedure */
+
+    private fun quadLine(b: Bot, a: String, tt: Int): String? =
+        when (a) {
+            "qfz" -> qfzPick(b, tt)
+            "qscy" -> qStrag(b, tt) ?: dpsSwing(b, tt)
+            "qn12" -> stackSwing(b, N12, tt)
+            "qs1" -> stackSwing(b, S1S, tt)
+            "qchin" -> chinPick(b, tt)
+            "qspec" -> qSpec(b)
+            else -> null
+        }
+
+    /**
+     * A four's freezes for wave [w]: the mage (south) the N1 then the S2, a tick after the melee freeze (north) the S1
+     * and N2 on the wave's first tick, then the 3s and 4s. A missing crab: a tbow on the 70s, the old pile (or the melee
+     * freeze's ZCB) after. No N1 but an S2: on the 70s the mage ice rushes it, on the 50s it barrages the 70s N1 in the
+     * pile first. Late to the first freeze: one tick, the late one also takes the 3s and the other the 4s (both a tick late:
+     * the mage the 3s); two or more, the late one the 4s and the other the 3s. On the 30s a melee freeze on time that
+     * still has its ZCB to do throws it in a missing crab's slot, else after the 3s (the mage takes the 4s).
+     */
+    private fun qPlan(w: Int): QPlan =
+        qPlans.getOrPut(w) {
+            val here = { id: String -> spawned[w]?.contains(id) == true }
+            val first = crabs.filter { it.wave == w }.minOfOrNull { it.born } ?: t
+            val frz = crew.firstOrNull { it.role == NyloRole.Freezer }
+            val start = mapOf(NyloRole.Freezer to first + 1, NyloRole.Mage to first + 2)
+            val late = { b: Bot? -> b?.let { max(0, max(it.next, start.getValue(it.role)) - start.getValue(it.role)) } ?: 0 }
+            val lN = late(frz)
+            val lS = late(mage)
+            val north = mutableListOf(if (here("S1")) "S1" else "fill", if (here("N2")) "N2" else "fill")
+            val south =
+                when {
+                    !here("N1") && here("S2") && w == WAVES[0] -> mutableListOf("rush:S2", "fill")
+                    !here("N1") && here("S2") && w == WAVES[1] -> mutableListOf("old", "S2")
+                    else -> mutableListOf(if (here("N1")) "N1" else "fill", if (here("S2")) "S2" else "fill")
+                }
+            val how: String
+            if (lN == 0 && lS == 0) {
+                if (w == 30 && frz != null && !frz.zcbDone) {
+                    val fill = north.indexOf("fill")
+                    if (fill >= 0) {
+                        north[fill] = "zcbs"
+                        north += listOf("3s", "4s")
+                        how = "on time, the ZCB in a missing crab's slot"
+                    } else {
+                        north += listOf("3s", "zcbs")
+                        south += "4s"
+                        how = "on time, the ZCB after the 3s"
+                    }
+                } else {
+                    north += listOf("3s", "4s")
+                    how = "on time"
+                }
+            } else {
+                val lateN = lN > lS
+                val amt = max(lN, lS)
+                val (lateList, other) = if (lateN) north to south else south to north
+                if (amt == 1) {
+                    lateList += "3s"
+                    other += "4s"
+                } else {
+                    lateList += "4s"
+                    other += "3s"
+                }
+                how = "${if (lateN) "north" else "south"} $amt late"
+            }
+            trace { "t$t ${w}s freezes ($how): north ${north.joinToString()} / south ${south.joinToString()}" }
+            QPlan(mapOf(NyloRole.Freezer to north, NyloRole.Mage to south), start, how)
+        }
+
+    private fun qfzPick(b: Bot, tt: Int): String? {
+        val w = latestWave() ?: return null
+        val plan = qPlan(w)
+        val list = plan.lists[b.role] ?: return null
+        val idx = b.qI.getOrPut(w) { HashSet() }
+        val done = b.tfzD.getOrPut(w) { HashSet() }
+        if (tt < plan.start.getValue(b.role) && idx.isEmpty()) return "wait"
+        val lp = procOf(w) ?: tt
+        for ((k, it) in list.withIndex()) {
+            if (k in idx) continue
+            when (it) {
+                "fill" -> {
+                    idx += k
+                    return fill(b, w, tt)
+                }
+                "zcbs" -> {
+                    idx += k
+                    if (b.spec < atkOf("zcbs").spec && !b.surged) drink(b)
+                    return "zcbs"
+                }
+                "old" -> {
+                    idx += k
+                    done += "N1"
+                    return "ibs:old"
+                }
+                "3s", "4s" -> {
+                    val r = clumpReady(w, it, tt)
+                    if (r == null) {
+                        idx += k
+                        done += it
+                        continue
+                    }
+                    if (r) {
+                        idx += k
+                        done += it
+                        return "ibs:$it"
+                    }
+                    val due = lp + if (it == "3s") THREES_DUE else FOURS_DUE
+                    if (tt + atkOf("tbr").speed <= due) return oldPile(w, tt) ?: "tbr"
+                    return "wait"
+                }
+                else -> {
+                    val rush = it.startsWith("rush:")
+                    val id = it.removePrefix("rush:")
+                    idx += k
+                    done += id
+                    val c = crabRef("$id@$w")
+                    if (c == null || tt <= c.frozenTo) continue
+                    return "${if (rush) "ir" else "ibs"}:$id@$w"
+                }
+            }
+        }
+        return null
+    }
+
+    /** A missing crab's slot: a tbow on the 70s; after, the melee freeze's ZCB (if it hasn't), else the old pile. */
+    private fun fill(b: Bot, w: Int, tt: Int): String {
+        if (w == WAVES[0]) return "tbr"
+        if (b.role == NyloRole.Freezer && !b.zcbDone) {
+            if (b.spec < atkOf("zcbs").spec && !b.surged) drink(b)
+            if (b.spec >= atkOf("zcbs").spec) return "zcbs"
+        }
+        return oldPile(w, tt) ?: "tbr"
+    }
+
+    private fun oldPile(w: Int, tt: Int): String? {
+        if (w == WAVES[0]) return null
+        val pile = barragePrim("old", tt) ?: return null
+        return if (aoe3(pile).sumOf { it.hp } >= OLD_PILE_HP) "ibs:old" else null
+    }
+
+    private fun qfzSpent(b: Bot): Boolean {
+        val w = latestWave() ?: return false
+        val list = qPlans[w]?.lists?.get(b.role) ?: return false
+        return list.indices.all { it in (b.qI[w] ?: emptySet<Int>()) }
+    }
+
+    /**
+     * A four's DPS on a thawed (or thawing) 70s / 50s 1 or 2 of their side walking in over jaggers_0's line (the melee
+     * the N1s and N2s, the ranger the S1s and N2s; a crab another is on only over 60): leaking as the swing lands, the
+     * cleave scythe. The 30s crabs are left (she's dead first).
+     */
+    private fun qStrag(b: Bot, tt: Int): String? {
+        val mine = if (b.role == NyloRole.Melee) listOf("N1", "N2") else listOf("S1", "N2")
+        val flying = inflightKeys(tt)
+        val cand =
+            crabs.filter { q -> q.base in mine && q.wave != WAVES[2] && q.key !in flying && !(q.meta.scyBy >= 0 && q.meta.scyBy != b.i && q.hp <= SHARED_HP) && q.frozenTo > 0 && q.frozenTo <= tt + SWING }
+                .map { it to reachOf(it) }
+                .filter { (_, r) -> r in tt + 1..tt + SWING + 1 }
+                .sortedWith(compareBy<Pair<Crab, Int>> { it.second }.thenByDescending { it.first.hp })
+        for ((q, r) in cand) {
+            if (r == tt + 1) {
+                if (q.hp >= magenta()) {
+                    if (q.meta.scyBy < 0) q.meta.scyBy = b.i
+                    return "scys:${q.key}:N"
+                }
+                if (q.hp >= blue()) {
+                    if (q.meta.scyBy < 0) q.meta.scyBy = b.i
+                    return "scys:${q.key}:S"
+                }
+                continue
+            }
+            if (q.hp >= red()) {
+                if (q.meta.scyBy < 0) q.meta.scyBy = b.i
+                return "scyk:${q.key}"
+            }
+        }
+        return null
+    }
+
+    /**
+     * The stacked 70s / 50s [ids] in the pile (the ranger's N1s and N2s, the melee's S1s): a swing on the one with the
+     * most left (the melee's Obligator takes the line through a stack where it's worth more); none: on to the next line.
+     */
+    private fun stackSwing(b: Bot, ids: List<String>, tt: Int): String? {
+        val flying = inflightKeys(tt)
+        val c = crabs.filter { it.base in ids && it.wave != WAVES[2] && it.key !in flying && it.hp >= N12_MIN_HP && it.frozenTo >= tt + 1 }.maxByOrNull { it.hp } ?: return null
+        return "scyk:${c.key}"
+    }
+
+    /**
+     * The ranger's chinchompas at the clump: five on rapid at a healthy one (4+ crabs, 150+ left), else three - the first
+     * on accurate, then an accurate tbow to be back on the melee's tick. The first at the old pile, the rest at the
+     * newest 4s as they walk in to it.
+     */
+    private fun chinPick(b: Bot, tt: Int): String? {
+        val w = latestWave() ?: return null
+        val st = b.chins.getOrPut(w) {
+            val pile = barragePrim("pile", tt)
+            val z = pile?.let { aoe3(it) } ?: emptyList()
+            val n = if (pile == null) 0 else if (z.size >= CHIN_BIG_N && z.sumOf { it.hp } >= CHIN_BIG_HP) 5 else 3
+            trace { "t$tt ${b.role} chins: $n at the clump (${z.size} crabs, ${z.sumOf { it.hp }} left)" }
+            intArrayOf(n, 0)
+        }
+        val (n, k) = st[0] to st[1]
+        if (n == 3 && k == 3) {
+            st[1]++
+            return "tba"
+        }
+        if (k >= n) return null
+        val target = (if (k == 0) barragePrim("old", tt) else barragePrim("4s", tt) ?: barragePrim("pile", tt)) ?: return null
+        st[1]++
+        return "${if (n == 3 && k == 0) "china" else "chin"}:${target.key}"
+    }
+
+    /** The ranger after the 30s: a ZCB where its energy (with a surge) runs to one, else a claw spec; else nothing. */
+    private fun qSpec(b: Bot): String? {
+        val zcb = atkOf("zcbs").spec
+        if (b.spec < zcb && !b.surged && b.spec + SURGE_SPEC >= zcb) drink(b)
+        if (b.spec >= zcb) return "zcbs"
+        return if (b.spec >= atkOf("claws").spec) "claws" else null
+    }
+
     /* ---- the wave plan and the mage's freezes */
 
     private fun planOf(w: Int): WavePlan =
         plans.getOrPut(w) {
             val here = { id: String -> spawned[w]?.contains(id) == true }
             val out = listOf("S1", "N1", "S2", "N2").filter(here)
+            if (quad) return@getOrPut WavePlan(out, emptyList(), !here("N1") && here("S2"))
             var rushIt = false
             val fz =
                 when {
@@ -1249,7 +1503,7 @@ class MaidenCrew(
         val has3 = waveHas(w, THREE_RE)
         if (!has3) {
             if (w == 30) {
-                val d = mage.tfzD[w] ?: return false
+                val d = crew.filter { it.role.freezes }.flatMap { it.tfzD[w] ?: emptySet() }.toSet()
                 return planOf(w).fz.all { it in d } && mine.all { c -> mine.all { inArea(c, it) } } && (overPile(mine, tt)?.let { tt >= it } ?: true)
             }
             if (tt < lp + FOURS_DUE) return false
@@ -1794,7 +2048,7 @@ class MaidenCrew(
         var dmg = 0.0
         for (b in crew) {
             if (b.player.hitpoints <= 0) continue
-            val mean = if (b.role == NyloRole.Mage) TBOW_MEAN else SCYTHE_MEAN
+            val mean = if (b.role.freezes) TBOW_MEAN else SCYTHE_MEAN
             var s = max(b.next, t)
             while (s + 1 <= r) {
                 dmg += mean
@@ -2021,10 +2275,17 @@ class MaidenCrew(
         when (k) {
             "wait" -> hold(b)
             "tbr" -> act(b, Move.Tbow, her)
+            "tba" -> act(b, Move.TbowAcc, her)
+            "maul" -> act(b, Move.Maul, her)
+            "chin" -> act(b, Move.Chins, crab?.npc ?: her)
+            "china" -> act(b, Move.ChinsAcc, crab?.npc ?: her)
             "bp" -> act(b, Move.Blowpipe, her)
             "ax" -> act(b, Move.Crossbows, crab?.npc ?: her)
             "ralos" -> act(b, Move.Ralos, her)
-            "zcbs" -> act(b, Move.Zcb, her)
+            "zcbs" -> {
+                b.zcbDone = true
+                act(b, Move.Zcb, her)
+            }
             "claws" -> act(b, Move.Claws, her)
             "scyk", "scyc", "scys" -> crab?.let { act(b, Move.Scythe, it.npc) } ?: hold(b)
             "ibs" -> crab?.let { act(b, Move.Barrage, it.npc) } ?: hold(b)
@@ -2292,7 +2553,7 @@ class MaidenCrew(
         const val DEATH_CHARGES = 2
         /** The sim summons the thrall between the first prefire and the first melee hit. */
         const val THRALL_AFTER = 1
-        val START_TILES = listOf(CoordGrid(3184, 4445, 0), CoordGrid(3184, 4447, 0), CoordGrid(3184, 4448, 0))
+        val START_TILES = listOf(CoordGrid(3184, 4445, 0), CoordGrid(3184, 4447, 0), CoordGrid(3184, 4448, 0), CoordGrid(3184, 4446, 0))
 
         /** The sim's room: x east from 3160, y south from 4458 (a 2x2 by its north-west tile); her 6x6 at (2, 9). */
         const val ROOM_X = 3160
@@ -2424,6 +2685,56 @@ class MaidenCrew(
 
         val DPS_SLOT = mapOf(NyloRole.Ranger to 0, NyloRole.Melee to 1)
 
+        /**
+         * A four's lists (the user's procedure): the freezers open tbow, crossbow, Ralos (the mage an accurate tbow then
+         * rapid from 7-8 out, a tick behind the melee freeze) and freeze by [QPlan]; the ranger opens on an accurate tbow,
+         * the melee a tbow and the Elder maul. After the 50s the ranger scythes the stacked N1s / N2s, chins the clump
+         * (3 or 5) and ZCBs; the melee scythes (or thrusts) the stacked S1s before its Dinh's.
+         */
+        val QUAD_LISTS =
+            mapOf(
+                NyloRole.Mage to listOf(
+                    listOf("tbr", "ax", "ralos", "tba", "tbr"),
+                    listOf("qfz", "qfz", "tbr"),
+                    listOf("qfz", "qfz", "tbr", "tbr", "surge", "zcbs", "tbr"),
+                    listOf("qfz", "qfz", "qfz", "scythe"),
+                ),
+                NyloRole.Freezer to listOf(
+                    listOf("tbr", "ax", "ralos", "tbr"),
+                    listOf("qfz", "qfz", "qfz", "qfz", "tbr"),
+                    listOf("qfz", "qfz", "qfz", "qfz", "surge", "zcbs", "tbr"),
+                    listOf("qfz", "qfz", "qfz", "qfz", "scythe"),
+                ),
+                NyloRole.Ranger to listOf(
+                    listOf("tba", "scythe"),
+                    listOf("qscy"),
+                    listOf("qn12", "qn12", "qchin", "surge", "zcbs", "qscy"),
+                    listOf("qspec", "qscy"),
+                ),
+                NyloRole.Melee to listOf(
+                    listOf("tbr", "maul", "scythe"),
+                    listOf("qscy"),
+                    listOf("qs1", "qs1", "tdin", "surge", "tdin2", "qscy"),
+                    listOf("claws", "qscy"),
+                ),
+            )
+
+        val QUAD_OWNS =
+            mapOf(
+                NyloRole.Mage to setOf("scythe", "tbow", "ralos", "xbows", "zcb", "claws"),
+                NyloRole.Freezer to setOf("scythe", "tbow", "ralos", "xbows", "zcb", "claws"),
+                NyloRole.Ranger to setOf("scythe", "tbow", "ralos", "zcb", "chins", "claws"),
+                NyloRole.Melee to setOf("scythe", "tbow", "ralos", "zcb", "dinh", "obligator", "maul", "claws"),
+            )
+
+        val QUAD_LINES = setOf("qfz", "qscy", "qn12", "qs1", "qchin", "qspec")
+        val N12 = listOf("N1", "N2")
+        val S1S = listOf("S1")
+        const val QUAD_MAGE_GAP = 8
+        const val CHIN_BIG_N = 4
+        const val CHIN_BIG_HP = 150
+        const val N12_MIN_HP = 20
+
         /** The sim's trio lists (ROLE_DEFAULT[3] as `procedureOpts(3)` plays them): the prefires, then the 70s, 50s and 30s. */
         val LISTS =
             mapOf(
@@ -2456,21 +2767,23 @@ class MaidenCrew(
 
         val WEAPON =
             mapOf(
-                "tbr" to "tbow", "bp" to "bp", "ax" to "xbows", "ralos" to "ralos", "zcbs" to "zcb", "claws" to "claws", "scythe" to "scythe", "scyk" to "scythe",
+                "tbr" to "tbow", "tba" to "tbow", "maul" to "maul", "chin" to "chins", "china" to "chins", "bp" to "bp", "ax" to "xbows", "ralos" to "ralos", "zcbs" to "zcb", "claws" to "claws", "scythe" to "scythe", "scyk" to "scythe",
                 "scyc" to "scythe", "scys" to "scythe", "tdps" to "scythe", "tdin" to "scythe", "tdin2" to "scythe", "dinhs" to "dinh",
             )
 
         /** Style: r ranged, m melee, f a freeze, g magic, - no attack. */
         val ATTACKS =
             mapOf(
-                "tbr" to Atk(5, 'r'), "bp" to Atk(2, 'r'), "ax" to Atk(2, 'r'), "ralos" to Atk(6, 'r', spec = 50), "zcbs" to Atk(5, 'r', spec = 75), "claws" to Atk(4, 'm', spec = 50),
+                "tbr" to Atk(5, 'r'), "tba" to Atk(6, 'r'), "maul" to Atk(6, 'm', spec = 50), "chin" to Atk(3, 'r', true), "china" to Atk(4, 'r', true),
+                "qfz" to Atk(5, 'f', true), "qscy" to Atk(5, 'm', true), "qn12" to Atk(5, 'm', true), "qs1" to Atk(5, 'm', true), "qchin" to Atk(3, 'r', true), "qspec" to Atk(5, 'r'),
+                "bp" to Atk(2, 'r'), "ax" to Atk(2, 'r'), "ralos" to Atk(6, 'r', spec = 50), "zcbs" to Atk(5, 'r', spec = 75), "claws" to Atk(4, 'm', spec = 50),
                 "scythe" to Atk(5, 'm'), "scyk" to Atk(5, 'm', true), "scyc" to Atk(5, 'm', true), "scys" to Atk(5, 'm', true),
                 "tdps" to Atk(5, 'm', true), "tdin" to Atk(5, 'm'), "tdin2" to Atk(5, 'm'), "dinhs" to Atk(5, 'm', true, 50), "obl" to Atk(5, 'm', true),
                 "tfz" to Atk(5, 'f', true), "ibs" to Atk(5, 'f', true), "ir" to Atk(5, 'f', true), "aya" to Atk(3, 'g', true),
                 "tpile" to Atk(5, 'r'), "wait" to Atk(1, '-'), "surge" to Atk(0, '-'),
             )
 
-        val LAND_DELAY = mapOf(Move.Tbow to 3, Move.Blowpipe to 2, Move.Crossbows to 2, Move.Zcb to 3, Move.Ralos to 3, Move.Scythe to 1, Move.Obligator to 1, Move.Dinh to 1, Move.Claws to 1, Move.Barrage to 2)
+        val LAND_DELAY = mapOf(Move.Tbow to 3, Move.TbowAcc to 3, Move.Maul to 1, Move.Chins to 2, Move.ChinsAcc to 2, Move.Blowpipe to 2, Move.Crossbows to 2, Move.Zcb to 3, Move.Ralos to 3, Move.Scythe to 1, Move.Obligator to 1, Move.Dinh to 1, Move.Claws to 1, Move.Barrage to 2)
         val MEAN_HIT = mapOf(Move.Tbow to (TBOW_MEAN to TBOW_SD), Move.Scythe to (SCYTHE_MEAN to SCYTHE_SD), Move.Blowpipe to (16.1 to 9.8), Move.Crossbows to (16.1 to 9.8), Move.Claws to (CLAW_MEAN to CLAW_SD))
     }
 }

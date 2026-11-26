@@ -13,6 +13,18 @@ enum class NyloRole(val style: Char) {
     Mage('G'),
     Ranger('R'),
     Melee('M'),
+
+    /** A four's second freezer (the melee freeze): the mage's gear, at Maiden only. */
+    Freezer('G'),
+    ;
+
+    val freezes: Boolean
+        get() = this == Mage || this == Freezer
+
+    companion object {
+        val TRIO = listOf(Mage, Ranger, Melee)
+        val QUAD = listOf(Mage, Freezer, Ranger, Melee)
+    }
 }
 
 /** A set of worn items keyed by slot: what a switch puts on. */
@@ -62,6 +74,7 @@ object NyloLoadout {
     val RALOS = GearSet(RANGED_ARMOUR + (Wearpos.RightHand to "obj.tonalztics_of_ralos_charged"))
     val TOME = GearSet(RANGED_ARMOUR.filter { (slot, _) -> MAGE_ARMOUR.none { it.first == slot } } + MAGE_ARMOUR + (Wearpos.RightHand to "obj.zoryas_tome"))
     val ZCB = GearSet(RANGED_ARMOUR + (Wearpos.RightHand to "obj.zaryte_xbow"))
+    val MAUL = GearSet(MELEE_ARMOUR + (Wearpos.RightHand to "obj.elder_maul"))
 
     const val BOLTS = "obj.ascension_bolts"
     const val CHINCHOMPAS = "obj.chinchompa_black"
@@ -89,18 +102,18 @@ object NyloLoadout {
         when (role) {
             NyloRole.Melee -> listOf(SCYTHE, OBLIGATOR, DINH, CROSSBOWS, AYAK, TBOW)
             NyloRole.Ranger -> listOf(TBOW, CHINS, CROSSBOWS, AYAK, SCYTHE, CLAWS)
-            NyloRole.Mage -> listOf(BARRAGE, TOME, CROSSBOWS, TBOW, SCYTHE, CLAWS)
+            NyloRole.Mage, NyloRole.Freezer -> listOf(BARRAGE, TOME, CROSSBOWS, TBOW, SCYTHE, CLAWS)
         }
 
     /**
      * At Maiden every role opens with a Twisted bow (seeking arrows) and the Tonalztics spec, then scythes, with a
      * Zaryte crossbow for its spec; the ranger and melee are on the Lunars with the Book of the dead for thralls.
      */
-    fun maidenSets(role: NyloRole): List<GearSet> =
+    fun maidenSets(role: NyloRole, quad: Boolean = false): List<GearSet> =
         when (role) {
-            NyloRole.Melee -> listOf(TBOW, RALOS, SCYTHE, DINH, ZCB, OBLIGATOR)
-            NyloRole.Ranger -> listOf(TBOW, RALOS, SCYTHE, ZCB)
-            NyloRole.Mage -> listOf(TBOW, RALOS, BARRAGE, SCYTHE, ZCB, CROSSBOWS, TOME, CLAWS)
+            NyloRole.Melee -> listOf(TBOW, RALOS, SCYTHE, DINH, ZCB, OBLIGATOR) + if (quad) listOf(MAUL, CLAWS) else emptyList()
+            NyloRole.Ranger -> listOf(TBOW, RALOS, SCYTHE, ZCB) + if (quad) listOf(CHINS, CLAWS) else emptyList()
+            NyloRole.Mage, NyloRole.Freezer -> listOf(TBOW, RALOS, BARRAGE, SCYTHE, ZCB, CROSSBOWS, TOME, CLAWS)
         }
 
     /** Worn at the start: the first set plus bolts in the ammo slot. */
@@ -111,6 +124,6 @@ object NyloLoadout {
     fun pack(role: NyloRole, sets: List<GearSet>): List<String> {
         val wearing = sets.first().worn.map { it.second }.toSet()
         val switches = sets.flatMap { set -> set.worn.map { it.second } }.distinct().filter { it !in wearing }
-        return switches + if (role == NyloRole.Mage) BARRAGE_RUNES else emptyList()
+        return switches + if (role.freezes) BARRAGE_RUNES else emptyList()
     }
 }

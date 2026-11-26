@@ -14,7 +14,8 @@ import kotlin.math.floor
 import kotlin.math.min
 
 /**
- * The Maiden of Sugadinti (trio-and-under numbers: 2625 hitpoints, crabs 75, blood spawns 90), for the owner and any
+ * The Maiden of Sugadinti (2625 hitpoints and crabs of 75 for a trio and under, 3062 / 87 for a four, 3500 / 100 for a
+ * five; blood spawns 90), for the owner and any
  * bots raiding with them: each attack goes at one of the party at random.
  *
  * - She attacks every 10 ticks from tick 9, at whoever is closest to her centre (ties to the first in the party): Blackstorm at you (36 + 3.5 per crab that reached her; Protect from Magic
@@ -84,6 +85,17 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         trails.clear()
         maiden = spawn(PHASES[0], CoordGrid(X, Y, 0), hp(HP, entryHp(2500)))
     }
+
+    /** Her hitpoints and her crabs' by the party going in: 87.5% of the five-player 3500 / 100 for a four, 75% under. */
+    override fun onStart() {
+        val team = party().size
+        val hp = hp(if (team >= 5) HP_5 else if (team == 4) HP_4 else HP, entryHp(2500))
+        maiden.baseHitpointsLvl = hp
+        maiden.hitpoints = hp
+        crabHp = if (team >= 5) CRAB_HP_5 else if (team == 4) CRAB_HP_4 else CRAB_HP
+    }
+
+    private var crabHp = CRAB_HP
 
     override fun floor(npc: Npc): Int? = if (npc === maiden && dead < 0) 1 else null
 
@@ -180,7 +192,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             val spot = forced?.get(k) ?: left.first { i -> (roll < weights[i]).also { roll -= weights[i] } }
             left -= spot
             val (x, y) = CRAB_SPOTS[spot]
-            val crab = spawn(CRAB, CoordGrid(x, y, 0), hp(CRAB_HP, ENTRY_CRAB_HP))
+            val crab = spawn(CRAB, CoordGrid(x, y, 0), hp(crabHp, ENTRY_CRAB_HP))
             // the Nylocas Matomenos wiki: a freeze can't miss them from an accurate enough caster
             crab.vars["varn.freeze_guaranteed"] = FREEZE_SURE_ON_ROLL
             crabs += Crab(crab, spot, t, PROC_PCT[phase - 1])
@@ -528,6 +540,8 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val THRALL_SLACK = 3
         const val REPLAY_SLACK = 2
         const val HP = 2625
+        const val HP_4 = 3062
+        const val HP_5 = 3500
         val PHASES = listOf("npc.tob_maiden_100", "npc.tob_maiden_70", "npc.tob_maiden_50", "npc.tob_maiden_30")
         const val DYING_B = "npc.tob_maiden_dying_b"
         const val FIRST_ATTACK = 9
@@ -547,6 +561,8 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val TRAIL_TICKS = 42
         const val CRAB = "npc.maiden_elemental"
         const val CRAB_HP = 75
+        const val CRAB_HP_4 = 87
+        const val CRAB_HP_5 = 100
         const val ENTRY_CRAB_HP = 16
         const val CRABS_EACH = 2
         const val FREEZE_SURE_ON_ROLL = 2
