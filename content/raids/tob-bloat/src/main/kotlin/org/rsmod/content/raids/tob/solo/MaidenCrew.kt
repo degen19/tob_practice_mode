@@ -1278,13 +1278,15 @@ class MaidenCrew(
             }
         }
         // the N2 the wave's only 1 / 2: the first barrage goes on the old pile, the N2 on the second, frozen closer in
-        // (nearer the DPS when it thaws, and where a later wave's N2 stops, to stack)
+        // (nearer the DPS when it thaws, and where a later wave's N2 stops, to stack) - on the 30s, with no pile worth it,
+        // the N2 at once (no later wave to stack with)
         if (plan.fz == listOf("N2") && w != WAVES[0] && "N2" !in done && LATE_N2 !in done) {
             val c = crabRef("N2@$w")
             if (c != null && tt > c.frozenTo && tt + atkOf("ibs").speed <= reachOf(c) - FZ_LAND) {
                 done += LATE_N2
                 val pile = barragePrim("old", tt)
-                return if (pile != null && aoe3(pile).sumOf { it.hp } >= OLD_PILE_HP) "ibs:old" else "tbr"
+                if (pile != null && aoe3(pile).sumOf { it.hp } >= OLD_PILE_HP) return "ibs:old"
+                if (w != 30) return "tbr"
             }
         }
         val no3 = !waveHas(w, THREE_RE)
