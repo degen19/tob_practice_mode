@@ -2055,12 +2055,14 @@ class MaidenCrew(
 
     /**
      * A scythe on her from off her side: the game walks to the nearest tile beside her, blood or not. When blood is that
-     * near, the bot runs to a clean one itself first - free before its swing is due, a tick after (never the blood).
+     * near, the bot runs to a clean one itself first while its swing isn't due yet; due now, the swing goes on time and
+     * it steps off after.
      */
     private fun cleanBeside(b: Bot): CoordGrid? {
         val here = room.real(b.player.coords)
         if (room.besideHer(here)) return null
-        val ticks = max(1, b.player.actionDelay - clock.cycle)
+        val ticks = b.player.actionDelay - clock.cycle
+        if (ticks <= 0) return null
         val dist = { c: CoordGrid -> maxOf(abs(c.x - here.x), abs(c.z - here.z)) }
         val open =
             (-REACH..REACH).flatMap { dx -> (-REACH..REACH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
