@@ -136,10 +136,6 @@ class MaidenCrew(
     private val thralled = HashSet<Player>()
     private val opened = HashSet<Player>()
     private var charged = false
-    private var holder: Player? = null
-    private var holdAt = -1
-    private var holdDist = 0
-    private var holdIdx = 0
 
     override fun starts(): List<CoordGrid> = crew.indices.map { START_TILES[it % START_TILES.size] }
 
@@ -256,6 +252,7 @@ class MaidenCrew(
         val near = party.withIndex().map { (i, p) -> Triple(p, room.centreDist(room.real(p.coords)), i) }.sortedWith(compareBy({ it.second }, { it.third }))
         var target = near.first().first
         val flinching = HashSet<Player>()
+        val safe = { p: Player -> p.hitpoints > room.autoMax / 2 + TANK_MARGIN }
         val tanks = near.indices.filter { near[it].first.vars["varbit.vengeance_rebound"] == 1 && safe(near[it].first) } + near.indices.filter { safe(near[it].first) }
         for (k in tanks) {
             if (k == 0) break
@@ -267,30 +264,11 @@ class MaidenCrew(
             break
         }
         for (p in flinching) flinch(p)
-        holder = target
-        holdAt = t
-        holdDist = room.centreDist(room.real(target.coords))
-        holdIdx = party.indexOf(target)
         val tank = bots[target]
         if (tank != null && tank.player.actionDelay > clock.cycle) flick(tank.player)
         for (b in crew) if (b.player !in flinching) b.predodgeAt = t + 1
         trace { "t$t her attack: ${tank?.role ?: target.username}, flinching ${flinching.mapNotNull { bots[it]?.role }} ${near.joinToString { "${bots[it.first]?.role}:${it.second}" }}" }
         return flinching
-    }
-
-    private fun safe(p: Player): Boolean = p.hitpoints > room.autoMax / 2 + TANK_MARGIN
-
-    /**
-     * She takes the closest at the end of her attack tick: no move then takes the one she's on further, or puts one too
-     * low to tank her ahead of them.
-     */
-    private fun keepsTarget(b: Bot, end: CoordGrid): Boolean {
-        if (holdAt != t) return true
-        val d = room.centreDist(end)
-        if (b.player === holder) return d <= holdDist
-        if (safe(b.player)) return true
-        val i = room.party().indexOf(b.player)
-        return d > holdDist || (d == holdDist && i > holdIdx)
     }
 
     /** Two tiles out from her centre, never onto her blood: straight out first, else the nearest clean tile as far. */
@@ -755,7 +733,7 @@ class MaidenCrew(
      */
     private fun healFor(b: Bot): Player? {
         val p = b.player
-        if (safe(p) || p.vars["varbit.spellbook"] != LUNARS || b.next - t != SWING - 1 || b.order != null || p.isDelayed || dodgeDue(b)) return null
+        if (p.hitpoints > room.autoMax / 2 + TANK_MARGIN || p.vars["varbit.spellbook"] != LUNARS || b.next - t != SWING - 1 || b.order != null || p.isDelayed || dodgeDue(b)) return null
         val gives = p.hitpoints * 3 / 4
         if (gives < HEAL_MIN || p.hitpoints * 100 < p.baseHitpointsLvl * HEAL_FLOOR_PCT) return null
         val here = room.centreDist(room.real(p.coords))
@@ -2076,10 +2054,7 @@ class MaidenCrew(
         b.route.clear()
         b.routeAt = null
         val path = safePath(room.real(b.player.coords), dest)
-        if (path == null || path.size <= RUN) {
-            if (path != null && !keepsTarget(b, dest)) return
-            return bots.walk(b.player, room.at(dest))
-        }
+        if (path == null || path.size <= RUN) return bots.walk(b.player, room.at(dest))
         b.route.addAll(path)
         stepRoute(b)
     }
@@ -2092,7 +2067,6 @@ class MaidenCrew(
             b.route.clear()
             return
         }
-        if (!keepsTarget(b, b.route[minOf(RUN, b.route.size) - 1])) return
         var end = b.route.removeFirst()
         repeat(RUN - 1) { if (b.route.isNotEmpty()) end = b.route.removeFirst() }
         b.routeAt = end
