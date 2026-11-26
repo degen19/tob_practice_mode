@@ -34,7 +34,8 @@ import kotlin.math.max
  *   weapon kills it outright and the poison hurts her. At 35% the reds: she stops to summon a Nylocas Matomenos that
  *   walks to her and heals her its hitpoints (hits on her heal her while her shield is up), then seven attacks - mostly a
  *   blood blast that heals her half of what it does - and again.
- * - P3: every 7 ticks a melee attack if you're beside her, else a ranged or magic one (33, half on the right prayer).
+ * - P3: every 7 ticks a melee attack if you're beside her (never her first), else a ranged or magic one (33, half on the
+ *   right prayer).
  *   Every fifth attack is a special, in turn: nylocas, webs (she goes to the middle and shoots webs - one on your tile
  *   holds you until you break it, and it snaps if you don't), yellows (stand on the pool or take up to 80) and the green
  *   ball (three-quarters of your hitpoints level). At 20% she enrages: attacks every 5 ticks, and a tornado chases you -
@@ -700,7 +701,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             if (which == 1 || which == 2) return
         }
         v.facePlayer(p)
-        if (dist == 1) {
+        // her first attack of the phase is never her melee, beside her or not
+        if (dist == 1 && attacks > 1) {
             v.anim("seq.verzik_phase3_attack_melee")
             recordAttack(v, 19)
             val roll = rand(0, P3_MELEE_MAX)
