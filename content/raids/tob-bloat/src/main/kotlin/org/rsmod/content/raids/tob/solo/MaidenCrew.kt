@@ -375,7 +375,11 @@ class MaidenCrew(
         val here = room.real(b.player.coords)
         val me = intArrayOf(here.x - ROOM_X, ROOM_Y - here.z)
         b.walkedFor = c.key
-        if (maxOf(x - me[0], me[0] - (x + 1), y - me[1], me[1] - (y + 1), 0) == 1 && (me[0] in x..x + 1 || me[1] in y..y + 1)) return
+        if (maxOf(x - me[0], me[0] - (x + 1), y - me[1], me[1] - (y + 1), 0) == 1 && (me[0] in x..x + 1 || me[1] in y..y + 1)) {
+            // on the tile they meet: the game would have it follow the crab it hit last over there, blood or not
+            if (params.stay == 1 && current(b.player)?.takeIf { it !== her } != null) b.player.clearInteractionRoute()
+            return
+        }
         val sides = listOf(x to y - 1, x + 1 to y - 1, x to y + 2, x + 1 to y + 2, x - 1 to y, x - 1 to y + 1, x + 2 to y, x + 2 to y + 1)
         val dest =
             sides.filter { (sx, sy) -> sx in 0..ROOM_W && sy in 0..ROOM_H && !(sx in MT_X..MX1 && sy in MT_Y..MY1) }
@@ -545,7 +549,10 @@ class MaidenCrew(
     /** Between swings, to the tile the melee's held Dinh's goes from (the sim's pick a swing ahead): there when it's due. */
     private fun toSpot(b: Bot, at: IntArray) {
         val dest = CoordGrid(at[0] + ROOM_X, ROOM_Y - at[1], 0)
-        if (room.real(b.player.coords) == dest) return
+        if (room.real(b.player.coords) == dest) {
+            if (params.stay == 1 && current(b.player)?.takeIf { it !== her } != null) b.player.clearInteractionRoute()
+            return
+        }
         trace { "t$t ${b.role} moves to ${at[0]},${at[1]} for its Dinh's (swing t${b.next})" }
         walk(b, dest)
     }
@@ -2490,6 +2497,7 @@ data class MaidenCrewParams(
     val casterGap: Int = 4,
     val stallRisk: Int = 15,
     val stallProcPct: Int = 50,
+    val stay: Int = 1,
 ) {
     companion object {
         fun parse(text: String): MaidenCrewParams {
@@ -2510,6 +2518,7 @@ data class MaidenCrewParams(
                 redOffset = int("redOffset", d.redOffset),
                 walkWeight = int("walkWeight", d.walkWeight),
                 dinhWalk = int("dinhWalk", d.dinhWalk),
+                stay = int("stay", d.stay),
             )
         }
     }
