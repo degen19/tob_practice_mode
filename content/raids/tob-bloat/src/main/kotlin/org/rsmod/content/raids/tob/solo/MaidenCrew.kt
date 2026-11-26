@@ -20,6 +20,7 @@ import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
+import kotlin.random.Random
 
 /**
  * Bot teammates for the Maiden, playing the sim's trio procedure line for line (`runMaiden` with `procedureOpts(3)`):
@@ -93,6 +94,7 @@ class MaidenCrew(
         val chins = HashMap<Int, IntArray>()
         var zcbDone = false
         var horned = false
+        val react = HashMap<Int, Int>()
         val dpsD = HashMap<Int, MutableSet<String>>()
         var order: Order? = null
         val spec: Int
@@ -663,7 +665,7 @@ class MaidenCrew(
     private fun carry(b: Bot, next: List<String>): List<String> {
         val rest = b.seq.drop(b.step)
         if ("zcbs" !in rest || "zcbs" in next) return next
-        val at = next.indexOfLast { it == "tfz" } + 1
+        val at = next.indexOfLast { it == "tfz" || it == "qfz" } + 1
         val out = next.toMutableList()
         out.addAll(at, (if ("surge" in rest && !b.surged) listOf("surge") else emptyList()) + "zcbs")
         return out
@@ -1343,11 +1345,15 @@ class MaidenCrew(
             if (k in idx) continue
             when (it) {
                 "fill" -> {
+                    if (k == 0 && w == WAVES[0]) {
+                        if (tt < plan.start.getValue(b.role) + b.react.getOrPut(w) { Random.nextInt(REACT_MIN, REACT_MAX + 1) }) return "wait"
+                        idx += k
+                        trace { "t$tt ${b.role} has no first freeze: a tome auto" }
+                        return "aya"
+                    }
                     idx += k
-                    val f = fill(b, w, tt) ?: continue
-                    val clump = list.withIndex().firstOrNull { (j, x) -> j > k && j !in idx && (x == "3s" || x == "4s") && clumpReady(w, x, tt) != null }
-                    val before = clump?.let { c -> (k + 1 until c.index).count { it !in idx && list[it] != "fill" } } ?: 0
-                    if (clump != null && tt + atkOf(f).speed + atkOf("ibs").speed * before > lp + if (clump.value == "3s") THREES_DUE else FOURS_DUE) continue
+                    val f = (if (k == 0) oldPile(w, tt) else null) ?: fill(b, w, tt) ?: continue
+                    if (makesLate(list, idx, k, w, tt + atkOf(f).speed, lp)) continue
                     return f
                 }
                 "zcbs" -> {
@@ -1442,6 +1448,26 @@ class MaidenCrew(
         }
     }
 
+    /**
+     * Whether a filler in slot [k] of a freezer's [list], leaving it free at [free], puts a freeze after it out of
+     * time: a 1 / 2 that reaches her before its barrage lands, or a clump past its tick.
+     */
+    private fun makesLate(list: List<String>, idx: Set<Int>, k: Int, w: Int, free: Int, lp: Int): Boolean {
+        var at = free
+        for (j in k + 1 until list.size) {
+            val x = list[j]
+            if (j in idx || x == "fill" || x == "zcbs") continue
+            if (x == "3s" || x == "4s") {
+                if (clumpReady(w, x, at) == null) continue
+                return at > lp + if (x == "3s") THREES_DUE else FOURS_DUE
+            }
+            val c = crabRef("${x.removePrefix("rush:")}@$w")
+            if (c != null && at > c.frozenTo && reachOf(c) <= at + 1) return true
+            at += atkOf("ibs").speed
+        }
+        return false
+    }
+
     /** Whether [b] still has a clump of the wave before [w] to freeze (crabs of it unfrozen). */
     private fun owesOld(b: Bot, w: Int): Boolean {
         val ow = WAVES.getOrNull(WAVES.indexOf(w) - 1) ?: return false
@@ -1454,7 +1480,9 @@ class MaidenCrew(
 
     /**
      * A missing crab's slot: a tbow on the 70s; on the 50s a tbow, or the melee freeze's ZCB (if it hasn't); on the 30s
-     * straight on to the next freeze (null) - catching every crab comes first.
+     * straight on to the next freeze (null) - catching every crab comes first. A missing first freeze is caught already
+     * switched for the barrage: on the 70s a tome auto on her after a tick or two reacting, on the 50s / 30s a barrage
+     * on the old clump.
      */
     private fun fill(b: Bot, w: Int, tt: Int): String? {
         if (w == WAVES[0]) return "tbr"
@@ -2866,6 +2894,8 @@ class MaidenCrew(
         val N12 = listOf("N1", "N2")
         val S1S = listOf("S1")
         val CLUMP_IDS = setOf("N3", "S3", "N4", "S4")
+        const val REACT_MIN = 1
+        const val REACT_MAX = 2
         const val HORN_OBJ = "obj.soulflame_horn"
         const val HORN_COST = 25
         const val HORN_BUFF = 10
