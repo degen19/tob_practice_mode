@@ -1,9 +1,13 @@
 package org.rsmod.api.combat.scripts
 
+import dev.openrune.rscm.RSCM
+import dev.openrune.rscm.RSCMType
 import jakarta.inject.Inject
 import org.rsmod.api.combat.PvPCombat
 import org.rsmod.api.combat.WildernessPjTimer
+import org.rsmod.api.combat.commons.CombatAttack
 import org.rsmod.api.combat.commons.magic.MagicSpell
+import org.rsmod.api.combat.commons.magic.Spellbook
 import org.rsmod.api.combat.commons.styles.AttackStyle
 import org.rsmod.api.combat.manager.MagicRuneManager
 import org.rsmod.api.combat.player.aggressiveNpc
@@ -28,6 +32,8 @@ import org.rsmod.api.script.onApPlayerT
 import org.rsmod.api.script.onEvent
 import org.rsmod.api.specials.SpecialAttackRegistry
 import org.rsmod.api.spells.MagicSpellRegistry
+import org.rsmod.api.spells.attack.SpellAttackRegistry
+import org.rsmod.api.spells.attack.attack
 import org.rsmod.api.spells.autocast.AutocastWeapons
 import org.rsmod.game.entity.Player
 import org.rsmod.game.type.getOrNull
@@ -46,6 +52,7 @@ constructor(
     private val specials: SpecialAttackRegistry,
     private val attackValidateHooks: Set<PvPAttackValidateHook>,
     private val pjTimer: WildernessPjTimer,
+    private val spellAttacks: SpellAttackRegistry,
 ) : PluginScript() {
     override fun ScriptContext.startup() {
         onEvent<PlayerHitpointsChangedEvent> { pjTimer.onHitpointsChanged(this) }
@@ -103,6 +110,13 @@ constructor(
     private suspend fun ProtectedAccess.attemptCombatSpell(target: Player, spell: MagicSpell) {
         val canCast = runes.canCastSpell(player, spell)
         if (!canCast) {
+            return
+        }
+        // No Lunar spell is an attack: the ones cast on another player (Heal Other, Vengeance Other, ...)
+        // skip the combat checks, attack delay and PvP state.
+        if (spell.spellbook == Spellbook.Lunars) {
+            val support = spellAttacks[RSCM.getReverseMapping(RSCMType.OBJ, spell.obj.id)] ?: return
+            support.attack(this, target, CombatAttack.Spell(player.righthand, spell, false))
             return
         }
         // Official behavior: `canAttack` checks occur _after_ `canCastSpell` checks.

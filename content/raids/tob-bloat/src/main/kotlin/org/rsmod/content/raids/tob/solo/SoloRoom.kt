@@ -326,7 +326,7 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
     }
 
     /** The player died in here: the room goes back to how it was. */
-    /** The map clock on which the party's leader clicked Pass (the rest go in with them on that tick, not before). */
+    /** The map clock on which the party's leader goes through the barrier (the rest go in with them on that tick, not before). */
     var passAt: Int = -1
 
     open fun reset() {

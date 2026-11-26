@@ -520,7 +520,7 @@ constructor(
         }
         if (room.instanceTick != Math.floorMod(TRIO_START_TICK - CLICK_LEAD, INSTANCE_CYCLE)) return
         val (tile, barrier) = room.findLocs(BARRIER).minByOrNull { (at, _) -> maxOf(kotlin.math.abs(at.x - room.entry.x), kotlin.math.abs(at.z - room.entry.z)) } ?: return
-        room.passAt = d.mapClock.cycle
+        room.passAt = d.mapClock.cycle + 1
         for (p in team) bots.opLoc(p, barrier.id, room.at(tile))
     }
 

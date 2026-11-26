@@ -49,6 +49,7 @@ constructor(
     private val moveClick: MoveGameClickHandler,
     private val opNpc: OpNpcHandler,
     private val opNpcT: OpNpcTHandler,
+    private val opPlayerT: org.rsmod.api.net.rsprot.handlers.OpPlayerTHandler,
     private val opLoc: OpLocHandler,
     private val button: If3ButtonHandler,
     private val prayers: PrayerRepository,
@@ -120,6 +121,11 @@ constructor(
     /** Cast the spell on [component] (a spellbook button, packed) on [npc]. */
     fun cast(player: Player, npc: Npc, component: Int) {
         opNpcT.handle(player, OpNpcT(npc.slotId, false, CombinedId(component ushr 16, component and 0xFFFF), -1, -1))
+    }
+
+    /** Cast the spell on [component] (a spellbook button, packed) on another player. */
+    fun cast(player: Player, target: Player, component: Int) {
+        opPlayerT.handle(player, net.rsprot.protocol.game.incoming.players.OpPlayerT(target.slotId, false, CombinedId(component ushr 16, component and 0xFFFF), -1, -1))
     }
 
     /**

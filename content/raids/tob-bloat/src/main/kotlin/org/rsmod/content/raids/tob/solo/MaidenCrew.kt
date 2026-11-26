@@ -154,6 +154,7 @@ class MaidenCrew(
         bot.statBoost("stat.hitpoints", anglerBoost(bot.baseHitpointsLvl), ANGLER_PERCENT)
         VarPlayerIntMapSetter.set(bot, "varbit.vengeance_rebound", 1)
         VarPlayerIntMapSetter.set(bot, "varp.option_run", 1)
+        VarPlayerIntMapSetter.set(bot, "varbit.option_acceptaid", 1)
         bot.runEnergy = FULL_RUN
         if (crew.first { it.player === bot }.role == NyloRole.Mage) return
         VarPlayerIntMapSetter.set(bot, "varbit.death_charge_scroll_used", 1)
@@ -682,8 +683,9 @@ class MaidenCrew(
     }
 
     /**
-     * Its Lunar and Arceuus casts; true when it swaps books for a Death Charge: on the tick after a swing, so the stall
-     * ends as its next swing is due, and not when her attack falls inside it (no drain it can't flick for).
+     * Its Lunar and Arceuus casts; true when it swaps books for a Death Charge: on the tick after a swing, standing
+     * beside her (the stall holds it where it is), so it ends as its next swing is due, and not when her attack falls
+     * inside it (no drain it can't flick for).
      */
     private fun spells(b: Bot): Boolean {
         val p = b.player
@@ -708,13 +710,35 @@ class MaidenCrew(
             trace { "t$t ${b.role} casts back to the Lunars" }
             return false
         }
-        if (p in thralled && p.vars[DC_COOLDOWN] == 0 && p.vars["varbit.spellbook"] == LUNARS && b.next - t == SWING - 1 && b.order == null && !p.isDelayed && (1..SHORT_STALL).none { room.attacksAt(t + 1 + it) }) {
+        if (p in thralled && p.vars[DC_COOLDOWN] == 0 && p.vars["varbit.spellbook"] == LUNARS && b.next - t == SWING - 1 && b.order == null && !p.isDelayed &&
+            room.besideHer(room.real(p.coords)) && (1..SHORT_STALL).none { room.attacksAt(t + 1 + it) }) {
             trace { "t$t ${b.role} swaps back for a fresh Death Charge" }
             bots.spell(p, SPELLBOOK_SWAP, SWAP_TO_ARCEUUS)
             return true
         }
+        healFor(b)?.let { mate ->
+            trace { "t$t ${b.role} (${p.hitpoints}) heals ${crew.first { it.player === mate }.role} (${mate.hitpoints})" }
+            bots.cast(p, mate, HEAL_OTHER.asRSCM(RSCMType.COMPONENT))
+            return true
+        }
         if (p.vars["varbit.vengeance_rebound"] == 0 && p.vars["varbit.vengeance_timelimit"] == 0 && p.vars["varbit.spellbook"] == LUNARS) bots.spell(p, VENGEANCE)
         return false
+    }
+
+    /**
+     * Too low to tank her, it hands its hitpoints (three quarters of them) to the other one, tanking her from as close
+     * (so her attacks stay on them while it flinches), on the tick after a swing so it costs no swing.
+     */
+    private fun healFor(b: Bot): Player? {
+        val p = b.player
+        if (p.hitpoints > room.autoMax / 2 + TANK_MARGIN || p.vars["varbit.spellbook"] != LUNARS || b.next - t != SWING - 1 || b.order != null || p.isDelayed) return null
+        val gives = p.hitpoints * 3 / 4
+        if (gives < HEAL_MIN || p.hitpoints * 100 < p.baseHitpointsLvl * HEAL_FLOOR_PCT) return null
+        val here = room.centreDist(room.real(p.coords))
+        return crew.filter { it !== b && it.role != NyloRole.Mage && it.player.hitpoints > p.hitpoints }
+            .map { it.player }
+            .filter { room.centreDist(room.real(it.coords)) <= here }
+            .firstOrNull { it.baseHitpointsLvl - it.hitpoints >= gives }
     }
 
     /**
@@ -895,11 +919,11 @@ class MaidenCrew(
         val k = a.substringBefore(':')
         val (c, line) =
             when (k) {
-                "scyk", "scyc" -> crabRef(a.split(':')[1])?.takeIf { it.frozenTo >= tt + 1 }?.let { it to bestLine(b, it) } ?: return a
+                "scyk", "scyc" -> crabRef(a.split(':')[1])?.takeIf { it.frozenTo >= tt + 1 && !pushPast(it) }?.let { it to bestLine(b, it) } ?: return a
                 // one stepping beside her as the hit lands stands still there: a thrust through it pierces into her
                 "scys" -> crabRef(a.split(':')[1])?.let { if (it.frozenTo >= tt + 1) it else arrival(it) }?.let { it to bestLine(b, it) } ?: return a
                 "scythe" ->
-                    crabs.filter { it.frozenTo >= tt + 1 }
+                    crabs.filter { it.frozenTo >= tt + 1 && !pushPast(it) }
                         .mapNotNull { q ->
                             bestLine(b, q)?.takeIf { it.her || (stacked(q) && it.n - (if (it.her) 1 else 0) >= 2) }?.let { q to it }
                         }
@@ -1588,7 +1612,7 @@ class MaidenCrew(
                 }
             }
         if (id != null && id !in done) {
-            val c = crabRef("$id@$w")?.takeIf { canHit(b, it, tt) }
+            val c = crabRef("$id@$w")?.takeIf { canHit(b, it, tt) && !pushPast(it) }
             if (plan.left.size == 1 && !(w == 50 && b.lists[2].any { it.startsWith("tdin") }) && c != null && reachOf(c) > tt + SWING && !beside(b, c)) return "scythe"
             if (c != null && reachOf(c) == tt + 1 && c.hp >= blue()) {
                 done += id
@@ -1733,12 +1757,32 @@ class MaidenCrew(
     private fun magenta(): Int = MAG_STEPS.indexOfFirst { her.defenceLvl < it }.let { if (it < 0) 35 else 40 - it }
 
     private fun pushPast(q: Crab): Boolean {
-        if (phase == 0) return reachOf(q) - t >= killTicks()
+        if (phase == 0) return herDamageBy(reachOf(q)) >= hp
         return phase == 30 && q.frozenTo > 0 && q.hp < 50 && crabs.any { it !== q && inArea(it, q) && it.frozenTo <= q.frozenTo }
     }
 
-    /** Roughly how long she lasts once the procs are done, with all three on her (a crab reaching her later doesn't matter). */
-    private fun killTicks(): Int = ceil(hp / (crew.count { it.player.hitpoints > 0 } * SCYTHE_MEAN / SWING)).toInt()
+    /**
+     * What she's expected to take, all three on her, by tick [r]: each one's swings due (scythes, the mage's bow), the
+     * thralls, and the Vengeance rebounds off her attacks. Once the procs are done, a crab reaching her after that
+     * kills her doesn't matter.
+     */
+    private fun herDamageBy(r: Int): Double {
+        var dmg = 0.0
+        for (b in crew) {
+            if (b.player.hitpoints <= 0) continue
+            val mean = if (b.role == NyloRole.Mage) TBOW_MEAN else SCYTHE_MEAN
+            var s = max(b.next, t)
+            while (s + 1 <= r) {
+                dmg += mean
+                s += SWING
+            }
+        }
+        dmg += thralled.size * THRALL_MEAN * max(0, r - t) / THRALL_SPEED
+        val vengs = crew.count { it.player.vars["varbit.vengeance_rebound"] == 1 }
+        val autos = (t + 1..r - HER_HIT).count { room.attacksAt(it + 1) }
+        dmg += min(vengs, autos) * VENG_SHARE * room.autoMax / 2
+        return dmg
+    }
 
     /** A barrage on its way catches the crab (its 3x3 as the crab stands): it's as good as frozen. */
     private fun freezing(q: Crab): Boolean =
@@ -2115,6 +2159,9 @@ class MaidenCrew(
     private companion object {
         val TRACING = System.getenv("TOB_TRIO_TRACE") != null
         const val SPELLBOOK_SWAP = "component.magic_spellbook:spellbook_swap"
+        const val HEAL_OTHER = "component.magic_spellbook:heal_other"
+        const val HEAL_MIN = 10
+        const val HEAL_FLOOR_PCT = 11
         const val SWAP_TO_ARCEUUS = 4
         const val GREATER_GHOST = "component.magic_spellbook:resurrect_greater_ghost"
         const val VENGEANCE = "component.magic_spellbook:vengeance"
@@ -2247,6 +2294,12 @@ class MaidenCrew(
         val SCYTHE_LINES = setOf("scythe", "tdps")
         const val SCYTHE_MEAN = 45.1
         const val TBOW_MEAN = 43.5
+        /** A greater ghost thrall's mean hit (max 3, it doesn't miss) and its speed. */
+        const val THRALL_MEAN = 2.0
+        const val THRALL_SPEED = 4
+        /** Vengeance's share of the hit taken, and the ticks from her attack to its landing. */
+        const val VENG_SHARE = 0.75
+        const val HER_HIT = 4
         const val TBOW_SD = 25.0
         const val SCYTHE_SD = 17.6
         const val SCYTHE = "scythe"
