@@ -723,7 +723,7 @@ class MaidenCrew(
         trace { "t$t ${b.role} threw ${o.move} at ${crabs.firstOrNull { it.npc === o.target }?.key ?: "her"} (ordered t${o.at})" }
         if (b.seq === b.lists[0] && b.step >= THRALL_AFTER) opened += b.player
         val land = t - 1 + LAND_DELAY.getOrDefault(o.move, 1)
-        val (mean, sd) = MEAN_HIT[o.move] ?: (0.0 to 0.0)
+        val (mean, sd) = if (o.move == Move.Zcb) min(ZCB_CAP, hp * ZCB_PCT / 100).toDouble() to 0.0 else MEAN_HIT[o.move] ?: (0.0 to 0.0)
         val onHer = o.target === her
         inflight += Inflight(land, if (onHer) mean else 0.0, if (onHer) sd * sd else 0.0, o.target.takeIf { !onHer && o.move != Move.Barrage })
         if (o.move == Move.Barrage && !onHer) barrages += land to o.target
@@ -869,7 +869,7 @@ class MaidenCrew(
         val tt = b.next
         curT = tt
         // a four's mage rapid-bows on through (its freezes go a tick after the melee freeze's)
-        val stand = if (b.role.freezes && b.force == null && !(quad && b.role == NyloRole.Mage)) standFor(b, tt) else null
+        val stand = if (b.role.freezes && b.force == null && !(quad && b.role == NyloRole.Mage && room.phase != WAVES.size - 1)) standFor(b, tt) else null
         val a = onTime(b, stand ?: obligate(b, nextAct(b, tt), tt), tt)
         b.walkedFor = null
         trace { "t$tt ${b.role}@${room.real(b.player.coords).let { "${it.x - ROOM_X},${ROOM_Y - it.z}" }} $a${if (a.startsWith("dinhs")) " from ${b.dinPos?.joinToString(",")}" else ""}" }
@@ -898,7 +898,7 @@ class MaidenCrew(
      * The sim's freezer stand: with the next proc's list opening on a freeze, the mage won't start an attack that leaves
      * it on cooldown past the proc's first tick when that proc could come first (a 1 in 4 chance, from what's in flight
      * and the scythes due) or, in a trio, she's within [STAND_PCT] of it (a four's melee freeze bows on while that's
-     * safe). It stands, or preloads a barrage on a pile worth it: queued behind the DPS hits, it goes once they've landed
+     * safe; before a four's 30s, both freezers - two ticks late still leaves each three freezes). It stands, or preloads a barrage on a pile worth it: queued behind the DPS hits, it goes once they've landed
      * without a proc, and only when it's off cooldown in time for a proc off their next ones - a proc off theirs gets the
      * freezes on time instead.
      */
@@ -909,7 +909,8 @@ class MaidenCrew(
         if (cur == "qfz" && !qfzSpent(b)) return null
         val a = atkOf(cur)
         if (a.style == 'm' || a.speed <= 1) return null
-        val by = tt + a.speed - 2
+        val first = if (quad && b.role == NyloRole.Freezer) 1 else 2
+        val by = tt + a.speed - first - if (quad && room.phase == WAVES.size - 1) QUAD_30S_SLACK else 0
         if (!procRisk(tt, by) && (quad || hp * 100 - full * phase > full * STAND_PCT)) return null
         val others = crew.filter { it !== b }.minOf { it.next }
         // queued behind the DPS hits: it goes only once their last swings have landed without a proc (seen two ticks on)
@@ -2894,6 +2895,7 @@ class MaidenCrew(
         val N12 = listOf("N1", "N2")
         val S1S = listOf("S1")
         val CLUMP_IDS = setOf("N3", "S3", "N4", "S4")
+        const val QUAD_30S_SLACK = 2
         const val REACT_MIN = 1
         const val REACT_MAX = 2
         const val HORN_OBJ = "obj.soulflame_horn"
