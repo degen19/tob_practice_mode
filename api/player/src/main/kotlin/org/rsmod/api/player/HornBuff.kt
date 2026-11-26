@@ -4,8 +4,8 @@ import java.util.WeakHashMap
 import org.rsmod.game.entity.Player
 
 /**
- * The Soulflame horn's Entice: a player's next melee attack before it runs out never misses its first accuracy roll
- * (Dragon claws: their first too, not their second as in the game).
+ * The Soulflame horn's Entice: a player's next melee attack before it runs out never misses its first accuracy roll.
+ * Claw specials take it themselves and make their second roll the guaranteed one.
  */
 public object HornBuff {
     private val until = WeakHashMap<Player, Int>()

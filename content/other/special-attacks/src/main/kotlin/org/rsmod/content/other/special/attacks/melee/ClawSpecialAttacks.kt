@@ -4,6 +4,7 @@ import jakarta.inject.Inject
 import org.rsmod.api.combat.commons.CombatAttack
 import org.rsmod.api.config.constants
 import org.rsmod.api.mechanics.burn.Burn
+import org.rsmod.api.player.HornBuff
 import org.rsmod.api.player.cheat.adminMaxHit
 import org.rsmod.api.player.protect.ProtectedAccess
 import org.rsmod.api.specials.SpecialAttackManager
@@ -34,6 +35,8 @@ class ClawSpecialAttacks @Inject constructor(private val burn: Burn) : SpecialAt
      * - 4th roll lands: hit 4 is between 1/4 and 5/4 of the max hit.
      * - All miss: two thirds of the time two of the hits deal 1 damage, else all four are 0.
      *
+     * Under the Soulflame horn's [HornBuff] the 2nd roll always lands (the 1st is still a normal one).
+     *
      * The first two hitsplats land on the next tick and the last two a tick later.
      */
     private class SliceAndDice(private val manager: SpecialAttackManager) : MeleeSpecialAttack {
@@ -62,7 +65,8 @@ class ClawSpecialAttacks @Inject constructor(private val burn: Burn) : SpecialAt
             )
 
             val max = manager.calculateMeleeMaxHit(this, target, attack.type, attack.style, 1.0)
-            val landed = (0 until HITS).firstOrNull { accurate(target, attack) }
+            val horned = HornBuff.consume(player)
+            val landed = (0 until HITS).firstOrNull { (horned && it == HORNED_ROLL) || accurate(target, attack) }
             val hits = IntArray(HITS)
             when (landed) {
                 0 -> {
@@ -117,6 +121,7 @@ class ClawSpecialAttacks @Inject constructor(private val burn: Burn) : SpecialAt
 
         private companion object {
             const val HITS = 4
+            const val HORNED_ROLL = 1
             val MISS_PATTERNS =
                 arrayOf(intArrayOf(0, 1), intArrayOf(2, 3), intArrayOf(0, 2), intArrayOf(1, 3))
         }
@@ -133,7 +138,7 @@ class ClawSpecialAttacks @Inject constructor(private val burn: Burn) : SpecialAt
      *   the first two; 45% burn chance per hitsplat.
      * - All miss: 0 damage 20% of the time, else 1 or 2 damage (40% each), which cannot burn.
      *
-     * Every value rounds down. A burn deals 10 damage over 40 ticks and up to five can stack.
+     * Under the Soulflame horn's [HornBuff] the 2nd roll always lands. Every value rounds down. A burn deals 10 damage over 40 ticks and up to five can stack.
      */
     private class BurningBarrage(
         private val manager: SpecialAttackManager,
@@ -164,7 +169,8 @@ class ClawSpecialAttacks @Inject constructor(private val burn: Burn) : SpecialAt
             )
 
             val max = manager.calculateMeleeMaxHit(this, target, attack.type, attack.style, 1.0)
-            val landed = (0 until HITS).firstOrNull { accurate(target, attack) }
+            val horned = HornBuff.consume(player)
+            val landed = (0 until HITS).firstOrNull { (horned && it == HORNED_ROLL) || accurate(target, attack) }
             val hits = IntArray(HITS)
             var burnChance = 0
             when (landed) {
@@ -226,6 +232,7 @@ class ClawSpecialAttacks @Inject constructor(private val burn: Burn) : SpecialAt
 
         private companion object {
             const val HITS = 3
+            const val HORNED_ROLL = 1
         }
     }
 }
