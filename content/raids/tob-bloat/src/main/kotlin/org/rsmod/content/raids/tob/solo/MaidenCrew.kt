@@ -266,7 +266,7 @@ class MaidenCrew(
         for (p in flinching) flinch(p)
         val tank = bots[target]
         if (tank != null && tank.player.actionDelay > clock.cycle) flick(tank.player)
-        for (b in crew) if (b.player !in flinching) b.predodgeAt = t + 1
+        for (b in crew) b.predodgeAt = t + 1
         trace { "t$t her attack: ${tank?.role ?: target.username}, flinching ${flinching.mapNotNull { bots[it]?.role }} ${near.joinToString { "${bots[it.first]?.role}:${it.second}" }}" }
         return flinching
     }
@@ -327,15 +327,13 @@ class MaidenCrew(
     }
 
     /**
-     * Off her blood: a bot standing in a splat or a trail steps to the nearest clean tile (beside her if it was), and
-     * its order goes on from there - unless its next swing is due within [MaidenCrewParams.dodgeLead] ticks (it swings
-     * first and steps after, as players do).
+     * Off her blood: a bot standing in a splat or a trail, or where one is coming, steps to the nearest clean tile
+     * (beside her if it was), and its order goes on from there.
      */
     private fun dodge(b: Bot): Boolean {
         val p = b.player
         val here = room.real(p.coords)
-        if (!room.bloody(here) || b.order?.walkTo != null) return false
-        if (p.actionDelay <= clock.cycle + params.dodgeLead || p.routeDestination.isNotEmpty()) return false
+        if (!room.bloody(here) || b.order?.walkTo?.let { !room.bloody(it) } == true || p.routeDestination.isNotEmpty()) return false
         val beside = room.besideHer(here)
         val to =
             (-DODGE..DODGE).flatMap { dx -> (-DODGE..DODGE).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
@@ -712,7 +710,7 @@ class MaidenCrew(
             trace { "t$t ${b.role} casts back to the Lunars" }
             return false
         }
-        if (p in thralled && p.vars[DC_COOLDOWN] == 0 && p.vars["varbit.spellbook"] == LUNARS && b.next - t == SWING - 1 && b.order == null && !p.isDelayed && !dodgeDue(b) &&
+        if (p in thralled && p.vars[DC_COOLDOWN] == 0 && p.vars["varbit.spellbook"] == LUNARS && b.next - t == SWING - 1 && b.order == null && !p.isDelayed && !dodgeDue(b) && stillSafe(p) &&
             room.besideHer(room.real(p.coords)) && (1..SHORT_STALL).none { room.attacksAt(t + 1 + it) }) {
             trace { "t$t ${b.role} swaps back for a fresh Death Charge" }
             bots.spell(p, SPELLBOOK_SWAP, SWAP_TO_ARCEUUS)
@@ -788,7 +786,7 @@ class MaidenCrew(
         val procs = 1 - below(gap)
         val rebound = (0 until REBOUND_STEPS).sumOf { k -> below(gap) - below(gap - max * REBOUND * (k + 0.5) / REBOUND_STEPS) } / REBOUND_STEPS
         if (procs > params.stallProcPct / 100.0 || rebound < params.stallRisk / 100.0) return false
-        if (upcoming(b) !in SCYTHE_LINES || !room.besideHer(room.real(p.coords)) || ownCrab(b, b.next) != null || nextCrab(b, b.next) != null) return false
+        if (upcoming(b) !in SCYTHE_LINES || !room.besideHer(room.real(p.coords)) || !stillSafe(p) || dodgeDue(b) || ownCrab(b, b.next) != null || nextCrab(b, b.next) != null) return false
         trace { "t$t ${b.role} stalls her hit (lands +${lands - clock.cycle}, ${(rebound * 100).toInt()}% it'd proc her)" }
         bots.spell(p, SPELLBOOK_SWAP, SWAP_TO_ARCEUUS)
         return true
@@ -2049,8 +2047,24 @@ class MaidenCrew(
         return open.filter { !room.bloody(it) && dist(it) <= RUN * ticks }.minByOrNull(dist)
     }
 
+    /** [to], or the nearest tile as far from her with no blood on it (none: null). */
+    private fun clean(to: CoordGrid): CoordGrid? {
+        if (!room.bloody(to)) return to
+        val gap = room.gapToHer(to)
+        return (-DODGE..DODGE).flatMap { dx -> (-DODGE..DODGE).map { dz -> CoordGrid(to.x + dx, to.z + dz, to.level) } }
+            .filter { room.inArena(it) && !room.under(it) && !room.blocked(it) && !room.bloody(it) }
+            .minWithOrNull(compareBy({ abs(room.gapToHer(it) - gap) }, { maxOf(abs(it.x - to.x), abs(it.z - to.z)) }))
+    }
+
+    /** Nothing of hers can reach its tile while a spellbook swap holds it there: no blood on it or coming, no spawn near. */
+    private fun stillSafe(p: Player): Boolean {
+        val here = room.real(p.coords)
+        return !room.bloody(here) && (-STALL_REACH..STALL_REACH).none { dx -> (-STALL_REACH..STALL_REACH).any { dz -> room.spawnOn(CoordGrid(here.x + dx, here.z + dz, here.level)) } }
+    }
+
     /** Walks [b] to [dest] (a real tile) never ending a tick in her blood: round it when the way runs through, two tiles a tick. */
-    private fun walk(b: Bot, dest: CoordGrid) {
+    private fun walk(b: Bot, to: CoordGrid) {
+        val dest = clean(to) ?: return
         b.route.clear()
         b.routeAt = null
         val path = safePath(room.real(b.player.coords), dest)
@@ -2114,7 +2128,7 @@ class MaidenCrew(
 
     private fun act(b: Bot, move: Move, target: Npc, walkTo: CoordGrid? = null) {
         val p = b.player
-        val to = walkTo ?: if (move == Move.Scythe && target === her) cleanBeside(b) else null
+        val to = walkTo?.let { clean(it) } ?: if (move == Move.Scythe && target === her) cleanBeside(b) else null
         // a special picked a tick early is clicked on the tick it's ready: switched in sooner, its spec toggle doesn't hold
         val o = Order(move, target, t, to?.takeIf { room.real(p.coords) != it }, max(clock.cycle, p.actionDelay), held = move.spec && p.actionDelay > clock.cycle)
         b.order = o
@@ -2163,6 +2177,7 @@ class MaidenCrew(
         const val SPELLBOOK_SWAP = "component.magic_spellbook:spellbook_swap"
         const val HEAL_OTHER = "component.magic_spellbook:heal_other"
         const val HEAL_MIN = 10
+        const val STALL_REACH = 4
         const val HEAL_FLOOR_PCT = 11
         const val SWAP_TO_ARCEUUS = 4
         const val GREATER_GHOST = "component.magic_spellbook:resurrect_greater_ghost"
@@ -2378,7 +2393,6 @@ data class MaidenCrewParams(
     val redOffset: Int = 0,
     val walkWeight: Int = 30,
     val dinhWalk: Int = 2,
-    val dodgeLead: Int = 1,
     val casterGap: Int = 4,
     val stallRisk: Int = 15,
     val stallProcPct: Int = 50,
@@ -2402,7 +2416,6 @@ data class MaidenCrewParams(
                 redOffset = int("redOffset", d.redOffset),
                 walkWeight = int("walkWeight", d.walkWeight),
                 dinhWalk = int("dinhWalk", d.dinhWalk),
-                dodgeLead = int("dodgeLead", d.dodgeLead),
             )
         }
     }
