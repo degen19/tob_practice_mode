@@ -1096,6 +1096,8 @@ class MaidenCrew(
                     return fallback(b, a)
                 }
                 if (a == "qfz" && (r == "wait" || r == "tbr" || r == "ibs:old" || r.substringAfter('@', "").toIntOrNull()?.let { it != latestWave() } == true)) return r
+                // a freezer's line stays until its list for the wave is spent (a late split hands it a third clump)
+                if (a == "qfz" && !last && !qfzSpent(b)) b.step--
                 // the chins line stays until its chins (and the accurate tbow after three) are thrown
                 if (a == "qchin" && !last) b.step--
                 a = r
@@ -1270,7 +1272,8 @@ class MaidenCrew(
      * and N2 on the wave's first tick, then the 3s and 4s. A missing crab: a tbow on the 70s, the old pile (or the melee
      * freeze's ZCB) after. No N1 but an S2: on the 70s the mage ice rushes it, on the 50s it barrages the 70s N1 in the
      * pile first. Late to the first freeze: one tick, the late one also takes the 3s and the other the 4s (both a tick late:
-     * the mage the 3s); two or more, the late one the 4s and the other the 3s. On the 30s a melee freeze on time that
+     * the mage the 3s); two or more, the late one the 4s and the other the 3s - unless that one can't cast it by the
+     * clump's tick and the other can (a missing crab's slot gives way to a clump). On the 30s a melee freeze on time that
      * still has its ZCB to do throws it in a missing crab's slot, else after the 3s (the mage takes the 4s). A proc while
      * the melee freeze still owes the last wave's clump (a 9s): a mage with no N1 freezes its S1 first, then the S2.
      */
@@ -1313,12 +1316,13 @@ class MaidenCrew(
                 val lateN = lN > lS
                 val amt = max(lN, lS)
                 val (lateList, other) = if (lateN) north to south else south to north
-                if (amt == 1) {
-                    lateList += "3s"
-                    other += "4s"
-                } else {
-                    lateList += "4s"
-                    other += "3s"
+                val lp = procOf(w) ?: first
+                val slot = { l: List<String> -> if (l === north) start.getValue(NyloRole.Freezer) + lN else start.getValue(NyloRole.Mage) + lS }
+                val next = { l: List<String> -> slot(l) + atkOf("ibs").speed * l.count { it != "fill" } }
+                for ((which, pref) in listOf("3s" to if (amt == 1) lateList else other, "4s" to if (amt == 1) other else lateList)) {
+                    val alt = if (pref === north) south else north
+                    val due = lp + if (which == "3s") THREES_DUE else FOURS_DUE
+                    (if (next(pref) > due && next(alt) <= due) alt else pref) += which
                 }
                 how = "${if (lateN) "north" else "south"} $amt late"
             }
@@ -1340,7 +1344,11 @@ class MaidenCrew(
             when (it) {
                 "fill" -> {
                     idx += k
-                    fill(b, w, tt)?.let { f -> return f }
+                    val f = fill(b, w, tt) ?: continue
+                    val clump = list.withIndex().firstOrNull { (j, x) -> j > k && j !in idx && (x == "3s" || x == "4s") && clumpReady(w, x, tt) != null }
+                    val before = clump?.let { c -> (k + 1 until c.index).count { it !in idx && list[it] != "fill" } } ?: 0
+                    if (clump != null && tt + atkOf(f).speed + atkOf("ibs").speed * before > lp + if (clump.value == "3s") THREES_DUE else FOURS_DUE) continue
+                    return f
                 }
                 "zcbs" -> {
                     idx += k
@@ -2341,7 +2349,7 @@ class MaidenCrew(
             return ofWave(w, if (id == "3s") THREES else FOURS).maxWithOrNull(compareBy<Crab> { c ->
                 val n = aoe3(c)
                 n.count { tt > it.immuneTo && tt > it.frozenTo } * 100 + n.size
-            }.thenBy { if (under(it)) 0 else 1 })
+            }.thenBy { if (under(it)) 0 else 1 }.thenBy { it.hp })
         }
         return crabRef(id)
     }

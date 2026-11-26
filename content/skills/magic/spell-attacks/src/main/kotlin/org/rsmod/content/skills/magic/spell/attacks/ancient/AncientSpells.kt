@@ -179,6 +179,10 @@ constructor(
             }
         }
 
+        /**
+         * The primary and up to eight NPCs in its 3x3, as the game picks them once there are more: zone by zone, the
+         * newest arrival in a zone first.
+         */
         private fun ProtectedAccess.collectTargets(primary: PathingEntity): List<PathingEntity> {
             val targets = mutableListOf(primary)
             if (!primary.inMultiway()) {
@@ -186,7 +190,8 @@ constructor(
             }
             val centre = primary.coords
             if (primary is Player) return collectPlayers(primary, targets)
-            for (npc in hunt.findNpcs(centre, AOE_SEARCH_RADIUS, HuntVis.Off)) {
+            val found = hunt.findNpcs(centre, AOE_SEARCH_RADIUS, HuntVis.Off).toList()
+            for (npc in found.groupBy { it.lastProcessedZone }.values.flatMap { it.asReversed() }) {
                 if (targets.size >= MAX_TARGETS) {
                     return targets
                 }
