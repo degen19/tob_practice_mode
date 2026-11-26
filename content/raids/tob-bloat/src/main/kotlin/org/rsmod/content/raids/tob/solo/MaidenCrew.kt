@@ -333,13 +333,14 @@ class MaidenCrew(
 
     /**
      * Off her blood: a bot standing in a splat or a trail, or where one is coming, steps to the nearest clean tile
-     * (beside her if it was), and its order goes on from there - after a swing going off this tick.
+     * (beside her if it was), and its order goes on from there - after the swing due, when the blood's still far enough off.
      */
     private fun dodge(b: Bot): Boolean {
         val p = b.player
         val here = room.real(p.coords)
         if (!room.bloody(here) || b.order?.walkTo?.let { !room.bloody(it) } == true || p.routeDestination.isNotEmpty()) return false
-        if (p.actionDelay <= clock.cycle && (b.order != null || current(p) != null)) return false
+        // a step on the click or the swing costs the swing: one due waits while the blood is still ticks away
+        if (p.actionDelay <= clock.cycle + 1 && (b.order != null || current(p) != null) && (room.bloodIn(here) ?: 0) >= BLOOD_SLACK) return false
         val beside = room.besideHer(here)
         val to =
             (-DODGE..DODGE).flatMap { dx -> (-DODGE..DODGE).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
@@ -2186,9 +2187,9 @@ class MaidenCrew(
 
     /**
      * Players walk themselves to where they and a crab meet and click it as it gets there, never letting the game drag
-     * them (onto blood, or out from under it): a melee hit on a crab walking in waits for it (its step beside them
-     * comes before their click), and anything else out of reach walks first to the nearest clean tile in reach. False
-     * while it waits or walks.
+     * them onto blood: with blood by them, a melee hit on a crab walking in waits for it (its step beside them comes
+     * before their click), and anything else out of reach walks first to the nearest clean tile in reach. False while it
+     * waits or walks.
      */
     private fun within(b: Bot, o: Order): Boolean {
         val p = b.player
@@ -2207,7 +2208,9 @@ class MaidenCrew(
         }
         if (!o.move.melee) return true
         val c = crabs.firstOrNull { it.npc === o.target } ?: return true
-        if (besideAt(room.real(p.coords), c)) return true
+        val here = room.real(p.coords)
+        // the game's step to meet it is a tile: fine unless there's blood it could step them onto
+        if (besideAt(here, c) || (-1..1).none { dx -> (-1..1).any { dz -> room.bloody(CoordGrid(here.x + dx, here.z + dz, here.level)) } }) return true
         if (c.frozenTo < t + 1 && p.actionDelay >= clock.cycle - MEET_WAIT) {
             if (!waited) trace { "t$t ${b.role} waits for ${c.key} to meet it" }
             o.meeting = true
@@ -2266,6 +2269,7 @@ class MaidenCrew(
         const val HEAL_OTHER = "component.magic_spellbook:heal_other"
         const val HEAL_MIN = 10
         const val STALL_REACH = 4
+        const val BLOOD_SLACK = 3
         const val HEAL_FLOOR_PCT = 11
         const val SWAP_TO_ARCEUUS = 4
         const val GREATER_GHOST = "component.magic_spellbook:resurrect_greater_ghost"

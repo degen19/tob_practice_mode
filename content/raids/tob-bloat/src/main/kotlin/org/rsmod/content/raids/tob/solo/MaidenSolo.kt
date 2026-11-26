@@ -63,6 +63,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private val crabs = ArrayList<Crab>()
     private val splats = ArrayList<Splat>()
     private val incoming = HashMap<CoordGrid, Int>()
+    private val landing = HashMap<CoordGrid, Int>()
     private val spawns = ArrayList<Spawn>()
     private val trails = LinkedHashMap<CoordGrid, Pair<LocInfo, Int>>()
 
@@ -76,6 +77,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         crabs.clear()
         splats.clear()
         incoming.clear()
+        landing.clear()
         autos.clear()
         spawns.clear()
         trails.clear()
@@ -334,8 +336,10 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         for (tile in tiles) {
             val lands = projTiles(BLOOD_PROJ, CoordGrid(X + SIZE / 2, Y + SIZE / 2, 0), tile, delay = PROJ_START, speed = BLOOD_SPEED, startHeight = 110, endHeight = 0, angle = 40)
             incoming.merge(tile, 1, Int::plus)
+            landing.merge(tile, t + lands, ::minOf)
             later(lands) {
                 incoming.computeIfPresent(tile) { _, n -> (n - 1).takeIf { it > 0 } }
+                if (tile !in incoming) landing.remove(tile)
                 gfx(SPLAT_GFX[rand(SPLAT_GFX.size)], tile)
                 splats += Splat(tile, t + SPLAT_TICKS)
             }
@@ -448,8 +452,31 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     /** `TOB_TRIO_TRACE`: her damage taken by phase, attacker and hit type, for comparing with the sim. */
     val tally = java.util.TreeMap<String, Int>()
 
-    /** Her blood on [tile] (a real tile), or a spot of hers still in the air for it. */
-    fun bloody(tile: CoordGrid): Boolean = splats.any { it.tile == tile } || trails.containsKey(tile) || incoming.containsKey(tile)
+    /**
+     * Her blood on [tile] (a real tile), a spot of hers still in the air for it, or a blood spawn on it or stepping onto
+     * it (it leaves its trail where it stood).
+     */
+    fun bloody(tile: CoordGrid): Boolean =
+        splats.any { it.tile == tile } || trails.containsKey(tile) || incoming.containsKey(tile) || spawns.any { s -> s.npc.isSlotAssigned && s.npc.hitpoints > 0 && treads(s.npc, tile) }
+
+    /** Ticks until her blood is on [tile] (a real tile): 0 already, a spot's landing, a spawn's trail; null for none. */
+    fun bloodIn(tile: CoordGrid): Int? {
+        if (splats.any { it.tile == tile } || trails.containsKey(tile)) return 0
+        val live = spawns.filter { s -> s.npc.isSlotAssigned && s.npc.hitpoints > 0 }
+        val soonest = listOfNotNull(
+            landing[tile]?.let { maxOf(0, it - t) },
+            if (live.any { real(it.npc.coords) == tile }) 1 else null,
+            if (live.any { treads(it.npc, tile) }) 2 else null,
+        )
+        return soonest.minOrNull()
+    }
+
+    private fun treads(n: Npc, tile: CoordGrid): Boolean {
+        val r = real(n.coords)
+        if (r == tile) return true
+        val dest = n.routeDestination.lastOrNull()?.let { real(it) } ?: return false
+        return CoordGrid(r.x + Integer.signum(dest.x - r.x), r.z + Integer.signum(dest.z - r.z), r.level) == tile
+    }
 
     /** A live blood spawn on [tile] (a real tile). */
     fun spawnOn(tile: CoordGrid): Boolean = spawns.any { s -> s.npc.isSlotAssigned && s.npc.hitpoints > 0 && real(s.npc.coords) == tile }
