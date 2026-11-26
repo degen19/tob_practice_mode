@@ -202,7 +202,7 @@ class MaidenCrew(
             if (b.role != NyloRole.Mage && spells(b)) continue
             if (stall(b)) continue
             stepRoute(b)
-            if (t >= b.predodgeAt && t - b.predodgeAt <= PREDODGE_TICKS && predodge(b)) continue
+            if (dodgeDue(b) && predodge(b)) continue
             if (dodge(b)) continue
             val o = b.order
             if (o != null) {
@@ -297,6 +297,8 @@ class MaidenCrew(
      * closer) for one at range, clear of the others' tiles. A swing due now goes first and the step a tick
      * later, still ahead of the splat.
      */
+    private fun dodgeDue(b: Bot): Boolean = t >= b.predodgeAt && t - b.predodgeAt <= PREDODGE_TICKS
+
     private fun predodge(b: Bot): Boolean {
         val p = b.player
         if (b.order != null || p.actionDelay <= clock.cycle + 1) return false
@@ -684,8 +686,8 @@ class MaidenCrew(
 
     /**
      * Its Lunar and Arceuus casts; true when it swaps books for a Death Charge: on the tick after a swing, standing
-     * beside her (the stall holds it where it is), so it ends as its next swing is due, and not when her attack falls
-     * inside it (no drain it can't flick for).
+     * beside her with no blood throw to step off (the stall holds it where it is), so it ends as its next swing is due,
+     * and not when her attack falls inside it (no drain it can't flick for).
      */
     private fun spells(b: Bot): Boolean {
         val p = b.player
@@ -710,7 +712,7 @@ class MaidenCrew(
             trace { "t$t ${b.role} casts back to the Lunars" }
             return false
         }
-        if (p in thralled && p.vars[DC_COOLDOWN] == 0 && p.vars["varbit.spellbook"] == LUNARS && b.next - t == SWING - 1 && b.order == null && !p.isDelayed &&
+        if (p in thralled && p.vars[DC_COOLDOWN] == 0 && p.vars["varbit.spellbook"] == LUNARS && b.next - t == SWING - 1 && b.order == null && !p.isDelayed && !dodgeDue(b) &&
             room.besideHer(room.real(p.coords)) && (1..SHORT_STALL).none { room.attacksAt(t + 1 + it) }) {
             trace { "t$t ${b.role} swaps back for a fresh Death Charge" }
             bots.spell(p, SPELLBOOK_SWAP, SWAP_TO_ARCEUUS)
@@ -731,7 +733,7 @@ class MaidenCrew(
      */
     private fun healFor(b: Bot): Player? {
         val p = b.player
-        if (p.hitpoints > room.autoMax / 2 + TANK_MARGIN || p.vars["varbit.spellbook"] != LUNARS || b.next - t != SWING - 1 || b.order != null || p.isDelayed) return null
+        if (p.hitpoints > room.autoMax / 2 + TANK_MARGIN || p.vars["varbit.spellbook"] != LUNARS || b.next - t != SWING - 1 || b.order != null || p.isDelayed || dodgeDue(b)) return null
         val gives = p.hitpoints * 3 / 4
         if (gives < HEAL_MIN || p.hitpoints * 100 < p.baseHitpointsLvl * HEAL_FLOOR_PCT) return null
         val here = room.centreDist(room.real(p.coords))
