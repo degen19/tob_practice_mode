@@ -345,7 +345,7 @@ class MaidenCrew(
         val to =
             (-DODGE..DODGE).flatMap { dx -> (-DODGE..DODGE).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
                 .filter { it != here && room.inArena(it) && !room.under(it) && !room.bloody(it) && (!beside || room.besideHer(it)) }
-                .minWithOrNull(compareBy({ if (room.gapToHer(it) - 1 <= RUN) 0 else 1 }, { if (b.dps != null) fromPost(b, it) else 0 }, { maxOf(abs(it.x - here.x), abs(it.z - here.z)) })) ?: return false
+                .minWithOrNull(compareBy({ if (room.gapToHer(it) - 1 <= RUN) 0 else 1 }, { if (b.dps != null && !room.besideHer(it)) 1 else 0 }, { if (b.dps != null) fromPost(b, it) else 0 }, { maxOf(abs(it.x - here.x), abs(it.z - here.z)) })) ?: return false
         trace { "t$t ${b.role} steps off blood to ${to.x - ROOM_X},${ROOM_Y - to.z}" }
         val o = b.order
         if (o != null) {
@@ -2065,7 +2065,7 @@ class MaidenCrew(
             (-REACH..REACH).flatMap { dx -> (-REACH..REACH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
                 .filter { room.besideHer(it) && room.inArena(it) && !room.under(it) }
         val nearest = open.minOfOrNull(dist) ?: return null
-        if (open.none { dist(it) <= nearest && room.bloody(it) }) return null
+        if (open.none { dist(it) <= nearest + 1 && room.bloody(it) }) return null
         return open.filter { !room.bloody(it) && dist(it) <= RUN * ticks }.minByOrNull(dist)
     }
 

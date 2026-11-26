@@ -18,8 +18,9 @@ import kotlin.math.min
  * bots raiding with them: each attack goes at one of the party at random.
  *
  * - She attacks every 10 ticks from tick 9, at whoever is closest to her centre (ties to the first in the party): Blackstorm at you (36 + 3.5 per crab that reached her; Protect from Magic
- *   halves it; half the time it drains the stat you're attacking with), or blood splats - one on your tile and two more
- *   in a 5x5 round you - after which she can't throw blood for her next two attacks.
+ *   halves it; half the time it drains the stat you're attacking with), or blood splats - one on each of the party's
+ *   tiles and two more round the furthest of them (landing 2 ticks after the throw beside her, 7 at 10 tiles out; the
+ *   two extra a tick later) - after which she can't throw blood for her next two attacks.
  * - A splat hurts and heals her while you stand on it (10 + 2 per crab) and drains prayer; when it dries there's a
  *   chance (10%, 20% if stood on) a blood spawn rises from it. Blood spawns wander leaving a trail that does the same.
  * - At 70%, 50% and 30% two Nylocas Matomenos a player come in from the north and south sides and walk to her (one tile a
@@ -325,6 +326,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val party = party()
         val tiles = LinkedHashSet<CoordGrid>()
         for (q in party) tiles += real(q.coords)
+        val spots = tiles.size
         val far = party.maxByOrNull { boxDist(real(it.coords).x, real(it.coords).z, X, Y, X + SIZE - 1, Y + SIZE - 1) } ?: p
         val at = real(far.coords)
         var extra = 0
@@ -333,8 +335,10 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             val c = CoordGrid(at.x + rand(-1, 1), at.z + rand(-1, 1), 0)
             if (inArena(c) && boxDist(c.x, c.z, X, Y, X + SIZE - 1, Y + SIZE - 1) > 0 && !blocked(c) && tiles.add(c)) extra++
         }
-        for (tile in tiles) {
-            val lands = projTiles(BLOOD_PROJ, CoordGrid(X + SIZE / 2, Y + SIZE / 2, 0), tile, delay = PROJ_START, speed = BLOOD_SPEED, startHeight = 110, endHeight = 0, angle = 40)
+        for ((i, tile) in tiles.withIndex()) {
+            val gap = boxDist(tile.x, tile.z, X, Y, X + SIZE - 1, Y + SIZE - 1)
+            val ticks = BLOOD_LAND + (gap * BLOOD_PER_5 + 4) / 5 + if (i >= spots) 1 else 0
+            val lands = projTiles(BLOOD_PROJ, CoordGrid(X + SIZE / 2, Y + SIZE / 2, 0), tile, delay = ticks * 30, speed = 0, startHeight = 110, endHeight = 0, angle = 40, start = PROJ_START)
             incoming.merge(tile, 1, Int::plus)
             landing.merge(tile, t + lands, ::minOf)
             later(lands) {
@@ -562,7 +566,9 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val BLOOD_PROJ = "spotanim.maiden_blood_proj"
         const val PROJ_START = 41
         const val AUTO_DELAY = 4
-        const val BLOOD_SPEED = 15
+        /** A spot on a player lands 2 ticks after the throw beside her, 4 at 5 tiles, 7 at 10 (a tick per 5/3 tiles). */
+        const val BLOOD_LAND = 1
+        const val BLOOD_PER_5 = 3
         const val CRAB_DEATH = "seq.elemental_death"
         val SPLAT_GFX = listOf("spotanim.maiden_lingering_blood", "spotanim.maiden_lingering_blood_sw", "spotanim.maiden_lingering_blood_nw", "spotanim.maiden_lingering_blood_ne")
         const val TRAIL = "loc.tob_maiden_blood"
