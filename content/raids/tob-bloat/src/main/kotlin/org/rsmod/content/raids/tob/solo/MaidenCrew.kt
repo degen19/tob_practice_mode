@@ -380,11 +380,16 @@ class MaidenCrew(
         if (b.dps == null || latestWave() == null) return toHer(b)
         val due = b.next
         if (due <= t) return
-        val own = ownCrab(b, due)
+        val stack = if (!quad) null else when (upcoming(b)) {
+            "qn12" -> stackCrab(N12, due)
+            "qs1" -> stackCrab(S1S, due)
+            else -> null
+        }
+        val own = if (stack != null) null else ownCrab(b, due)
         // the DPS on their one crab: her while the next swing still catches it as it steps beside her (Blert: that swing
         // lands as she'd heal and kills it first), so the swing due goes on her from beside her
         if (own != null && planOf(own.wave).left.size == 1 && !(own.wave == 50 && b.lists[2].any { it.startsWith("tdin") }) && reachOf(own) > due + SWING) return toHer(b)
-        val c = own ?: nextCrab(b, due) ?: return toHer(b)
+        val c = stack ?: own ?: nextCrab(b, due) ?: return toHer(b)
         val (x, y) = crabAt(c, due)
         val here = room.real(b.player.coords)
         val me = intArrayOf(here.x - ROOM_X, ROOM_Y - here.z)
@@ -510,7 +515,7 @@ class MaidenCrew(
         val spec = b.spec + if (!b.surged && "surge" in b.seq.drop(b.step)) SURGE_SPEC else 0
         val a =
             (b.step until b.seq.size).map { b.seq[it] }
-                .firstOrNull { it != "surge" && !(it == "tfz" && tfzSpent(b, tt)) && !(it == "zcbs" && spec < atkOf(it).spec && !clawsOver(b, spec)) } ?: b.raw()
+                .firstOrNull { it != "surge" && !(it == "tfz" && tfzSpent(b, tt)) && !(it == "qfz" && qfzSpent(b)) && !(it == "zcbs" && spec < atkOf(it).spec && !clawsOver(b, spec)) } ?: b.raw()
         if (a == "zcbs" && clawsOver(b, spec)) return "claws"
         if (a != "tpile") return a
         if (phase == 0) return "scythe"
@@ -1426,10 +1431,13 @@ class MaidenCrew(
      * The stacked 70s / 50s [ids] in the pile (the ranger's N1s and N2s, the melee's S1s): a swing on the one with the
      * most left (the melee's Obligator takes the line through a stack where it's worth more); none: on to the next line.
      */
-    private fun stackSwing(b: Bot, ids: List<String>, tt: Int): String? {
+    private fun stackSwing(b: Bot, ids: List<String>, tt: Int): String? = stackCrab(ids, tt)?.let { "scyk:${it.key}" }
+
+    /** The 70s / 50s [ids] frozen out by their spawn: a stack of two first (one swing hits both), then the first to thaw. */
+    private fun stackCrab(ids: List<String>, tt: Int): Crab? {
         val flying = inflightKeys(tt)
-        val c = crabs.filter { it.base in ids && it.wave != WAVES[2] && it.key !in flying && it.hp >= N12_MIN_HP && it.frozenTo >= tt + 1 }.maxByOrNull { it.hp } ?: return null
-        return "scyk:${c.key}"
+        return crabs.filter { it.base in ids && it.wave != WAVES[2] && it.key !in flying && it.hp >= N12_MIN_HP && it.frozenTo >= tt + 1 }
+            .minWithOrNull(compareBy<Crab> { if (stacked(it)) 0 else 1 }.thenBy { it.frozenTo }.thenByDescending { it.hp })
     }
 
     /**
