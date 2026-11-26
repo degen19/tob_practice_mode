@@ -895,7 +895,9 @@ class MaidenCrew(
         val k = a.substringBefore(':')
         val (c, line) =
             when (k) {
-                "scyk", "scyc", "scys" -> crabRef(a.split(':')[1])?.takeIf { it.frozenTo >= tt + 1 }?.let { it to bestLine(b, it) } ?: return a
+                "scyk", "scyc" -> crabRef(a.split(':')[1])?.takeIf { it.frozenTo >= tt + 1 }?.let { it to bestLine(b, it) } ?: return a
+                // one stepping beside her as the hit lands stands still there: a thrust through it pierces into her
+                "scys" -> crabRef(a.split(':')[1])?.let { if (it.frozenTo >= tt + 1) it else arrival(it) }?.let { it to bestLine(b, it) } ?: return a
                 "scythe" ->
                     crabs.filter { it.frozenTo >= tt + 1 }
                         .mapNotNull { q ->
@@ -913,6 +915,19 @@ class MaidenCrew(
         val here = room.real(b.player.coords)
         if (maxOf(abs(line.x + ROOM_X - here.x), abs(ROOM_Y - line.y - here.z)) > RUN * max(0, tt - t)) return a
         return "obl:${c.key}:${line.x},${line.y}"
+    }
+
+    /** [c] where it stops, beside her. */
+    private fun arrival(c: Crab): Crab {
+        var x = c.x
+        var y = c.y
+        var n = 0
+        while (!adjacent(x, y) && n++ < WALK_LIMIT) {
+            val sw = y + 1
+            x -= 1
+            if (sw < SWROW) y++ else if (sw > SWROW) y--
+        }
+        return c.copy(x = x, y = y)
     }
 
     private class Line(val x: Int, val y: Int, val n: Int, val her: Boolean, val crabHp: Int, val worth: Double, val keys: List<String>)
@@ -1058,7 +1073,8 @@ class MaidenCrew(
     /**
      * The sim's value-timed Dinh's (`tdin`): after at least one scythe since the 50s, another scythe first whenever the
      * Dinh's would still be worth as much a swing later (crabs that reach her by then are lost to it), up to 30 ticks
-     * after the 50s; then where it hits the most. Anything but a Dinh's is the swing that goes first.
+     * after the 50s; then where it hits the most. Anything but a Dinh's is the swing that goes first - and an older crab
+     * thawing to walk in before the swing after takes this swing whenever the Dinh's can wait for the next.
      */
     private fun dinhTimed(b: Bot, tt: Int): String {
         if (b.sw50 < 1) {
@@ -1066,6 +1082,18 @@ class MaidenCrew(
             val sw = dpsSwing(b, tt)
             b.dinNext = dinPick(5, inflightKeys(tt, false), b, PLAN_RUN)
             return sw
+        }
+        thawing(b, tt)?.let { q ->
+            val skip = inflightKeys(tt, false) + q.key
+            val now = dinPick(0, skip, b)
+            val later = dinPick(5, skip, b, PLAN_RUN)
+            val cap = proc50 != null && tt + 5 > proc50!! + params.dinhCap
+            if (!cap && later != null && (now == null || later.value * 100 >= now.value * params.dinhHoldPct)) {
+                trace { "t$tt ${b.role} holds its Dinh's a swing for ${q.key} thawing in" }
+                b.sw50++
+                b.dinNext = later
+                return if (reachOf(q) == tt + 1) "scys:${q.key}:${if (q.hp >= magenta()) "N" else "S"}" else "scyk:${q.key}"
+            }
         }
         committed(b)?.let { plan ->
             b.dinDone = true
