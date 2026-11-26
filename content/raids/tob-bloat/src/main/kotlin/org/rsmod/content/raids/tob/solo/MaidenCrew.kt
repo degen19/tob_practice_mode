@@ -92,6 +92,7 @@ class MaidenCrew(
         val qI = HashMap<Int, MutableSet<Int>>()
         val chins = HashMap<Int, IntArray>()
         var zcbDone = false
+        var horned = false
         val dpsD = HashMap<Int, MutableSet<String>>()
         var order: Order? = null
         val spec: Int
@@ -154,7 +155,7 @@ class MaidenCrew(
     private val opened = HashSet<Player>()
     private var charged = false
 
-    override fun starts(): List<CoordGrid> = crew.indices.map { START_TILES[it % START_TILES.size] }
+    override fun starts(): List<CoordGrid> = if (quad) crew.map { QUAD_STARTS.getValue(it.role) } else crew.indices.map { START_TILES[it % START_TILES.size] }
 
     override val walksIn: Boolean
         get() = true
@@ -217,6 +218,7 @@ class MaidenCrew(
             protect(b)
             if (p in flinching || !room.inArena(room.real(p.coords)) || t < FIRST_ACT) continue
             if (!b.role.freezes && spells(b)) continue
+            if (quad && b.role == NyloRole.Ranger) horn(b)
             if (stall(b)) continue
             stepRoute(b)
             if (dodgeDue(b) && predodge(b)) continue
@@ -1480,6 +1482,30 @@ class MaidenCrew(
         val pick = { ok: (Crab) -> Boolean -> crabs.filter(ok).maxByOrNull { c -> aoe3(c).count(clump) * 100 + aoe3(c).sumOf { it.hp } } }
         if (newest) pick { it.wave == w && it.base in FOURS_BASE }?.let { return it }
         return pick { clump(it) && it.wave != w } ?: pick(clump)
+    }
+
+    /**
+     * A four's ranger blows the Soulflame horn for the melee (and itself) once the melee's next melee hit - the maul -
+     * is within the buff's 10 ticks: mid-cooldown, with only the melee in its 3 tiles (the freezers come in the far side
+     * of the barrier, out of it).
+     */
+    private fun horn(b: Bot) {
+        val p = b.player
+        if (b.horned || b.order != null || p.actionDelay <= clock.cycle + 1 || b.spec < HORN_COST || !b.owns("horn")) return
+        val melee = crew.firstOrNull { it.role == NyloRole.Melee } ?: return
+        if (melee.next > t + HORN_BUFF) return
+        val near = crew.filter { it !== b && it.player.hitpoints > 0 && dist2(it.player, p) <= HORN_RADIUS * HORN_RADIUS }
+        if (near.map { it.role } != listOf(NyloRole.Melee)) return
+        b.horned = true
+        trace { "t$t ${b.role} horns the melee" }
+        bots.equip(p, Wearpos.RightHand.slot, HORN_OBJ.asRSCM(RSCMType.OBJ))
+        bots.spec(p)
+    }
+
+    private fun dist2(a: Player, c: Player): Int {
+        val dx = a.coords.x - c.coords.x
+        val dz = a.coords.z - c.coords.z
+        return dx * dx + dz * dz
     }
 
     /** The ranger after the 30s: a ZCB where its energy (with a surge) runs to one, else a claw spec; else nothing. */
@@ -2753,7 +2779,7 @@ class MaidenCrew(
             mapOf(
                 NyloRole.Mage to setOf("scythe", "tbow", "ralos", "xbows", "zcb", "claws"),
                 NyloRole.Freezer to setOf("scythe", "tbow", "ralos", "xbows", "zcb", "claws"),
-                NyloRole.Ranger to setOf("scythe", "tbow", "ralos", "zcb", "chins", "claws"),
+                NyloRole.Ranger to setOf("scythe", "tbow", "ralos", "zcb", "chins", "claws", "horn"),
                 NyloRole.Melee to setOf("scythe", "tbow", "ralos", "zcb", "dinh", "obligator", "maul", "claws"),
             )
 
@@ -2761,6 +2787,18 @@ class MaidenCrew(
         val N12 = listOf("N1", "N2")
         val S1S = listOf("S1")
         val CLUMP_IDS = setOf("N3", "S3", "N4", "S4")
+        const val HORN_OBJ = "obj.soulflame_horn"
+        const val HORN_COST = 25
+        const val HORN_BUFF = 10
+        const val HORN_RADIUS = 3
+
+        /** A four's barrier tiles: the freezers north, the DPS together south (the horn reaches only them). */
+        val QUAD_STARTS = mapOf(
+            NyloRole.Mage to CoordGrid(3184, 4448, 0),
+            NyloRole.Freezer to CoordGrid(3184, 4447, 0),
+            NyloRole.Ranger to CoordGrid(3184, 4446, 0),
+            NyloRole.Melee to CoordGrid(3184, 4445, 0),
+        )
         val FOURS_BASE = setOf("N4", "S4")
         const val QUAD_MAGE_GAP = 8
         const val CHIN_BIG_N = 4

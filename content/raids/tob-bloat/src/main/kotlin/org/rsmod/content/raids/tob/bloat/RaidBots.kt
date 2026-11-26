@@ -128,6 +128,12 @@ constructor(
     /** A spell or shot from [from] reaches an NPC of [size] at [to] (its south-west tile) without moving. */
     fun sees(from: CoordGrid, to: CoordGrid, size: Int): Boolean = rayCast.hasLineOfSight(from, to, destWidth = size, destLength = size)
 
+    /** Click the special attack orb: an instant special (the Soulflame horn's) goes off at once. */
+    fun spec(player: Player) {
+        val packed = dev.openrune.rscm.RSCM.run { "component.orbs:specbutton".asRSCM(dev.openrune.rscm.RSCMType.COMPONENT) }
+        click(player, packed ushr 16, packed and 0xFFFF)
+    }
+
     /** Cast the spell on [component] (a spellbook button, packed) on another player. */
     fun cast(player: Player, target: Player, component: Int) {
         opPlayerT.handle(player, net.rsprot.protocol.game.incoming.players.OpPlayerT(target.slotId, false, CombinedId(component ushr 16, component and 0xFFFF), -1, -1))

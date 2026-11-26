@@ -75,6 +75,7 @@ object NyloLoadout {
     val TOME = GearSet(RANGED_ARMOUR.filter { (slot, _) -> MAGE_ARMOUR.none { it.first == slot } } + MAGE_ARMOUR + (Wearpos.RightHand to "obj.zoryas_tome"))
     val ZCB = GearSet(RANGED_ARMOUR + (Wearpos.RightHand to "obj.zaryte_xbow"))
     val MAUL = GearSet(MELEE_ARMOUR + (Wearpos.RightHand to "obj.elder_maul"))
+    val HORN = GearSet(MELEE_ARMOUR + (Wearpos.RightHand to "obj.soulflame_horn"))
 
     const val BOLTS = "obj.ascension_bolts"
     const val CHINCHOMPAS = "obj.chinchompa_black"
@@ -112,7 +113,7 @@ object NyloLoadout {
     fun maidenSets(role: NyloRole, quad: Boolean = false): List<GearSet> =
         when (role) {
             NyloRole.Melee -> listOf(TBOW, RALOS, SCYTHE, DINH, ZCB, OBLIGATOR) + if (quad) listOf(MAUL, CLAWS) else emptyList()
-            NyloRole.Ranger -> listOf(TBOW, RALOS, SCYTHE, ZCB) + if (quad) listOf(CHINS, CLAWS) else emptyList()
+            NyloRole.Ranger -> listOf(TBOW, RALOS, SCYTHE, ZCB) + if (quad) listOf(CHINS, CLAWS, HORN) else emptyList()
             NyloRole.Mage, NyloRole.Freezer -> listOf(TBOW, RALOS, BARRAGE, SCYTHE, ZCB, CROSSBOWS, TOME, CLAWS)
         }
 

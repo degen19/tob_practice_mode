@@ -33,6 +33,7 @@ import org.rsmod.api.death.PvPPlayerHitHook
 import org.rsmod.api.npc.hit.isStyleImmuneTo
 import org.rsmod.api.npc.hit.modifier.NpcHitModifier
 import org.rsmod.api.npc.hit.queueHit
+import org.rsmod.api.player.HornBuff
 import org.rsmod.api.player.cheat.adminMaxHit
 import org.rsmod.api.player.hit.modifier.PlayerHitModifier
 import org.rsmod.api.player.hit.queueHit
@@ -563,6 +564,9 @@ constructor(
         multiplier: Double,
     ): Boolean {
         if (source.adminMaxHit || forcesMaxHit(target, FORCED_MELEE)) {
+            return true
+        }
+        if (HornBuff.consume(source)) {
             return true
         }
         return when (target) {

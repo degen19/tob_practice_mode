@@ -1,6 +1,7 @@
 package org.rsmod.content.other.special.attacks
 
 import org.rsmod.api.specials.SpecialAttackMap
+import org.rsmod.content.other.special.attacks.boost.SoulflameHornSpecialAttack
 import org.rsmod.content.other.special.attacks.boost.StatBoostSpecialAttacks
 import org.rsmod.content.other.special.attacks.magic.NightmareStaffSpecialAttacks
 import org.rsmod.content.other.special.attacks.magic.PoweredStaffSpecialAttacks
@@ -17,6 +18,7 @@ import org.rsmod.plugin.module.PluginModule
 class SpecialAttackModule : PluginModule() {
     override fun bind() {
         addSetBinding<SpecialAttackMap>(StatBoostSpecialAttacks::class.java)
+        addSetBinding<SpecialAttackMap>(SoulflameHornSpecialAttack::class.java)
         addSetBinding<SpecialAttackMap>(DarkBowSpecialAttack::class.java)
         addSetBinding<SpecialAttackMap>(DragonLongswordSpecialAttack::class.java)
         addSetBinding<SpecialAttackMap>(HalberdSpecialAttack::class.java)
