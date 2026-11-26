@@ -155,7 +155,7 @@ class MaidenCrew(
     private val opened = HashSet<Player>()
     private var charged = false
 
-    override fun starts(): List<CoordGrid> = if (quad) crew.map { QUAD_STARTS.getValue(it.role) } else crew.indices.map { START_TILES[it % START_TILES.size] }
+    override fun starts(): List<CoordGrid> = crew.map { if (quad) QUAD_STARTS.getValue(it.role) else room.entry }
 
     override val walksIn: Boolean
         get() = true
@@ -488,21 +488,23 @@ class MaidenCrew(
     }
 
     /**
-     * The room pacing for a proc before the mage has this wave's clump frozen (a 9s): the DPS's swings on her would
-     * take her past it, so one of them - the ranger first, the melee too if one off still procs her - swings on a
-     * crab out of the clump instead, and the proc comes a swing later, once the mage's clump is done.
+     * The room pacing for a proc before the freezers have this wave's clump frozen (a 9s): when the DPS's swings on her
+     * could well take her past it (the same 1 in 4 as [procRisk]), one of them - the ranger first, the melee too if one
+     * off still risks it - swings on a crab out of the clump instead, and the proc comes a swing later, once the clump is
+     * done.
      */
     private fun holdProc(b: Bot, tt: Int): Crab? {
         if (phase == 0 || b.dps == null) return null
         val w = latestWave() ?: return null
-        val done = mage.tfzD[w].orEmpty()
+        val done = fzDone(w)
         if (crabs.none { it.wave == w && it.frozenTo < 0 && (it.base in THREES || it.base in FOURS) && clumpOf(it) !in done }) return null
-        val due = crew.filter { it.dps != null && it.player.hitpoints > 0 && it.next == tt && it.raw() in SCYTHE_LINES }.sortedBy { if (it.dps == MELEE_DPS) 1 else 0 }
+        val due = crew.filter { it.dps != null && it.player.hitpoints > 0 && it.next == tt && it.raw() in ON_HER_LINES }.sortedBy { if (it.dps == MELEE_DPS) 1 else 0 }
         if (b !in due) return null
         val line = full * phase / 100.0
-        val mean = landing(tt, tt + 1).first
-        if (hp - mean >= line) return null
-        val off = (1..due.size).firstOrNull { k -> hp - (mean - k * SCYTHE_MEAN) >= line } ?: return null
+        val (mean, v) = landing(tt, tt + 1)
+        val safe = { k: Int -> hp - (mean - k * SCYTHE_MEAN) - RISK_Z * sqrt(max(0.0, v - k * SCYTHE_SD * SCYTHE_SD)) >= line }
+        if (safe(0)) return null
+        val off = (1..due.size).firstOrNull(safe) ?: return null
         if (due.indexOf(b) >= off) return null
         return crabs.filter { q -> q.base !in THREES && q.base !in FOURS && reachOf(q) > tt + 1 && !freezing(q) && canHit(b, q, tt) }
             .maxWithOrNull(compareBy({ if (tt > it.frozenTo) 1 else 0 }, { it.hp }))
@@ -893,9 +895,10 @@ class MaidenCrew(
     /**
      * The sim's freezer stand: with the next proc's list opening on a freeze, the mage won't start an attack that leaves
      * it on cooldown past the proc's first tick when that proc could come first (a 1 in 4 chance, from what's in flight
-     * and the scythes due) or she's within [STAND_PCT] of it. It stands, or preloads a barrage on a pile worth it: queued
-     * behind the DPS hits, it goes once they've landed without a proc, and only when it's off cooldown in time for a
-     * proc off their next ones - a proc off theirs gets the freezes on time instead.
+     * and the scythes due) or, in a trio, she's within [STAND_PCT] of it (a four's melee freeze bows on while that's
+     * safe). It stands, or preloads a barrage on a pile worth it: queued behind the DPS hits, it goes once they've landed
+     * without a proc, and only when it's off cooldown in time for a proc off their next ones - a proc off theirs gets the
+     * freezes on time instead.
      */
     private fun standFor(b: Bot, tt: Int): String? {
         if (room.phase >= WAVES.size) return null
@@ -905,7 +908,7 @@ class MaidenCrew(
         val a = atkOf(cur)
         if (a.style == 'm' || a.speed <= 1) return null
         val by = tt + a.speed - 2
-        if (!procRisk(tt, by) && hp * 100 - full * phase > full * STAND_PCT) return null
+        if (!procRisk(tt, by) && (quad || hp * 100 - full * phase > full * STAND_PCT)) return null
         val others = crew.filter { it !== b }.minOf { it.next }
         // queued behind the DPS hits: it goes only once their last swings have landed without a proc (seen two ticks on)
         val seen = crew.filter { it !== b && it.dps != null }.all { it.next - SWING + PROC_SEEN <= tt }
@@ -931,7 +934,7 @@ class MaidenCrew(
             v += h.variance
         }
         for (d in crew) {
-            if (d.raw() !in SCYTHE_LINES || !d.owns(SCYTHE)) continue
+            if (d.raw() !in ON_HER_LINES || !d.owns(SCYTHE)) continue
             var f = max(d.next, tt)
             while (f + 1 <= by) {
                 mean += SCYTHE_MEAN
@@ -1092,7 +1095,7 @@ class MaidenCrew(
                     }
                     return fallback(b, a)
                 }
-                if (a == "qfz" && (r == "wait" || r == "tbr" || r == "ibs:old")) return r
+                if (a == "qfz" && (r == "wait" || r == "tbr" || r == "ibs:old" || r.substringAfter('@', "").toIntOrNull()?.let { it != latestWave() } == true)) return r
                 // the chins line stays until its chins (and the accurate tbow after three) are thrown
                 if (a == "qchin" && !last) b.step--
                 a = r
@@ -1326,6 +1329,7 @@ class MaidenCrew(
         val list = plan.lists[b.role] ?: return null
         val idx = b.qI.getOrPut(w) { HashSet() }
         val done = b.tfzD.getOrPut(w) { HashSet() }
+        qOldClump(b, w, tt)?.let { return it }
         if (tt < plan.start.getValue(b.role) && idx.isEmpty()) return "wait"
         val lp = procOf(w) ?: tt
         for ((k, it) in list.withIndex()) {
@@ -1374,6 +1378,60 @@ class MaidenCrew(
         }
         return null
     }
+
+    /**
+     * A proc before this freezer's clumps of the last wave are frozen (a 9s 50s, or quicker): those still go on their
+     * tick - they leak far worse than a single crab - with the new wave's freezes in the ticks before; a 1 / 2 it won't
+     * reach in time is left to the DPS.
+     */
+    private fun qOldClump(b: Bot, w: Int, tt: Int): String? {
+        val ow = WAVES.getOrNull(WAVES.indexOf(w) - 1) ?: return null
+        val list = qPlans[ow]?.lists?.get(b.role) ?: return null
+        val op = procOf(ow) ?: return null
+        val idx = b.qI.getOrPut(ow) { HashSet() }
+        val done = b.tfzD.getOrPut(ow) { HashSet() }
+        val speed = atkOf("ibs").speed
+        for ((k, which) in list.withIndex()) {
+            if (k in idx || (which != "3s" && which != "4s")) continue
+            val mine = ofWave(ow, if (which == "3s") THREES else FOURS)
+            if (mine.none { tt > it.frozenTo && tt > it.immuneTo && !freezing(it) }) {
+                idx += k
+                done += which
+                continue
+            }
+            if (clumpReady(ow, which, tt) == true) {
+                idx += k
+                done += which
+                val prim = mine.maxByOrNull { c -> aoe3(c).let { n -> n.count { tt > it.immuneTo && tt > it.frozenTo } * 100 + n.size } } ?: continue
+                trace { "t$tt ${b.role} freezes the $ow $which first" }
+                qLeave(b, w, tt + speed, tt)
+                return "ibs:${prim.key}"
+            }
+            val due = op + if (which == "3s") THREES_DUE else FOURS_DUE
+            if (tt + speed <= due) return null
+            qLeave(b, w, due + speed, tt)
+            return "wait"
+        }
+        return null
+    }
+
+    /** The new wave's 1s / 2s on this freezer's list that reach her before it's [free] to freeze them: left to the DPS. */
+    private fun qLeave(b: Bot, w: Int, free: Int, tt: Int) {
+        val list = qPlan(w).lists[b.role] ?: return
+        val idx = b.qI.getOrPut(w) { HashSet() }
+        val done = b.tfzD.getOrPut(w) { HashSet() }
+        for ((k, it) in list.withIndex()) {
+            if (k in idx || it in setOf("fill", "zcbs", "old", "3s", "4s")) continue
+            val id = it.removePrefix("rush:")
+            val c = crabRef("$id@$w") ?: continue
+            if (tt <= c.frozenTo || reachOf(c) > free + 1) continue
+            idx += k
+            done += id
+            leave(planOf(w), id, w, tt)
+        }
+    }
+
+    private fun fzDone(w: Int): Set<String> = crew.filter { it.role.freezes }.flatMapTo(HashSet()) { it.tfzD[w].orEmpty() }
 
     /**
      * A missing crab's slot: a tbow on the 70s; on the 50s a tbow, or the melee freeze's ZCB (if it hasn't); on the 30s
@@ -1952,7 +2010,7 @@ class MaidenCrew(
                 return "scyk:${c.key}"
             }
         }
-        val mdone = mage.tfzD[w]
+        val mdone = fzDone(w)
         val taken = inflightKeys(tt)
         val planned = { q: Crab ->
             q.wave == w && tt > q.frozenTo &&
@@ -2120,8 +2178,8 @@ class MaidenCrew(
     private fun clumpCovers(q: Crab, tt: Int): Boolean {
         val w = latestWave() ?: return false
         if (q.wave == w) return false
-        if (q.frozenTo < 0 && clumpOf(q).let { k -> (q.base in THREES || q.base in FOURS) && mage.tfzD[q.wave]?.contains(k) != true }) return true
-        val done = mage.tfzD[w]
+        if (q.frozenTo < 0 && clumpOf(q).let { k -> (q.base in THREES || q.base in FOURS) && k !in fzDone(q.wave) }) return true
+        val done = fzDone(w)
         val lim = reachOf(q)
         for (which in listOf("3s", "4s")) {
             if (done?.contains(which) == true) continue
@@ -2609,7 +2667,6 @@ class MaidenCrew(
         const val DEATH_CHARGES = 2
         /** The sim summons the thrall between the first prefire and the first melee hit. */
         const val THRALL_AFTER = 1
-        val START_TILES = listOf(CoordGrid(3184, 4445, 0), CoordGrid(3184, 4447, 0), CoordGrid(3184, 4448, 0), CoordGrid(3184, 4446, 0))
 
         /** The sim's room: x east from 3160, y south from 4458 (a 2x2 by its north-west tile); her 6x6 at (2, 9). */
         const val ROOM_X = 3160
@@ -2723,6 +2780,9 @@ class MaidenCrew(
         const val RISK_Z = 0.674
         const val STAND_PCT = 1.5
         val SCYTHE_LINES = setOf("scythe", "tdps")
+
+        /** Lines whose scythe goes on her unless a crab needs it: the trio's, and a four's after its stacks. */
+        val ON_HER_LINES = SCYTHE_LINES + "qscy"
         const val SCYTHE_MEAN = 45.1
         const val TBOW_MEAN = 43.5
         /** A greater ghost thrall's mean hit (max 3, it doesn't miss) and its speed. */
@@ -2794,10 +2854,10 @@ class MaidenCrew(
 
         /** A four's barrier tiles: the freezers north, the DPS together south (the horn reaches only them). */
         val QUAD_STARTS = mapOf(
-            NyloRole.Mage to CoordGrid(3184, 4448, 0),
-            NyloRole.Freezer to CoordGrid(3184, 4447, 0),
-            NyloRole.Ranger to CoordGrid(3184, 4446, 0),
-            NyloRole.Melee to CoordGrid(3184, 4445, 0),
+            NyloRole.Mage to CoordGrid(3186, 4448, 0),
+            NyloRole.Freezer to CoordGrid(3186, 4447, 0),
+            NyloRole.Ranger to CoordGrid(3186, 4446, 0),
+            NyloRole.Melee to CoordGrid(3186, 4445, 0),
         )
         val FOURS_BASE = setOf("N4", "S4")
         const val QUAD_MAGE_GAP = 8

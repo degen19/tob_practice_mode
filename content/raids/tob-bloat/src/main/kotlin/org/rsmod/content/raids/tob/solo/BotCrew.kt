@@ -6,7 +6,7 @@ import org.rsmod.map.CoordGrid
 interface BotCrew {
     val room: SoloRoom
 
-    /** Where each bot stands (in order) on the room's first tick. */
+    /** Where each bot stands (in order) on the room's first tick; for a crew that [walksIn], outside the barrier. */
     fun starts(): List<CoordGrid>
 
     /** The bots wait outside and pass the barrier as players do (else they're put on [starts] as the room begins). */

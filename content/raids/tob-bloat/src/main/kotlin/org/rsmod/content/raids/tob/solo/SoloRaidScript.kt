@@ -525,9 +525,11 @@ constructor(
     /** Potted up outside, the bots click Pass on the barrier together on the tick a team goes in (wave 1 on room tick 4). */
     private fun walkIn(room: SoloRoom, trio: BotCrew, crew: List<Player>) {
         val team = crew.filter { it in bots.all }
+        val tiles = trio.starts()
         if (readied.add(room)) {
             for (p in team) {
-                if (room.real(p.coords) != room.entry) org.rsmod.game.entity.util.PathingEntityCommon.telejump(p, d.collision, room.at(room.entry))
+                val at = tiles.getOrNull(crew.indexOf(p)) ?: room.entry
+                if (room.real(p.coords) != at) org.rsmod.game.entity.util.PathingEntityCommon.telejump(p, d.collision, room.at(at))
                 potUp(p)
                 trio.prepare(p)
                 SoloBarrier.noAsk += p
@@ -535,9 +537,13 @@ constructor(
             return
         }
         if (room.instanceTick != Math.floorMod(TRIO_START_TICK - CLICK_LEAD, INSTANCE_CYCLE)) return
-        val (tile, barrier) = room.findLocs(BARRIER).minByOrNull { (at, _) -> maxOf(kotlin.math.abs(at.x - room.entry.x), kotlin.math.abs(at.z - room.entry.z)) } ?: return
+        val barriers = room.findLocs(BARRIER)
         room.passAt = d.mapClock.cycle + 1
-        for (p in team) bots.opLoc(p, barrier.id, room.at(tile))
+        for (p in team) {
+            val here = room.real(p.coords)
+            val (tile, barrier) = barriers.minByOrNull { (at, _) -> kotlin.math.abs(at.x - here.x) + kotlin.math.abs(at.z - here.z) } ?: return
+            bots.opLoc(p, barrier.id, room.at(tile))
+        }
     }
 
     /** Tests: the server plays the room's owner - starts the room, attacks what the room says, walks out when clear. */
