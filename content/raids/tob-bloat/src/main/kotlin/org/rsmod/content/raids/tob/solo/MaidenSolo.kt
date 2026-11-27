@@ -163,6 +163,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val party = party()
         phases()
         if (party.isNotEmpty() && t >= FIRST_ATTACK && (t - FIRST_ATTACK) % ATTACK_EVERY == 0) attack(target(party))
+        flicks.clear()
         crabs()
         splats(party)
         bloodSpawns()
@@ -301,7 +302,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val max = floor(BASE_MAX + PER_LEAK * leaks).toInt()
         val roll = rand(0, max)
         // the drain is set on her attack tick, by the gear worn then (players flick a crossbow and quiver on for it)
-        val drained = if (chance(0.5)) drainStats(p) else emptyList()
+        val drained = if (!chance(0.5)) emptyList() else if (p in flicks) FLICKED_DRAIN else drainStats(p)
         autos[p] = d.mapClock.cycle + lands - 1 to (if (entryMode) max / 2 else max)
         later(lands) {
             val q = p.takeIf { it in party() } ?: return@later
@@ -314,6 +315,12 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     /** The most her auto can hit now. */
     val autoMax: Int
         get() = floor(BASE_MAX + PER_LEAK * leaks).toInt().let { if (entryMode) it / 2 else it }
+
+    /** Where the crab of [spot] comes in (real, its south-west tile). */
+    fun spawnAt(spot: String): CoordGrid = CRAB_SPOTS[SPOT_NAMES.indexOf(spot)].let { (x, z) -> CoordGrid(x, z, 0) }
+
+    /** Who has a crossbow and quiver flicked on for her attack this tick, swapped back for their own swing: her drain goes on Ranged. */
+    val flicks = HashSet<Player>()
 
     /** Her autos on their way: the cycle each lands on its target (the queue it's held in takes it a tick early) and the most it can hit. */
     val autos = HashMap<Player, Pair<Int, Int>>()
@@ -549,6 +556,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val DYING_B = "npc.tob_maiden_dying_b"
         const val FIRST_ATTACK = 9
         const val ATTACK_EVERY = 10
+        val FLICKED_DRAIN = listOf("stat.ranged")
         /** 1 in 3 once off cooldown, the community figure (Blert's real solos: 47 of 123, which fits). */
         const val THROW_CHANCE = 1.0 / 3
 

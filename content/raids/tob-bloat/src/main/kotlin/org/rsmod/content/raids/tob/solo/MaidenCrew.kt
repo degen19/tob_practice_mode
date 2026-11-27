@@ -228,6 +228,10 @@ class MaidenCrew(
             if (stall(b)) continue
             stepRoute(b)
             if (dodgeDue(b) && predodge(b)) continue
+            if (freezeDue(b)) {
+                decide(b)
+                if (b.order != null) continue
+            }
             if (dodge(b)) continue
             val o = b.order
             if (o != null) {
@@ -269,7 +273,7 @@ class MaidenCrew(
      * Her next attack, as the sim has it: it goes at whoever is closest to her centre, so when someone with Vengeance up
      * isn't, the ones in front without it flinch two tiles out on her attack tick - if that puts the Vengeance player in
      * front of them all, and none of them has a swing due that tick (players flinch between swings). Anyone too low to
-     * take a prayed max hit flinches the same way behind someone who can. Her target flicks a crossbow and quiver on for the tick, so her drain goes on Ranged.
+     * take a prayed max hit flinches the same way behind someone who can. Her target flicks a crossbow and quiver on for the tick (back for a swing of its own that tick), so her drain goes on Ranged.
      */
     private fun herAttack(): Set<Player> {
         if (!room.attacksNext) return emptySet()
@@ -292,7 +296,10 @@ class MaidenCrew(
         }
         for (p in flinching) flinch(p)
         val tank = bots[target]
-        if (tank != null && tank.player.actionDelay > clock.cycle) flick(tank.player)
+        if (tank != null) {
+            room.flicks += tank.player
+            if (tank.player.actionDelay > clock.cycle) flick(tank.player)
+        }
         for (b in crew) b.predodgeAt = t + 1
         trace { "t$t her attack: ${tank?.role ?: target.username}, flinching ${flinching.mapNotNull { bots[it]?.role }} ${near.joinToString { "${bots[it.first]?.role}:${it.second}" }}" }
         return flinching
@@ -357,6 +364,28 @@ class MaidenCrew(
      * Off her blood: a bot standing in a splat or a trail, or where one is coming, steps to the nearest clean tile
      * (beside her if it was), and its order goes on from there - after the swing due, when the blood's still far enough off.
      */
+    /** A freezer's freeze (or the shot between them) due now goes on time from the blood; it steps off after. */
+    private fun freezeDue(b: Bot): Boolean {
+        val p = b.player
+        if (!b.role.freezes || b.order != null || p.actionDelay > clock.cycle || !room.bloody(room.real(p.coords))) return false
+        return (b.raw() == "qfz" && !qfzSpent(b)) || (b.raw() == "tfz" && !tfzSpent(b, b.next))
+    }
+
+    /** Waiting on the 30s, a four's freezer stands where its barrage reaches every 1 and 2 as they come in. */
+    private fun coverSpawns(b: Bot) {
+        val here = room.real(b.player.coords)
+        val spawns = FIRST_SPAWNS.map { room.spawnAt(it) }
+        val covers = { c: CoordGrid ->
+            room.inArena(c) && !room.under(c) && !room.blocked(c) && !room.bloody(c) &&
+                spawns.all { s -> SoloRoom.boxDist(c.x, c.z, s.x, s.z, s.x + 1, s.z + 1) in 1..CAST_RANGE && bots.sees(room.at(c), room.at(s), 2) }
+        }
+        if (covers(here)) return
+        val to = (-COVER_REACH..COVER_REACH).flatMap { dx -> (-COVER_REACH..COVER_REACH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
+            .filter(covers).minByOrNull { maxOf(abs(it.x - here.x), abs(it.z - here.z)) } ?: return
+        trace { "t$t ${b.role} stands to cover the 30s spawns at ${to.x - ROOM_X},${ROOM_Y - to.z}" }
+        walk(b, to)
+    }
+
     private fun dodge(b: Bot): Boolean {
         val p = b.player
         val here = room.real(p.coords)
@@ -889,6 +918,7 @@ class MaidenCrew(
         b.walkedFor = null
         trace { "t$tt ${b.role}@${room.real(b.player.coords).let { "${it.x - ROOM_X},${ROOM_Y - it.z}" }} $a${if (a.startsWith("dinhs")) " from ${b.dinPos?.joinToString(",")}" else ""}" }
         perform(b, a, tt)
+        if (a == "wait" && quad && room.phase == WAVES.size - 1) coverSpawns(b)
     }
 
     /**
@@ -2902,6 +2932,8 @@ class MaidenCrew(
         val FLICK = listOf(dev.openrune.util.Wearpos.RightHand to "obj.zaryte_xbow", dev.openrune.util.Wearpos.Back to "obj.dizanas_quiver_infinite")
         const val WALK_TICKS = 3
         const val CAST_RANGE = 10
+        val FIRST_SPAWNS = listOf("N1", "N2", "S1", "S2")
+        const val COVER_REACH = 8
         const val MEET_WAIT = 1
         const val TALLIED = 4
         const val OBL_REACH = 3
