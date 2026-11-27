@@ -33,9 +33,9 @@ class NyloPolicy(private val weights: Map<String, DoubleArray>, private val kill
         const val FILE = "/tob/nylo_policy.tsv"
 
         /** `TOB_NYLO_POLICY` (tests): a weights file to play instead of the one shipped. */
-        val LOADED: NyloPolicy? by lazy {
+        val LOADED: NyloPolicy by lazy {
             val text = System.getenv("TOB_NYLO_POLICY")?.let { java.io.File(it).readText() }
-                ?: NyloPolicy::class.java.getResourceAsStream(FILE)?.bufferedReader()?.readText() ?: return@lazy null
+                ?: checkNotNull(NyloPolicy::class.java.getResourceAsStream(FILE)) { "missing $FILE" }.bufferedReader().readText()
             parse(text)
         }
 

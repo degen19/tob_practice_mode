@@ -1,7 +1,7 @@
 # Nylocas sim
 
 A stand-alone copy of the server's Nylocas room (`NyloSolo`) for training the bots' target choice
-(`NyloCrew` with `learned=1`, weights in `content/raids/tob-bloat/src/main/resources/tob/nylo_policy.tsv`).
+(`NyloCrew`, weights in `content/raids/tob-bloat/src/main/resources/tob/nylo_policy.tsv`).
 
 - `waves.json`, `prefires.json`: read off `NyloSolo.WAVES` and `NyloCrew.PREFIRES`.
 - `dmg.json`: the damage each bot weapon dealt nylocas on the server (`TOB_HIT_TRACE`), small and big.

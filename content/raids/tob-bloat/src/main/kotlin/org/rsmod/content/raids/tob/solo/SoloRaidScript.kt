@@ -344,7 +344,7 @@ constructor(
     private fun crewFor(room: SoloRoom, members: List<Pair<Player, NyloRole>>, params: String): BotCrew? =
         when (room) {
             is MaidenSolo -> MaidenCrew(room, members, bots, d.mapClock, barrageButton, rushButton, MaidenCrewParams.parse(params))
-            is NyloSolo -> NyloCrew(room, members, bots, d.mapClock, barrageButton, NyloCrewParams.parse(params))
+            is NyloSolo -> NyloCrew(room, members, bots, d.mapClock, barrageButton)
             else -> null
         }
 
