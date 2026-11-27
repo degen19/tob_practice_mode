@@ -33,6 +33,8 @@ function evalAll(cands, seeds) {
   const parts = [cands.slice(0, half), cands.slice(half)];
   return Promise.all(parts.map((p, i) => new Promise((res) => { workers[i].once('message', res); workers[i].postMessage({ cands: p.map((c) => Array.from(c)), seeds, nf: NF }); }))).then((r) => r.flat());
 }
+const clock = (tk) => { const s = tk * 0.6; return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`; };
+function spread(b) { b = [...b].sort((x, y) => x - y); const q = (f) => b[Math.min(b.length - 1, Math.floor(f * b.length))]; const mean = b.reduce((a, x) => a + x, 0) / b.length; return `median ${clock(q(0.5))} mean ${clock(mean)} fastest ${clock(b[0])} top25% ${clock(q(0.25))}`; }
 const VAL = Array.from({ length: 200 }, (_, i) => 900000 + i);
 let m = new Float64Array(DIM), v = new Float64Array(DIM), bestVal = 1e9;
 (async () => {
@@ -48,13 +50,11 @@ let m = new Float64Array(DIM), v = new Float64Array(DIM), bestVal = 1e9;
     for (let k = 0; k < eps.length; k++) { const a = rank[2 * k] - rank[2 * k + 1]; for (let i = 0; i < DIM; i++) grad[i] += a * eps[k][i]; }
     for (let i = 0; i < DIM; i++) { grad[i] /= eps.length * SIGMA; m[i] = 0.9 * m[i] + 0.1 * grad[i]; v[i] = 0.999 * v[i] + 0.001 * grad[i] * grad[i]; theta[i] += LR * (m[i] / (1 - 0.9 ** g)) / (Math.sqrt(v[i] / (1 - 0.999 ** g)) + 1e-8) - 0.0005 * theta[i]; }
     const meanBoss = res.reduce((a, r) => a + r.boss, 0) / res.length, meanGone = res.reduce((a, r) => a + r.gone, 0) / res.length;
-    let line = `gen ${g} pop boss ${meanBoss.toFixed(1)} gone ${meanGone.toFixed(1)}`;
+    let line = `gen ${g} pop ${spread(res.flatMap((r) => r.bosses))} gone ${meanGone.toFixed(1)}`;
     if (g % 10 === 0 || g === 1) {
       const [r] = await evalAll([theta], VAL).then((x) => x);
-      const pol = new LinearPolicy(unflat(theta, NF));
-      const bosses = VAL.map((s) => new Room(s, pol).run().boss).sort((a, b) => a - b);
-      const hist = {}; for (const b of bosses) hist[b] = (hist[b] || 0) + 1;
-      line += ` | VAL boss ${r.boss.toFixed(2)} gone ${r.gone.toFixed(1)} stalls ${r.stalls.toFixed(2)} ${JSON.stringify(hist)}`;
+      const hist = {}; for (const b of [...r.bosses].sort((x, y) => x - y)) hist[b] = (hist[b] || 0) + 1;
+      line += ` | VAL ${spread(r.bosses)} boss ${r.boss.toFixed(2)} gone ${r.gone.toFixed(1)} stalls ${r.stalls.toFixed(2)} ${JSON.stringify(hist)}`;
       if (r.boss < bestVal) { bestVal = r.boss; fs.writeFileSync(OUT, JSON.stringify({ gen: g, val: r, theta: Array.from(theta), features: FEATURES, nf: NF, nfa: NFA, post: POST_FEATURES, phases: 3 })); line += ' *saved'; }
     }
     console.log(line);

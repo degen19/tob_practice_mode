@@ -232,9 +232,12 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
 
     /* ---- waves */
 
-    /** Vasilias comes on the 5th cycle counting the one the last nylocas despawns in (Blert: 16-19 ticks later). */
+    /**
+     * Vasilias comes on the 5th cycle counting the one the last nylocas stops counting in (Blert: 16-19 ticks later). A
+     * killed small one is gone 2 ticks after its hitpoints hit 0, as Blert logs it, not when its death animation ends.
+     */
     private fun cleanupEnd() {
-        if (wave < WAVES.size || bossAt >= 0 || nylos.isNotEmpty() || Int.MAX_VALUE in dying) return
+        if (wave < WAVES.size || bossAt >= 0 || roomCount() > 0 || Int.MAX_VALUE in dying) return
         recordEvent(122, "\"nyloWave\":{\"wave\":$wave,\"nylosAlive\":0,\"roomCap\":$CAP_LATE}")
         bossAt = t + Math.floorMod(WAVE_TICK - instanceTick, CYCLE) + CYCLE * (BOSS_CYCLES - 1)
         logger.info { "nylocas: last one gone at t$t, Vasilias at t$bossAt" }

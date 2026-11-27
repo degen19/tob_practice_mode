@@ -9,9 +9,9 @@ if (!isMainThread) {
   parentPort.on('message', (job) => {
     const out = job.cands.map((flat) => {
       const pol = new LinearPolicy(unflat(Float64Array.from(flat), job.nf));
-      let gone = 0, boss = 0, stalls = 0;
-      for (const s of job.seeds) { const r = new Room(s, pol).run(); gone += r.gone < 0 ? 400 : r.gone; boss += r.boss; stalls += r.stalls; }
-      return { gone: gone / job.seeds.length, boss: boss / job.seeds.length, stalls: stalls / job.seeds.length };
+      let gone = 0, boss = 0, stalls = 0; const bosses = [];
+      for (const s of job.seeds) { const r = new Room(s, pol).run(); gone += r.gone < 0 ? 400 : r.gone; boss += r.boss; stalls += r.stalls; bosses.push(r.boss); }
+      return { gone: gone / job.seeds.length, boss: boss / job.seeds.length, stalls: stalls / job.seeds.length, bosses };
     });
     parentPort.postMessage(out);
   });
