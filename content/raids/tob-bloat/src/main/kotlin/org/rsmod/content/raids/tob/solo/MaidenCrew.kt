@@ -250,7 +250,7 @@ class MaidenCrew(
                 b.order = null
             }
             if (p.actionDelay > clock.cycle + if (b.dps != null) params.lookahead else 0) {
-                position(b)
+                if (awaits30s(b)) coverSpawns(b) else position(b)
                 continue
             }
             decide(b)
@@ -350,6 +350,7 @@ class MaidenCrew(
                 .filter { room.inArena(it) && !room.under(it) && !room.bloody(it) && !struck(it) && if (beside) room.besideHer(it) else room.gapToHer(it) in gap - 1..gap }
                 .minWithOrNull(
                     compareBy(
+                        { if (awaits30s(b) && !covers(it)) 1 else 0 },
                         { if (b.dps != null) room.gapToHer(it) else abs(room.gapToHer(it) - gap) },
                         { if (b.dps != null) fromPost(b, it) else 0 },
                         { if (b.dps != null) fromSpawns(it) else 0 },
@@ -364,27 +365,33 @@ class MaidenCrew(
      * Off her blood: a bot standing in a splat or a trail, or where one is coming, steps to the nearest clean tile
      * (beside her if it was), and its order goes on from there - after the swing due, when the blood's still far enough off.
      */
-    /** A freezer's freeze (or the shot between them) due now goes on time from the blood; it steps off after. */
+    /**
+     * A freezer's swing due now goes before it steps off blood still in the air (its spots land late out there); it steps
+     * on its next tick between swings. A freeze due goes on time even from blood about to land.
+     */
     private fun freezeDue(b: Bot): Boolean {
         val p = b.player
-        if (!b.role.freezes || b.order != null || p.actionDelay > clock.cycle || !room.bloody(room.real(p.coords))) return false
+        val here = room.real(p.coords)
+        if (!b.role.freezes || b.order != null || p.actionDelay > clock.cycle || !room.bloody(here)) return false
+        if ((room.bloodIn(here) ?: 0) >= BLOOD_AHEAD) return true
         return (b.raw() == "qfz" && !qfzSpent(b)) || (b.raw() == "tfz" && !tfzSpent(b, b.next))
     }
 
     /** Waiting on the 30s, a four's freezer stands where its barrage reaches every 1 and 2 as they come in. */
     private fun coverSpawns(b: Bot) {
         val here = room.real(b.player.coords)
-        val spawns = FIRST_SPAWNS.map { room.spawnAt(it) }
-        val covers = { c: CoordGrid ->
-            room.inArena(c) && !room.under(c) && !room.blocked(c) && !room.bloody(c) &&
-                spawns.all { s -> SoloRoom.boxDist(c.x, c.z, s.x, s.z, s.x + 1, s.z + 1) in 1..CAST_RANGE && bots.sees(room.at(c), room.at(s), 2) }
-        }
         if (covers(here)) return
         val to = (-COVER_REACH..COVER_REACH).flatMap { dx -> (-COVER_REACH..COVER_REACH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
-            .filter(covers).minByOrNull { maxOf(abs(it.x - here.x), abs(it.z - here.z)) } ?: return
+            .filter(::covers).minByOrNull { maxOf(abs(it.x - here.x), abs(it.z - here.z)) } ?: return
         trace { "t$t ${b.role} stands to cover the 30s spawns at ${to.x - ROOM_X},${ROOM_Y - to.z}" }
         walk(b, to)
     }
+
+    private fun covers(c: CoordGrid): Boolean =
+        room.inArena(c) && !room.under(c) && !room.blocked(c) && !room.bloody(c) &&
+            FIRST_SPAWNS.all { spot -> room.spawnAt(spot).let { s -> SoloRoom.boxDist(c.x, c.z, s.x, s.z, s.x + 1, s.z + 1) in 1..CAST_RANGE && bots.sees(room.at(c), room.at(s), 2) } }
+
+    private fun awaits30s(b: Bot): Boolean = quad && b.role.freezes && room.phase == WAVES.size - 1
 
     private fun dodge(b: Bot): Boolean {
         val p = b.player
@@ -918,7 +925,7 @@ class MaidenCrew(
         b.walkedFor = null
         trace { "t$tt ${b.role}@${room.real(b.player.coords).let { "${it.x - ROOM_X},${ROOM_Y - it.z}" }} $a${if (a.startsWith("dinhs")) " from ${b.dinPos?.joinToString(",")}" else ""}" }
         perform(b, a, tt)
-        if (a == "wait" && quad && room.phase == WAVES.size - 1) coverSpawns(b)
+        if (a == "wait" && awaits30s(b)) coverSpawns(b)
     }
 
     /**
@@ -2801,6 +2808,7 @@ class MaidenCrew(
         const val HEAL_MIN = 10
         const val STALL_REACH = 4
         const val BLOOD_SLACK = 3
+        const val BLOOD_AHEAD = 2
         const val HEAL_FLOOR_PCT = 11
         const val SWAP_TO_ARCEUUS = 4
         const val GREATER_GHOST = "component.magic_spellbook:resurrect_greater_ghost"
