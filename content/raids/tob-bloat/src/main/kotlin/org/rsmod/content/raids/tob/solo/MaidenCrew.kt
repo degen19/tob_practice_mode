@@ -1347,8 +1347,8 @@ class MaidenCrew(
      * freeze its 1, 2 and the 4s. One p3: it takes the 4s, the other the 3s. A freezer missing its 1 and 2 freezes the
      * other's 2 at once; missing only its 1, its first barrage goes on the old clump (when the 30s cleaves won't likely
      * clear it) or a floating 50s 1 / 2 in range that needs the damage, then its 2 - else on its 2 at once. A freed slot
-     * (a 2 frozen at once, or none of its own) is a tbow when a clump of its comes after, else a scythe on her; with a 1
-     * but no 2, a ZCB if it has one (else a tbow) between its freezes, then scythes. A clump goes on its tick - the crabs walk in fixed, so they're
+     * (a 2 frozen at once, or none of its own) is a ZCB if it has one, else a tbow, when a clump of its comes after - else
+     * a scythe on her; with a 1 but no 2, a ZCB if it has one (else a tbow) between its freezes, then scythes. A clump goes on its tick - the crabs walk in fixed, so they're
      * always together then - or as soon after as the freezer can.
      */
     private fun q30Plan(w: Int, first: Int): QPlan {
@@ -1430,7 +1430,7 @@ class MaidenCrew(
                 "bow", "zbow" -> {
                     idx += k
                     val clump = list.withIndex().any { (j, x) -> j > k && j !in idx && (x == "3s" || x == "4s") && clumpReady(w, x, tt) != null }
-                    val zcb = it == "zbow" && !b.zcbDone && b.owns("zcb") && (b.spec >= atkOf("zcbs").spec || !b.surged)
+                    val zcb = (it == "zbow" || clump) && !b.zcbDone && b.owns("zcb") && (b.spec >= atkOf("zcbs").spec || !b.surged)
                     val f = if (zcb) "zcbs" else "tbr"
                     if (!clump && !zcb) continue
                     if (clump && makesLate(list, idx, k, w, tt + atkOf(f).speed, lp)) continue
