@@ -1294,10 +1294,9 @@ class MaidenCrew(
      * freeze's ZCB) after. No N1 but an S2: on the 70s the mage ice rushes it, on the 50s it barrages the 70s N1 in the
      * pile first. Late to the first freeze: one tick, the late one also takes the 3s and the other the 4s (both a tick late:
      * the mage the 3s); two or more, the late one the 4s and the other the 3s - unless that one can't cast it by the
-     * clump's tick and the other can (a missing crab's slot gives way to a clump). On the 30s a melee freeze on time that
-     * still has its ZCB to do throws it in a missing crab's slot, else after the 3s (the mage takes the 4s). A proc while
-     * the melee freeze still owes the last wave's clump (a 9s): a mage with no N1 freezes its S1 first, then the S2. The
-     * 30s: [q30Plan].
+     * clump's tick and the other can. A missing crab's tbow or ZCB keeps the barrage's 5 ticks, so it never puts a freeze
+     * after it late. A proc while the melee freeze still owes the last wave's clump (a 9s): a mage with no N1 freezes its
+     * S1 first, then the S2. The 30s: [q30Plan].
      */
     private fun qPlan(w: Int): QPlan =
         qPlans.getOrPut(w) {
@@ -1328,7 +1327,7 @@ class MaidenCrew(
                 val (lateList, other) = if (lateN) north to south else south to north
                 val lp = procOf(w) ?: first
                 val slot = { l: List<String> -> if (l === north) start.getValue(NyloRole.Freezer) + lN else start.getValue(NyloRole.Mage) + lS }
-                val next = { l: List<String> -> slot(l) + atkOf("ibs").speed * l.count { it != "fill" } }
+                val next = { l: List<String> -> slot(l) + atkOf("ibs").speed * l.size }
                 for ((which, pref) in listOf("3s" to if (amt == 1) lateList else other, "4s" to if (amt == 1) other else lateList)) {
                     val alt = if (pref === north) south else north
                     val due = lp + if (which == "3s") THREES_DUE else FOURS_DUE
@@ -1419,7 +1418,6 @@ class MaidenCrew(
                     }
                     idx += k
                     val f = (if (k == 0) oldPile(w, tt) else null) ?: fill(b, w, tt) ?: continue
-                    if (makesLate(list, idx, k, w, tt + atkOf(f).speed, lp)) continue
                     return f
                 }
                 "zcbs" -> {
@@ -1433,7 +1431,6 @@ class MaidenCrew(
                     val zcb = (it == "zbow" || clump) && !b.zcbDone && b.owns("zcb") && (b.spec >= atkOf("zcbs").spec || !b.surged)
                     val f = if (zcb) "zcbs" else "tbr"
                     if (!clump && !zcb) continue
-                    if (clump && makesLate(list, idx, k, w, tt + atkOf(f).speed, lp)) continue
                     if (zcb && b.spec < atkOf("zcbs").spec) drink(b)
                     return f
                 }
@@ -1535,27 +1532,6 @@ class MaidenCrew(
             done += id
             leave(planOf(w), id, w, tt)
         }
-    }
-
-    /**
-     * Whether a filler in slot [k] of a freezer's [list], leaving it free at [free], puts a freeze after it out of
-     * time: a 1 / 2 that reaches her before its barrage lands, or a clump past its tick.
-     */
-    private fun makesLate(list: List<String>, idx: Set<Int>, k: Int, w: Int, free: Int, lp: Int): Boolean {
-        var at = free
-        for (j in k + 1 until list.size) {
-            val x = list[j]
-            if (j in idx || x == "fill" || x == "zcbs" || x == "bow" || x == "zbow") continue
-            if (x == "3s" || x == "4s") {
-                if (clumpReady(w, x, at) == null) continue
-                if (w == WAVES.last()) return at > lp + if (x == "3s") THREES_AT else FOURS_AT
-                return at > lp + if (x == "3s") THREES_DUE else FOURS_DUE
-            }
-            val c = crabRef("${x.removePrefix("rush:")}@$w")
-            if (c != null && at > c.frozenTo && reachOf(c) <= at + 1) return true
-            at += atkOf("ibs").speed
-        }
-        return false
     }
 
     /** Whether [b] still has a clump of the wave before [w] to freeze (crabs of it unfrozen). */
