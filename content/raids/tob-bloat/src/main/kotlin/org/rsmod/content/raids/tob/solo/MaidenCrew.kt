@@ -1,8 +1,10 @@
 package org.rsmod.content.raids.tob.solo
 
+import dev.openrune.ServerCacheManager
 import dev.openrune.rscm.RSCM.asRSCM
 import dev.openrune.rscm.RSCMType
 import dev.openrune.util.Wearpos
+import org.rsmod.api.config.refs.params as objParams
 import org.rsmod.api.player.clearInteractionRoute
 import org.rsmod.api.player.stat.baseHitpointsLvl
 import org.rsmod.api.player.stat.hitpoints
@@ -13,6 +15,8 @@ import org.rsmod.game.MapClock
 import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
 import org.rsmod.game.interact.InteractionNpc
+import org.rsmod.game.proj.ProjAnim
+import org.rsmod.game.type.getInvObj
 import org.rsmod.map.CoordGrid
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -715,6 +719,17 @@ class MaidenCrew(
         trace { "t$t ${b.role} swung ${b.player.worn[3]?.id} at ${(b.player.interaction as? InteractionNpc)?.target?.let { n -> crabs.firstOrNull { it.npc === n }?.key ?: "her" }} ad $ad" }
     }
 
+    /**
+     * Ticks from a ranged attack on her going off to its hit, as the game times it (its projectile's flight over the
+     * distance): a tbow from 9 tiles lands a tick later than from 7. Null for anything without a projectile.
+     */
+    private fun flight(p: Player): Int? {
+        val obj = p.worn[Wearpos.RightHand.slot] ?: return null
+        val proj = getInvObj(obj).paramOrNull(objParams.proj_type) ?: return null
+        val type = ServerCacheManager.getProjectile(proj.id) ?: return null
+        return ProjAnim.calculateEndTime(type, p.distanceTo(her)) / 30 + FLIGHT_OFFSET
+    }
+
     /** An order went off once the bot's attack delay moves past the clock it was given on. */
     private fun thrown(b: Bot) {
         val o = b.order ?: return
@@ -722,7 +737,7 @@ class MaidenCrew(
         b.order = null
         trace { "t$t ${b.role} threw ${o.move} at ${crabs.firstOrNull { it.npc === o.target }?.key ?: "her"} (ordered t${o.at})" }
         if (b.seq === b.lists[0] && b.step >= THRALL_AFTER) opened += b.player
-        val land = t - 1 + LAND_DELAY.getOrDefault(o.move, 1)
+        val land = t - 1 + ((if (o.target === her) flight(b.player) else null) ?: LAND_DELAY.getOrDefault(o.move, 1))
         val (mean, sd) = if (o.move == Move.Zcb) min(ZCB_CAP, hp * ZCB_PCT / 100).toDouble() to 0.0 else MEAN_HIT[o.move] ?: (0.0 to 0.0)
         val onHer = o.target === her
         inflight += Inflight(land, if (onHer) mean else 0.0, if (onHer) sd * sd else 0.0, o.target.takeIf { !onHer && o.move != Move.Barrage })
@@ -928,7 +943,10 @@ class MaidenCrew(
         return (hp - mean - RISK_Z * sqrt(v)) * 100 < full * phase
     }
 
-    /** The mean and variance of what lands on her from [tt] to [by]: hits in flight and the DPS's scythes due. */
+    /**
+     * The mean and variance of what lands on her from [tt] to [by]: hits in flight and the DPS's scythes due (in a four,
+     * any DPS line but its surge - a stack scythe, a Dinh's or a chin step still ends up on her often enough).
+     */
     private fun landing(tt: Int, by: Int): Pair<Double, Double> {
         var mean = 0.0
         var v = 0.0
@@ -937,7 +955,7 @@ class MaidenCrew(
             v += h.variance
         }
         for (d in crew) {
-            if (d.raw() !in ON_HER_LINES || !d.owns(SCYTHE)) continue
+            if ((d.raw() !in ON_HER_LINES && !(quad && d.dps != null && d.raw() != "surge")) || !d.owns(SCYTHE)) continue
             var f = max(d.next, tt)
             while (f + 1 <= by) {
                 mean += SCYTHE_MEAN
@@ -2896,6 +2914,7 @@ class MaidenCrew(
         val S1S = listOf("S1")
         val CLUMP_IDS = setOf("N3", "S3", "N4", "S4")
         const val QUAD_30S_SLACK = 2
+        const val FLIGHT_OFFSET = 1
         const val REACT_MIN = 1
         const val REACT_MAX = 2
         const val HORN_OBJ = "obj.soulflame_horn"
