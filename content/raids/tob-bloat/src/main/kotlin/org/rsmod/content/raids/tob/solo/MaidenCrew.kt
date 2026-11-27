@@ -1345,8 +1345,9 @@ class MaidenCrew(
      * a tick later, p3 two. A p1 freezer catches its 1, 2, the 3s and the 4s - unless it still has a ZCB to throw: then
      * it does its 1, 2 and the 3s, ZCBs, and the other takes the 4s. Both p2: the mage its 1, 2 and the 3s, the melee
      * freeze its 1, 2 and the 4s. One p3: it takes the 4s, the other the 3s. A freezer missing its 1 and 2 freezes the
-     * other's 2 at once, so both tbow before their clump; missing only its 1, it barrages the old clump (when that's
-     * worth it) then its 2, or freezes its 2 at once and tbows. A clump goes when it's together or on its last tick.
+     * other's 2 at once, so both tbow before their clump; missing only its 1, that first barrage goes on the old clump
+     * (when the 30s cleaves won't likely clear it), else on a floating 50s 1 / 2 in range that needs the damage, else on
+     * its 2 at once - and its 2's slot becomes a tbow. A clump goes on its tick - the crabs walk in fixed, so they're always together then - or as soon after as the freezer can.
      */
     private fun q30Plan(w: Int, first: Int): QPlan {
         val here = { id: String -> spawned[w]?.contains(id) == true }
@@ -1355,11 +1356,10 @@ class MaidenCrew(
         val p = { b: Bot? -> 1 + (b?.let { max(0, it.next - start.getValue(it.role)) } ?: 0) }
         val pN = p(frz)
         val pS = p(mage)
-        val old = oldPile(w, t) != null
         val side = { one: String, two: String ->
             when {
                 here(one) && here(two) -> mutableListOf(one, two)
-                here(two) -> if (old) mutableListOf("old", two) else mutableListOf(two, "bow")
+                here(two) -> mutableListOf("lead:$two", two)
                 here(one) -> mutableListOf(one, "bow")
                 else -> mutableListOf("bow", "bow")
             }
@@ -1436,7 +1436,7 @@ class MaidenCrew(
                     return "ibs:old"
                 }
                 "3s", "4s" -> {
-                    val r = clumpReady(w, it, tt)
+                    val r = clumpReady(w, it, tt)?.let { ready -> if (w == WAVES.last()) tt >= lp + if (it == "3s") THREES_AT else FOURS_AT else ready }
                     if (r == null) {
                         idx += k
                         done += it
@@ -1452,6 +1452,19 @@ class MaidenCrew(
                     return "wait"
                 }
                 else -> {
+                    if (it.startsWith("lead:")) {
+                        idx += k
+                        oldPile(w, tt)?.let { pile -> return pile }
+                        floating(b, tt)?.let { c -> return "ibs:${c.key}" }
+                        val two = it.removePrefix("lead:")
+                        (list as MutableList<String>)[list.indexOf(two)] = "bow"
+                        val c = crabRef("$two@$w")
+                        if (c != null && tt > c.frozenTo) {
+                            done += two
+                            return "ibs:${c.key}"
+                        }
+                        continue
+                    }
                     val rush = it.startsWith("rush:")
                     val id = it.removePrefix("rush:")
                     idx += k
@@ -1528,6 +1541,7 @@ class MaidenCrew(
             if (j in idx || x == "fill" || x == "zcbs" || x == "bow") continue
             if (x == "3s" || x == "4s") {
                 if (clumpReady(w, x, at) == null) continue
+                if (w == WAVES.last()) return at > lp + if (x == "3s") THREES_AT else FOURS_AT
                 return at > lp + if (x == "3s") THREES_DUE else FOURS_DUE
             }
             val c = crabRef("${x.removePrefix("rush:")}@$w")
@@ -1568,6 +1582,15 @@ class MaidenCrew(
         val pile = barragePrim("old", tt) ?: return null
         return if (aoe3(pile).sumOf { it.hp } >= OLD_PILE_HP) "ibs:old" else null
     }
+
+    /**
+     * A 50s 1 / 2 still alive that the 30s barrage in a missing crab's slot is worth spending on (it would need a
+     * scythe when it thaws): one with hp left, in barrage range of [b] where it stands.
+     */
+    private fun floating(b: Bot, tt: Int): Crab? =
+        crabs.filter { it.wave == WAVES[1] && it.base in FLOAT_IDS && it.hp >= FLOAT_HP && tt > it.immuneTo }
+            .filter { c -> b.player.distanceTo(c.npc) <= BARRAGE_RANGE }
+            .maxByOrNull { it.hp }
 
     private fun qfzSpent(b: Bot): Boolean {
         val w = latestWave() ?: return false
@@ -2840,6 +2863,13 @@ class MaidenCrew(
         const val CLAW_MEAN = 71.6
         const val CLAW_SD = 13.4
         const val FOURS_DUE = 15
+
+        /** The tick after a four's 30s proc its clump barrages go: the crabs walk in fixed, so the 3s are together then (Blert: they land the 11th and 16th). */
+        val FLOAT_IDS = setOf("S1", "N1", "N2")
+        const val FLOAT_HP = 40
+        const val BARRAGE_RANGE = 10
+        const val THREES_AT = 10
+        const val FOURS_AT = 15
         const val OLD_PILE_HP = 100
         const val PILE_CRAB_CAP = 20
         const val PROC_RATE = 22.0
