@@ -21,6 +21,7 @@ class NyloPolicy(private val weights: Map<String, DoubleArray>, private val kill
                 "bias", "own", "nVic", "bigVic", "nWrong", "big", "aggro", "biting", "life", "walk", "swap", "same", "stall",
                 "standsAtCheck", "cleanup", "cleanGone", "speed", "kills", "inLane", "claimed", "bigSplitStall", "wave", "young",
                 "split", "crowd", "mustLast", "bigLate", "endRank", "endGap", "ownKills", "lateWave", "cleanBig", "aggroLate",
+                "onlyMe", "oldness", "oldLate",
             )
 
         /** A lane mouth to cover for the next wave: what it scores on (weights after the attack ones). */

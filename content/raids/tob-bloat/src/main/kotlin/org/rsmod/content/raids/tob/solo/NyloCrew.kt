@@ -247,6 +247,9 @@ class NyloCrew(
                 f[30] = if (late) 1.0 else 0.0
                 f[31] = if (cleanup && target.big) 1.0 else 0.0
                 f[32] = if (target.aggro && late) 1.0 else 0.0
+                f[33] = target.nulledBy.count { it != bot } / 2.0
+                f[34] = ((room.wavesSpawned - target.wave) / OLD_WAVES).coerceIn(0.0, 2.0)
+                f[35] = if (room.wavesSpawned >= END_FROM) f[34] else 0.0
                 var score = weights[NyloPolicy.FEATURES.size + weapon.ordinal]
                 for (i in f.indices) score += weights[i] * f[i]
                 if (score > (best?.score ?: 0.0)) best = Plan(weapon, target, victims, score)
@@ -690,6 +693,8 @@ class NyloCrew(
         const val YOUNG_TICKS = 14
         const val LAST_SLACK = 2
         const val LATE_FROM = 26
+        const val END_FROM = 28
+        const val OLD_WAVES = 5.0
         val LANES = listOf("W", "S", "E")
 
         /** What each role swings for the learned choice: its kit's weapons, the mage and ranger's scythe and claws too. */
