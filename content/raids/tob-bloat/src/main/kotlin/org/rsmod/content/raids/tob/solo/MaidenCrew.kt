@@ -1060,6 +1060,7 @@ class MaidenCrew(
     private fun fallback(b: Bot, a: String): String = if (atkOf(a).style == 'm' && b.owns(SCYTHE)) "scythe" else "tbr"
 
     private fun nextAct(b: Bot, tt: Int): String {
+        if (quad && b.role.freezes) latestWave()?.let { w -> if (handoff(b, w) != null) qfzPick(b, tt)?.let { return it } }
         b.force?.let {
             b.force = null
             if (b.step < b.seq.size - 1) b.step++
@@ -1358,6 +1359,15 @@ class MaidenCrew(
         val idx = b.qI.getOrPut(w) { HashSet() }
         val done = b.tfzD.getOrPut(w) { HashSet() }
         qOldClump(b, w, tt)?.let { return it }
+        handoff(b, w)?.let { (k, which) ->
+            if (clumpReady(w, which, tt) != true) return "wait"
+            val other = crew.first { it !== b && it.role.freezes }
+            other.qI.getOrPut(w) { HashSet() } += k
+            other.tfzD.getOrPut(w) { HashSet() } += which
+            done += which
+            trace { "t$tt ${b.role} takes the ${other.role}'s $which: it won't be back in time" }
+            return "ibs:$which"
+        }
         if (tt < plan.start.getValue(b.role) && idx.isEmpty()) return "wait"
         val lp = procOf(w) ?: tt
         for ((k, it) in list.withIndex()) {
@@ -1522,7 +1532,35 @@ class MaidenCrew(
     private fun qfzSpent(b: Bot): Boolean {
         val w = latestWave() ?: return false
         val list = qPlans[w]?.lists?.get(b.role) ?: return false
-        return list.indices.all { it in (b.qI[w] ?: emptySet<Int>()) }
+        return list.indices.all { it in (b.qI[w] ?: emptySet<Int>()) } && handoff(b, w) == null
+    }
+
+    /**
+     * On the 30s, the other freezer's clump that it won't be off cooldown for by the clump's tick (a tick slipped, or a
+     * split that left it a freeze too many) when [b] has no freezes of its own left and can: [b] takes it, even off its
+     * scythes. Null when there's none.
+     */
+    private fun handoff(b: Bot, w: Int): IndexedValue<String>? {
+        if (w != WAVES.last()) return null
+        val other = crew.firstOrNull { it !== b && it.role.freezes } ?: return null
+        val list = qPlans[w]?.lists?.get(other.role) ?: return null
+        val mine = qPlans[w]?.lists?.get(b.role) ?: return null
+        if (!mine.indices.all { it in b.qI[w].orEmpty() }) return null
+        val lp = procOf(w) ?: return null
+        val idx = other.qI[w].orEmpty()
+        var at = max(other.next, t)
+        for (x in list.withIndex()) {
+            if (x.index in idx || x.value == "fill" || x.value == "zcbs") continue
+            if (x.value != "3s" && x.value != "4s") {
+                at += atkOf("ibs").speed
+                continue
+            }
+            if (clumpReady(w, x.value, t) == null) continue
+            val due = lp + if (x.value == "3s") THREES_DUE else FOURS_DUE
+            if (at > due && b.next <= due) return x
+            at += atkOf("ibs").speed
+        }
+        return null
     }
 
     /**
@@ -1671,7 +1709,7 @@ class MaidenCrew(
     private fun clumpReady(w: Int, which: String, tt: Int): Boolean? {
         val mine = ofWave(w, if (which == "3s") THREES else FOURS)
         if (mine.isEmpty()) return null
-        if (mine.any { reachOf(it) <= tt + 1 }) return true
+        if (mine.any { reachOf(it) <= tt + 2 }) return true
         val lp = procOf(w) ?: return false
         if (which == "3s") return if (mine.size == 1) tt >= lp + THREES_DUE else mine.all { c -> mine.all { inArea(c, it) } }
         if (ofWave(w, THREES).any { tt > it.frozenTo && tt > it.immuneTo }) return false
@@ -2789,7 +2827,7 @@ class MaidenCrew(
         /** A dragon claw spec's total on her (the mage's, 55 specs measured); a ZCB spec is its ruby proc alone. */
         const val CLAW_MEAN = 71.6
         const val CLAW_SD = 13.4
-        const val FOURS_DUE = 16
+        const val FOURS_DUE = 15
         const val OLD_PILE_HP = 100
         const val PILE_CRAB_CAP = 20
         const val PROC_RATE = 22.0
