@@ -924,7 +924,7 @@ class MaidenCrew(
         if (cur == "qfz" && !qfzSpent(b)) return null
         val a = atkOf(cur)
         if (a.style == 'm' || a.speed <= 1) return null
-        val first = if (quad && b.role == NyloRole.Freezer) 1 else 2
+        val first = if (quad && (b.role == NyloRole.Freezer || room.phase == WAVES.size - 1)) 1 else 2
         val by = tt + a.speed - first - if (quad && room.phase == WAVES.size - 1) QUAD_30S_SLACK else 0
         if (!procRisk(tt, by) && (quad || hp * 100 - full * phase > full * STAND_PCT)) return null
         val others = crew.filter { it !== b }.minOf { it.next }
@@ -1060,7 +1060,6 @@ class MaidenCrew(
     private fun fallback(b: Bot, a: String): String = if (atkOf(a).style == 'm' && b.owns(SCYTHE)) "scythe" else "tbr"
 
     private fun nextAct(b: Bot, tt: Int): String {
-        if (quad && b.role.freezes) latestWave()?.let { w -> if (handoff(b, w) != null) qfzPick(b, tt)?.let { return it } }
         b.force?.let {
             b.force = null
             if (b.step < b.seq.size - 1) b.step++
@@ -1297,12 +1296,14 @@ class MaidenCrew(
      * the mage the 3s); two or more, the late one the 4s and the other the 3s - unless that one can't cast it by the
      * clump's tick and the other can (a missing crab's slot gives way to a clump). On the 30s a melee freeze on time that
      * still has its ZCB to do throws it in a missing crab's slot, else after the 3s (the mage takes the 4s). A proc while
-     * the melee freeze still owes the last wave's clump (a 9s): a mage with no N1 freezes its S1 first, then the S2.
+     * the melee freeze still owes the last wave's clump (a 9s): a mage with no N1 freezes its S1 first, then the S2. The
+     * 30s: [q30Plan].
      */
     private fun qPlan(w: Int): QPlan =
         qPlans.getOrPut(w) {
             val here = { id: String -> spawned[w]?.contains(id) == true }
             val first = crabs.filter { it.wave == w }.minOfOrNull { it.born } ?: t
+            if (w == WAVES.last()) return@getOrPut q30Plan(w, first)
             val frz = crew.firstOrNull { it.role == NyloRole.Freezer }
             val start = mapOf(NyloRole.Freezer to first + 1, NyloRole.Mage to first + 2)
             val late = { b: Bot? -> b?.let { max(0, max(it.next, start.getValue(it.role)) - start.getValue(it.role)) } ?: 0 }
@@ -1319,21 +1320,8 @@ class MaidenCrew(
                 }
             val how: String
             if (lN == 0 && lS == 0) {
-                if (w == 30 && frz != null && !frz.zcbDone) {
-                    val fill = north.indexOf("fill")
-                    if (fill >= 0) {
-                        north[fill] = "zcbs"
-                        north += listOf("3s", "4s")
-                        how = "on time, the ZCB in a missing crab's slot"
-                    } else {
-                        north += listOf("3s", "zcbs")
-                        south += "4s"
-                        how = "on time, the ZCB after the 3s"
-                    }
-                } else {
-                    north += listOf("3s", "4s")
-                    how = "on time"
-                }
+                north += listOf("3s", "4s")
+                how = "on time"
             } else {
                 val lateN = lN > lS
                 val amt = max(lN, lS)
@@ -1352,6 +1340,62 @@ class MaidenCrew(
             QPlan(mapOf(NyloRole.Freezer to north, NyloRole.Mage to south), start, how)
         }
 
+    /**
+     * A four's 30s. Each freezer is p1 when its first freeze can land on the proc's first tick (clicked on the proc), p2
+     * a tick later, p3 two. A p1 freezer catches its 1, 2, the 3s and the 4s - unless it still has a ZCB to throw: then
+     * it does its 1, 2 and the 3s, ZCBs, and the other takes the 4s. Both p2: the mage its 1, 2 and the 3s, the melee
+     * freeze its 1, 2 and the 4s. One p3: it takes the 4s, the other the 3s. A freezer missing its 1 and 2 freezes the
+     * other's 2 at once, so both tbow before their clump; missing only its 1, it barrages the old clump (when that's
+     * worth it) then its 2, or freezes its 2 at once and tbows. A clump goes when it's together or on its last tick.
+     */
+    private fun q30Plan(w: Int, first: Int): QPlan {
+        val here = { id: String -> spawned[w]?.contains(id) == true }
+        val frz = crew.firstOrNull { it.role == NyloRole.Freezer }
+        val start = mapOf(NyloRole.Freezer to first + 1, NyloRole.Mage to first + 1)
+        val p = { b: Bot? -> 1 + (b?.let { max(0, it.next - start.getValue(it.role)) } ?: 0) }
+        val pN = p(frz)
+        val pS = p(mage)
+        val old = oldPile(w, t) != null
+        val side = { one: String, two: String ->
+            when {
+                here(one) && here(two) -> mutableListOf(one, two)
+                here(two) -> if (old) mutableListOf("old", two) else mutableListOf(two, "bow")
+                here(one) -> mutableListOf(one, "bow")
+                else -> mutableListOf("bow", "bow")
+            }
+        }
+        var north = side("S1", "N2")
+        var south = side("N1", "S2")
+        if (!here("N1") && !here("S2") && here("N2")) {
+            south = mutableListOf("N2", "bow")
+            north = mutableListOf(if (here("S1")) "S1" else "bow", "bow")
+        } else if (!here("S1") && !here("N2") && here("S2")) {
+            north = mutableListOf("S2", "bow")
+            south = mutableListOf(if (here("N1")) "N1" else "bow", "bow")
+        }
+        val zcb = { b: Bot? -> b != null && !b.zcbDone && b.owns("zcb") }
+        if (pN == 1 || pS == 1) {
+            val northOne = pN == 1
+            val (one, other) = if (northOne) north to south else south to north
+            if (zcb(if (northOne) frz else mage)) {
+                one += listOf("3s", "zcbs")
+                other += "4s"
+            } else {
+                one += listOf("3s", "4s")
+            }
+        } else if (pN >= 3 || pS >= 3) {
+            val northThree = pN >= pS
+            (if (northThree) north else south) += "4s"
+            (if (northThree) south else north) += "3s"
+        } else {
+            south += "3s"
+            north += "4s"
+        }
+        val how = "melee freeze p$pN, mage p$pS"
+        trace { "t$t ${w}s freezes ($how): north ${north.joinToString()} / south ${south.joinToString()}" }
+        return QPlan(mapOf(NyloRole.Freezer to north, NyloRole.Mage to south), start, how)
+    }
+
     private fun qfzPick(b: Bot, tt: Int): String? {
         val w = latestWave() ?: return null
         val plan = qPlan(w)
@@ -1359,15 +1403,6 @@ class MaidenCrew(
         val idx = b.qI.getOrPut(w) { HashSet() }
         val done = b.tfzD.getOrPut(w) { HashSet() }
         qOldClump(b, w, tt)?.let { return it }
-        handoff(b, w)?.let { (k, which) ->
-            if (clumpReady(w, which, tt) != true) return "wait"
-            val other = crew.first { it !== b && it.role.freezes }
-            other.qI.getOrPut(w) { HashSet() } += k
-            other.tfzD.getOrPut(w) { HashSet() } += which
-            done += which
-            trace { "t$tt ${b.role} takes the ${other.role}'s $which: it won't be back in time" }
-            return "ibs:$which"
-        }
         if (tt < plan.start.getValue(b.role) && idx.isEmpty()) return "wait"
         val lp = procOf(w) ?: tt
         for ((k, it) in list.withIndex()) {
@@ -1390,6 +1425,11 @@ class MaidenCrew(
                     if (b.spec < atkOf("zcbs").spec && !b.surged) drink(b)
                     return "zcbs"
                 }
+                "bow" -> {
+                    idx += k
+                    if (makesLate(list, idx, k, w, tt + atkOf("tbr").speed, lp)) continue
+                    return "tbr"
+                }
                 "old" -> {
                     idx += k
                     done += "N1"
@@ -1402,12 +1442,12 @@ class MaidenCrew(
                         done += it
                         continue
                     }
-                    if (r) {
+                    val due = lp + if (it == "3s") THREES_DUE else FOURS_DUE
+                    if (r || tt >= due) {
                         idx += k
                         done += it
                         return "ibs:$it"
                     }
-                    val due = lp + if (it == "3s") THREES_DUE else FOURS_DUE
                     if (tt + atkOf("tbr").speed <= due) return oldPile(w, tt) ?: "tbr"
                     return "wait"
                 }
@@ -1485,7 +1525,7 @@ class MaidenCrew(
         var at = free
         for (j in k + 1 until list.size) {
             val x = list[j]
-            if (j in idx || x == "fill" || x == "zcbs") continue
+            if (j in idx || x == "fill" || x == "zcbs" || x == "bow") continue
             if (x == "3s" || x == "4s") {
                 if (clumpReady(w, x, at) == null) continue
                 return at > lp + if (x == "3s") THREES_DUE else FOURS_DUE
@@ -1532,35 +1572,7 @@ class MaidenCrew(
     private fun qfzSpent(b: Bot): Boolean {
         val w = latestWave() ?: return false
         val list = qPlans[w]?.lists?.get(b.role) ?: return false
-        return list.indices.all { it in (b.qI[w] ?: emptySet<Int>()) } && handoff(b, w) == null
-    }
-
-    /**
-     * On the 30s, the other freezer's clump that it won't be off cooldown for by the clump's tick (a tick slipped, or a
-     * split that left it a freeze too many) when [b] has no freezes of its own left and can: [b] takes it, even off its
-     * scythes. Null when there's none.
-     */
-    private fun handoff(b: Bot, w: Int): IndexedValue<String>? {
-        if (w != WAVES.last()) return null
-        val other = crew.firstOrNull { it !== b && it.role.freezes } ?: return null
-        val list = qPlans[w]?.lists?.get(other.role) ?: return null
-        val mine = qPlans[w]?.lists?.get(b.role) ?: return null
-        if (!mine.indices.all { it in b.qI[w].orEmpty() }) return null
-        val lp = procOf(w) ?: return null
-        val idx = other.qI[w].orEmpty()
-        var at = max(other.next, t)
-        for (x in list.withIndex()) {
-            if (x.index in idx || x.value == "fill" || x.value == "zcbs") continue
-            if (x.value != "3s" && x.value != "4s") {
-                at += atkOf("ibs").speed
-                continue
-            }
-            if (clumpReady(w, x.value, t) == null) continue
-            val due = lp + if (x.value == "3s") THREES_DUE else FOURS_DUE
-            if (at > due && b.next <= due) return x
-            at += atkOf("ibs").speed
-        }
-        return null
+        return list.indices.all { it in (b.qI[w] ?: emptySet<Int>()) }
     }
 
     /**
