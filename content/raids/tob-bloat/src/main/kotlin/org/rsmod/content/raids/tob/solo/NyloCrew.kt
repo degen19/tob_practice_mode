@@ -119,7 +119,7 @@ class NyloCrew(
             if (TRACING && room.wavesSpawned >= TRACE_FROM && room.bossTick < 0) {
                 println("nylo ${members[0].first.username} t${room.t} $role " + (plan?.let { "${it.weapon} w${it.target.wave}${if (it.target.big) "B" else ""}${it.target.style}:${it.target.npc.hitpoints} x${it.victims.size}" } ?: "prefire"))
             }
-            if (plan != null) act(bot, plan) else if (copy != null) stand(bot, role) else prefire(bot, role)
+            if (plan != null) act(bot, plan) else if (copy != null) stand(bot, role) else if (bot !in covering) prefire(bot, role)
         }
     }
 
@@ -127,23 +127,85 @@ class NyloCrew(
 
     private val policy: NyloPolicy? = if (params.learned) NyloPolicy.LOADED else null
 
-    /** Every weapon and target the bot could take, scored on [NyloPolicy]'s weights; the best one over 0 goes, else a prefire. */
+    /** The lane each bot went to cover for the next wave (set by its learned choice, until it attacks). */
+    private val posts = HashMap<Player, String>()
+
+    /** Bots whose learned choice this tick was a lane to cover: walking there, no prefire. */
+    private val covering = HashSet<Player>()
+
+    /**
+     * Every weapon and target the bot could take, and each lane mouth of the next wave to cover, scored on
+     * [NyloPolicy]'s weights; the best one over 0 goes, else a prefire.
+     */
     private fun learned(bot: Player, role: NyloRole, policy: NyloPolicy): Plan? {
+        covering -= bot
+        val here = room.real(bot.coords)
+        val weights = policy.weights(role.style, room.wavesSpawned)
+        var post: Pair<String, CoordGrid>? = null
+        var postScore = 0.0
+        if (room.wavesSpawned < room.wavesTotal) {
+            val next = room.incoming(1)
+            val untilWave = room.nextWaveCheck - room.t
+            val p = DoubleArray(NyloPolicy.POST_FEATURES.size)
+            for (lane in LANES) {
+                val spawns = next.filter { it.lane == lane }
+                if (spawns.isEmpty()) continue
+                val tile = postTile(role, lane)
+                p[0] = 1.0
+                p[1] = untilWave / 4.0
+                p[2] = spawns.count { it.style == role.style }.toDouble()
+                p[3] = spawns.size.toDouble()
+                p[4] = spawns.count { it.big }.toDouble()
+                p[5] = chebyshev(here, tile) / 5.0
+                p[6] = posts.count { (other, l) -> other != bot && l == lane }.toDouble()
+                p[7] = if (posts[bot] == lane) 1.0 else 0.0
+                p[8] = room.wavesSpawned / room.wavesTotal.toDouble()
+                p[9] = room.roomAlive / room.cap.toDouble()
+                var score = 0.0
+                for (i in p.indices) score += weights[NyloPolicy.POST_AT + i] * p[i]
+                if (score > postScore) {
+                    postScore = score
+                    post = lane to tile
+                }
+            }
+        }
+        val attack = learnedAttack(bot, role, policy, here, weights)
+        if (attack != null && attack.score > postScore) {
+            posts -= bot
+            return attack
+        }
+        val (lane, tile) = post ?: return null
+        posts[bot] = lane
+        covering += bot
+        if (here != tile && bot.routeDestination.isEmpty()) bots.walk(bot, room.at(tile))
+        return null
+    }
+
+    /** The tile a role covers a lane's mouth from: Blert's for the next wave if it's by that mouth, else the mouth. */
+    private fun postTile(role: NyloRole, lane: String): CoordGrid {
+        val mouth = MOUTHS.getValue(lane)
+        val blert = PREFIRES.getOrNull(room.wavesSpawned)?.get(role.ordinal)
+        return if (blert != null && chebyshev(blert, mouth) <= PREFIRE_SLACK) blert else mouth
+    }
+
+    private fun learnedAttack(bot: Player, role: NyloRole, policy: NyloPolicy, here: CoordGrid, weights: DoubleArray): Plan? {
         val wanted = everyone.filter { bot !in it.nulledBy && !it.doomed }
         if (wanted.isEmpty()) return null
-        val here = room.real(bot.coords)
         val cleanup = room.wavesSpawned >= room.wavesTotal
         val untilCheck = room.nextWaveCheck - room.t
         val cap = room.cap
         val count = room.roomAlive
         val standing = everyone.count { room.lifeLeft(it) > untilCheck }
         val pressure = if (cleanup) 0.0 else (standing - cap + 1).coerceAtLeast(0) / 4.0
-        val latest = everyone.maxOf { room.lifeLeft(it) + if (it.big) LIFE else 0 }
-        val weights = policy.weights.getValue(role.style)
+        val ends = everyone.map { room.lifeLeft(it) + if (it.big) LIFE else 0 }.sorted()
+        val latest = ends.last()
+        val medEnd = ends[ends.size / 2]
+        val late = room.wavesSpawned >= LATE_FROM
         val f = DoubleArray(NyloPolicy.FEATURES.size)
         var best: Plan? = null
-        for (weapon in weapons.getValue(role)) {
+        for (weapon in LEARNED_KITS.getValue(role)) {
             if (weapon == Weapon.Dinh && bot.vars["varp.sa_energy"] < DINH_ENERGY) continue
+            if (weapon == Weapon.Claws && bot.vars["varp.sa_energy"] < CLAW_ENERGY) continue
             for (target in wanted) {
                 if (target.style != weapon.hits) continue
                 if (weapon.range <= 1 && !meleeReach(target)) continue
@@ -178,6 +240,13 @@ class NyloCrew(
                 f[23] = if (target.spawnTile == null) 1.0 else 0.0
                 f[24] = count / cap.toDouble()
                 f[25] = if (cleanup && gone >= latest - LAST_SLACK) 1.0 else 0.0
+                f[26] = if (target.big && target.wave >= LATE_FROM) 1.0 else 0.0
+                f[27] = ends.count { it > gone } / ends.size.toDouble()
+                f[28] = (gone - medEnd) / LIFE.toDouble()
+                f[29] = f[1] * f[17]
+                f[30] = if (late) 1.0 else 0.0
+                f[31] = if (cleanup && target.big) 1.0 else 0.0
+                f[32] = if (target.aggro && late) 1.0 else 0.0
                 var score = weights[NyloPolicy.FEATURES.size + weapon.ordinal]
                 for (i in f.indices) score += weights[i] * f[i]
                 if (score > (best?.score ?: 0.0)) best = Plan(weapon, target, victims, score)
@@ -620,6 +689,16 @@ class NyloCrew(
         const val SPLIT_CHECK_TICKS = 11
         const val YOUNG_TICKS = 14
         const val LAST_SLACK = 2
+        const val LATE_FROM = 26
+        val LANES = listOf("W", "S", "E")
+
+        /** What each role swings for the learned choice: its kit's weapons, the mage and ranger's scythe and claws too. */
+        val LEARNED_KITS =
+            mapOf(
+                NyloRole.Melee to listOf(Weapon.Scythe, Weapon.Smash, Weapon.Thrust, Weapon.Dinh, Weapon.Crossbows, Weapon.Ayak, Weapon.Tbow),
+                NyloRole.Ranger to listOf(Weapon.Tbow, Weapon.Chins, Weapon.Crossbows, Weapon.Ayak, Weapon.Scythe, Weapon.Claws),
+                NyloRole.Mage to listOf(Weapon.Barrage, Weapon.Tome, Weapon.Crossbows, Weapon.Tbow, Weapon.Scythe, Weapon.Claws),
+            )
         val PROTECT = mapOf('M' to "varbit.prayer_protectfrommelee", 'R' to "varbit.prayer_protectfrommissiles", 'G' to "varbit.prayer_protectfrommagic")
         const val LINE_TILES = 3
         const val LIFE = 52
