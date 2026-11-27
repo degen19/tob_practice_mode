@@ -115,12 +115,75 @@ class NyloCrew(
             if (bot.actionDelay > now + 1) continue
             guard(bot)
             noteStuck(bot, now)
-            val plan = if (copy != null) copied(bot, role, wanted) else setPlay(bot, role) ?: scripted(bot, role) ?: best(bot, role, wanted.filter { bot !in it.nulledBy && !it.doomed })
+            val plan = if (policy != null) learned(bot, role, policy) else if (copy != null) copied(bot, role, wanted) else setPlay(bot, role) ?: scripted(bot, role) ?: best(bot, role, wanted.filter { bot !in it.nulledBy && !it.doomed })
             if (TRACING && room.wavesSpawned >= TRACE_FROM && room.bossTick < 0) {
                 println("nylo ${members[0].first.username} t${room.t} $role " + (plan?.let { "${it.weapon} w${it.target.wave}${if (it.target.big) "B" else ""}${it.target.style}:${it.target.npc.hitpoints} x${it.victims.size}" } ?: "prefire"))
             }
             if (plan != null) act(bot, plan) else if (copy != null) stand(bot, role) else prefire(bot, role)
         }
+    }
+
+    /* ---- the learned choice */
+
+    private val policy: NyloPolicy? = if (params.learned) NyloPolicy.LOADED else null
+
+    /** Every weapon and target the bot could take, scored on [NyloPolicy]'s weights; the best one over 0 goes, else a prefire. */
+    private fun learned(bot: Player, role: NyloRole, policy: NyloPolicy): Plan? {
+        val wanted = everyone.filter { bot !in it.nulledBy && !it.doomed }
+        if (wanted.isEmpty()) return null
+        val here = room.real(bot.coords)
+        val cleanup = room.wavesSpawned >= room.wavesTotal
+        val untilCheck = room.nextWaveCheck - room.t
+        val cap = room.cap
+        val count = room.roomAlive
+        val standing = everyone.count { room.lifeLeft(it) > untilCheck }
+        val pressure = if (cleanup) 0.0 else (standing - cap + 1).coerceAtLeast(0) / 4.0
+        val latest = everyone.maxOf { room.lifeLeft(it) + if (it.big) LIFE else 0 }
+        val weights = policy.weights.getValue(role.style)
+        val f = DoubleArray(NyloPolicy.FEATURES.size)
+        var best: Plan? = null
+        for (weapon in weapons.getValue(role)) {
+            if (weapon == Weapon.Dinh && bot.vars["varp.sa_energy"] < DINH_ENERGY) continue
+            for (target in wanted) {
+                if (target.style != weapon.hits) continue
+                if (weapon.range <= 1 && !meleeReach(target)) continue
+                val victims = victims(weapon, target, wanted, here)
+                val nulls = nulled(bot, weapon, target, here)
+                val life = room.lifeLeft(target)
+                val gone = life + if (target.big) LIFE else 0
+                f.fill(0.0)
+                f[0] = 1.0
+                f[1] = if (target.style == role.style) 1.0 else 0.0
+                f[2] = victims.size.toDouble()
+                f[3] = victims.count { it.big }.toDouble()
+                f[4] = nulls.size.toDouble()
+                f[5] = if (target.big) 1.0 else 0.0
+                f[6] = if (target.aggro) 1.0 else 0.0
+                f[7] = if (target.onPillar) 1.0 else 0.0
+                f[8] = (life / LIFE.toDouble()).coerceIn(0.0, 1.0)
+                f[9] = (dist(here, room.real(target.npc.coords), size(target)) - weapon.range).coerceAtLeast(0) / 2.0
+                f[10] = if (wearing(bot, weapon.set)) 0.0 else 1.0
+                f[11] = if (current(bot) == target.npc) 1.0 else 0.0
+                f[12] = pressure
+                f[13] = if (pressure > 0 && life > untilCheck) 1.0 else 0.0
+                f[14] = if (cleanup) 1.0 else 0.0
+                f[15] = if (cleanup) gone / LIFE.toDouble() else 0.0
+                f[16] = weapon.speed / 5.0
+                f[17] = victims.sumOf { policy.killP(weapon, it.big, it.npc.hitpoints - it.pending) }
+                f[18] = if (overlaps(room.real(target.npc.coords), size(target), STAND_X.first, STAND_Z.first, STAND_X.last, STAND_Z.last)) 0.0 else 1.0
+                f[19] = if (target.pending > 0) 1.0 else 0.0
+                f[20] = if (target.big && untilCheck <= SPLIT_CHECK_TICKS && count + 1 >= cap && !cleanup) 1.0 else 0.0
+                f[21] = target.wave / room.wavesTotal.toDouble()
+                f[22] = if (room.t - target.born < YOUNG_TICKS) 1.0 else 0.0
+                f[23] = if (target.spawnTile == null) 1.0 else 0.0
+                f[24] = count / cap.toDouble()
+                f[25] = if (cleanup && gone >= latest - LAST_SLACK) 1.0 else 0.0
+                var score = weights[NyloPolicy.FEATURES.size + weapon.ordinal]
+                for (i in f.indices) score += weights[i] * f[i]
+                if (score > (best?.score ?: 0.0)) best = Plan(weapon, target, victims, score)
+            }
+        }
+        return best
     }
 
     /* ---- a Blert room, played again */
@@ -554,6 +617,9 @@ class NyloCrew(
 
     private companion object {
         const val AREA_MAX = 9
+        const val SPLIT_CHECK_TICKS = 11
+        const val YOUNG_TICKS = 14
+        const val LAST_SLACK = 2
         val PROTECT = mapOf('M' to "varbit.prayer_protectfrommelee", 'R' to "varbit.prayer_protectfrommissiles", 'G' to "varbit.prayer_protectfrommagic")
         const val LINE_TILES = 3
         const val LIFE = 52
@@ -716,6 +782,7 @@ data class NyloCrewParams(
     val copyLate: Int = 3,
     val copyLead: Int = 2,
     val copySlack: Int = 0,
+    val learned: Boolean = false,
 ) {
     companion object {
         fun parse(text: String): NyloCrewParams {
@@ -776,6 +843,7 @@ data class NyloCrewParams(
                 copyLate = int("copyLate", d.copyLate),
                 copyLead = int("copyLead", d.copyLead),
                 copySlack = int("copySlack", d.copySlack),
+                learned = num("learned", if (d.learned) 1.0 else 0.0) != 0.0,
             )
         }
     }

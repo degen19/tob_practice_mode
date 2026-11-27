@@ -618,11 +618,11 @@ class NyloSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
      * A nylocas as a bot sees it ([spawnTile]: the real tile a wave nylocas came in on, null for a split; [key]: `wWAVE:X:Z:B|s`
      * from its spawn, a split its parent's key and `:0` or `:1`, as Blert's timelines name them).
      */
-    class Target(val npc: Npc, val style: Char, val big: Boolean, val born: Int, val aggro: Boolean, val wave: Int, val onPillar: Boolean, val nulledBy: Set<Player>, val doomed: Boolean, val spawnTile: CoordGrid?, val key: String)
+    class Target(val npc: Npc, val style: Char, val big: Boolean, val born: Int, val aggro: Boolean, val wave: Int, val onPillar: Boolean, val nulledBy: Set<Player>, val doomed: Boolean, val spawnTile: CoordGrid?, val key: String, val pending: Int)
 
     fun targets(): List<Target> =
         nylos.filter { it.npc.isSlotAssigned && it.npc.hitpoints > 0 && it.exploding < 0 && it.nulledBy.size < party().size }
-            .map { Target(it.npc, it.style, it.big, it.born, it.aggro, it.wave, it.biting, it.nulledBy, it.pending(t) >= it.npc.hitpoints, it.spawnTile, it.key) }
+            .map { Target(it.npc, it.style, it.big, it.born, it.aggro, it.wave, it.biting, it.nulledBy, it.pending(t) >= it.npc.hitpoints, it.spawnTile, it.key, it.pending(t)) }
 
     /** The tick Vasilias drops in (-1 until the last nylocas is gone), and the waves spawned so far. */
     val bossTick: Int
