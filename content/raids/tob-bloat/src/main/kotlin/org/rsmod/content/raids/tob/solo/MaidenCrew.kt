@@ -913,9 +913,10 @@ class MaidenCrew(
      * The sim's freezer stand: with the next proc's list opening on a freeze, the mage won't start an attack that leaves
      * it on cooldown past the proc's first tick when that proc could come first (a 1 in 4 chance, from what's in flight
      * and the scythes due) or, in a trio, she's within [STAND_PCT] of it (a four's melee freeze bows on while that's
-     * safe; before a four's 30s, both freezers - two ticks late still leaves each three freezes). It stands, or preloads a barrage on a pile worth it: queued behind the DPS hits, it goes once they've landed
-     * without a proc, and only when it's off cooldown in time for a proc off their next ones - a proc off theirs gets the
-     * freezes on time instead.
+     * safe; before a four's 30s the melee freeze holds to be on the 30s' first tick, the mage only to be within two). It
+     * stands, or preloads a barrage on a pile worth it: queued behind the DPS hits, it goes once they've landed without a
+     * proc, and only when it's off cooldown in time for a proc off their next ones - a proc off theirs gets the freezes on
+     * time instead.
      */
     private fun standFor(b: Bot, tt: Int): String? {
         if (room.phase >= WAVES.size) return null
@@ -925,7 +926,7 @@ class MaidenCrew(
         val a = atkOf(cur)
         if (a.style == 'm' || a.speed <= 1) return null
         val first = if (quad && (b.role == NyloRole.Freezer || room.phase == WAVES.size - 1)) 1 else 2
-        val by = tt + a.speed - first - if (quad && room.phase == WAVES.size - 1) QUAD_30S_SLACK else 0
+        val by = tt + a.speed - first - if (quad && room.phase == WAVES.size - 1 && b.role == NyloRole.Mage) QUAD_30S_SLACK else 0
         if (!procRisk(tt, by) && (quad || hp * 100 - full * phase > full * STAND_PCT)) return null
         val others = crew.filter { it !== b }.minOf { it.next }
         // queued behind the DPS hits: it goes only once their last swings have landed without a proc (seen two ticks on)
