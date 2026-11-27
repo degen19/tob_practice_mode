@@ -63,6 +63,7 @@ class ClawSpecialAttacks @Inject constructor(private val burn: Burn) : SpecialAt
                 slot = constants.spotanim_slot_combat,
                 height = 0,
             )
+            for ((sound, delay) in SLICE_SOUNDS) soundSynth(sound, delay = delay)
 
             val max = manager.calculateMeleeMaxHit(this, target, attack.type, attack.style, 1.0)
             val horned = HornBuff.consume(player)
@@ -122,6 +123,9 @@ class ClawSpecialAttacks @Inject constructor(private val burn: Burn) : SpecialAt
         private companion object {
             const val HITS = 4
             const val HORNED_ROLL = 1
+
+            /** The wiki's three: one for the first hit, one for the second, one for the third and fourth (client cycles apart). */
+            val SLICE_SOUNDS = listOf("synth.dragonclaws_special_1" to 0, "synth.dragonclaws_special_2" to 20, "synth.dragonclaws_special_3" to 40)
             val MISS_PATTERNS =
                 arrayOf(intArrayOf(0, 1), intArrayOf(2, 3), intArrayOf(0, 2), intArrayOf(1, 3))
         }

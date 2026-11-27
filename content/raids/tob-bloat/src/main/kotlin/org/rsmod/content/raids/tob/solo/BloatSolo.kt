@@ -63,6 +63,7 @@ class BloatSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Co
             bloat.hitpoints = 0
             bloat.routeDestination.clear()
             bloat.anim(DEATH_SEQ)
+            sound(DEATH_SOUND, real(bloat.coords), DEATH_SOUND_RADIUS)
             later(DEATH_SEQ_TICKS) { despawn(bloat) }
             mes("The Pestilent Bloat is dead.")
             return
@@ -86,6 +87,8 @@ class BloatSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Co
         const val BASE_Y = 4432
         const val NPC = "npc.tob_bloat"
         const val DEATH_SEQ = "seq.tob_bloat_death"
+        const val DEATH_SOUND = "synth.tob_bloat_death"
+        const val DEATH_SOUND_RADIUS = 15
         const val DEATH_TICKS = 6
         const val DEATH_SEQ_TICKS = 3
     }

@@ -346,6 +346,7 @@ class BloatRoom(
                     ),
                 )
                 p.spotanim(FLIES_SPOT, delay = FLY_TICKS * 30)
+                worldRepo.soundArea(p.coords, FLIES_SOUNDS[random.of(0, FLIES_SOUNDS.size - 1)], radius = FLIES_SOUND_RADIUS)
                 p.queueHit(npc, FLY_TICKS, HitType.Typeless, dmg, hitModifier)
             }
         } else {
@@ -445,6 +446,16 @@ class BloatRoom(
     private companion object {
         const val DOWN_SEQ = "seq.tob_bloat_sleep"
         const val FLIES_SPOT = "spotanim.tob_bloat_flies_small"
+        val FLIES_SOUNDS =
+            listOf(
+                "synth.tob_bloat_flies_attack_1",
+                "synth.tob_bloat_flies_attack_2",
+                "synth.tob_bloat_flies_attack_3",
+                "synth.tob_bloat_flies_attack_4",
+                "synth.tob_bloat_flies_attack_5",
+                "synth.tob_bloat_flies_attack_6",
+            )
+        const val FLIES_SOUND_RADIUS = 10
         const val FLIES_PROJ = "spotanim.tob_bloat_flies_large"
         const val FLY_TICKS = 1
         const val ENTRY_MAX_FLIES = 8

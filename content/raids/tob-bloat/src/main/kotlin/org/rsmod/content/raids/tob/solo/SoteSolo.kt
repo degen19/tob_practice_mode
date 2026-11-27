@@ -3,6 +3,7 @@ package org.rsmod.content.raids.tob.solo
 import dev.openrune.rscm.RSCM.asRSCM
 import org.rsmod.api.instances.InstanceSession
 import org.rsmod.api.player.lockOverheads
+import org.rsmod.api.player.output.soundSynth
 import org.rsmod.api.player.protect.ProtectedAccess
 import org.rsmod.api.player.stat.hitpoints
 import org.rsmod.game.entity.Npc
@@ -141,6 +142,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             dead = t
             sote.hitpoints = 0
             sote.anim(DEATH_SEQ)
+            sound(DEATH_SOUND, real(sote.coords), DEATH_SOUND_RADIUS)
             later(DEATH_SEQ_TICKS) { despawn(sote) }
             mes("Sotetseg is dead.")
             return
@@ -180,10 +182,12 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         orbs++
         if (orbs % DEATH_BALL_EVERY == 0) {
             recordAttack(sote, 9)
+            sound(DEATH_BALL_SOUND, real(sote.coords), SOUND_RADIUS)
             deathBall(p)
             return
         }
         recordAttack(sote, 8)
+        sound(ORB_SOUND, real(sote.coords), SOUND_RADIUS)
         // her main orb at the player she's attacking is always magic (the ranged orbs go to the rest of a team)
         val magic = true
         val lands = projLanding(if (magic) "spotanim.tob_sotetseg_maging" else "spotanim.tob_sotetseg_ranging", p, ORB_TICKS)
@@ -193,6 +197,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         later(lands) {
             val q = inside() ?: return@later
             if (e != epoch) return@later
+            q.soundSynth(ORB_HIT_SOUND)
             if (prays(q, prayer)) {
                 hurt(q, 0, source = sote)
                 return@later
@@ -233,6 +238,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             val q = inside() ?: return@later
             if (e != epoch) return@later
             q.spotanim("spotanim.tob_sotetseg_sharedattack_impact")
+            q.soundSynth(DEATH_BALL_HIT_SOUND)
             hurt(q, if (entryMode) DEATH_BALL_ENTRY * 2 else DEATH_BALL_SOLO, source = sote)
         }
     }
@@ -300,6 +306,7 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
             p.clearQueue("queue.hit")
             p.frozen = false
             jump(p, at(UNDER_START))
+            p.soundSynth(REALM_SOUND)
             // the path, lit for the chosen one
             for (x in 0 until W) for (y in 0 until H) if (m[x][y]) lit += loc(LIT, CoordGrid(UNDER_X + x, UNDER_Y + y, 3), shape = LocShape.GroundDecor)
             return
@@ -319,7 +326,10 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         val y = here.z - OVER_Y
         val onMaze = x in 0 until W && y in 0 until H
         // every tick on a wrong tile: the sim's maze hit for your hitpoints, never more than you have (so it can be tick-eaten)
-        if (onMaze && !m[x][y]) hurt(p, minOf(org.rsmod.content.raids.tob.bloat.sote.SoteEngine.mazeDmg(p.hitpoints), p.hitpoints))
+        if (onMaze && !m[x][y]) {
+            p.soundSynth(TILE_SOUND)
+            hurt(p, minOf(org.rsmod.content.raids.tob.bloat.sote.SoteEngine.mazeDmg(p.hitpoints), p.hitpoints))
+        }
         tornadoTick(p, onMaze && y >= TORNADO_ROW)
         if (crossed >= 0) {
             // she wakes at the start of the next 4-tick cycle (instance tick 1) once you're off the top, and only if
@@ -461,6 +471,17 @@ class SoteSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Coo
         const val ORB_SEQ = "seq.tob_sotetseg_attack_ranged"
         const val MELEE_SEQ = "seq.tob_sotetseg_attack_melee"
         const val DEATH_SEQ = "seq.tob_sotetseg_death"
+        const val DEATH_SOUND = "synth.tob_sotetseg_death"
+        const val ORB_SOUND = "synth.tob_sotetseg_attack_ranged"
+        const val ORB_HIT_SOUND = "synth.tob_sotetseg_fireball_player_hit"
+        const val DEATH_BALL_SOUND = "synth.tob_sotetseg_large_attack_ranged"
+        const val DEATH_BALL_HIT_SOUND = "synth.tob_sotetseg_large_fireball_player_hit"
+        const val REALM_SOUND = "synth.tob_sotetseg_teleport_shadowrealm"
+        const val TILE_SOUND = "synth.tob_sotetseg_player_tile_explosion_impact"
+
+        /** How far her sounds carry: her melee animation's sound reach in the cache (the death, as the others', 15). */
+        const val SOUND_RADIUS = 7
+        const val DEATH_SOUND_RADIUS = 15
         const val DEATH_TICKS = 5
         const val DEATH_SEQ_TICKS = 3
         const val W = 14

@@ -386,6 +386,11 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
         if (locs.remove(l)) d.locRepo.del(l, Int.MAX_VALUE)
     }
 
+    /** A sound heard by everyone within [radius] of a tile (real coords). */
+    fun sound(synth: String, real: CoordGrid, radius: Int, delay: Int = 0) {
+        d.worldRepo.soundArea(at(real), synth, delay = delay, radius = radius)
+    }
+
     /** A graphic on a tile (real coords). */
     fun gfx(spot: String, real: CoordGrid, height: Int = 0, delay: Int = 0) {
         d.worldRepo.spotanimMap(SpotanimType(spot.asRSCM(RSCMType.SPOTANIM)), at(real), height, delay)

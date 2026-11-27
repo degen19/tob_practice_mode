@@ -52,6 +52,7 @@ constructor(private val areaTargets: AreaTargets, private val eventBus: EventBus
             attack: CombatAttack.Ranged,
         ): Boolean {
             val (accurate, hitDelay, clientDelay) = throwAt(target, attack)
+            manager.soundArea(target, EXPLODE_SOUND, delay = clientDelay, radius = EXPLODE_RADIUS)
             hit(target, attack, accurate, hitDelay, clientDelay)
             if (mapMultiway()) {
                 val area = Bounds(target.coords.translate(-1, -1), target.size + 2)
@@ -68,6 +69,7 @@ constructor(private val areaTargets: AreaTargets, private val eventBus: EventBus
             attack: CombatAttack.Ranged,
         ): Boolean {
             val (accurate, hitDelay, clientDelay) = throwAt(target, attack)
+            manager.soundArea(target, EXPLODE_SOUND, delay = clientDelay, radius = EXPLODE_RADIUS)
             hit(target, attack, accurate, hitDelay, clientDelay)
             finish(target, attack)
             return true
@@ -79,6 +81,7 @@ constructor(private val areaTargets: AreaTargets, private val eventBus: EventBus
         ): Triple<Boolean, Int, Int> {
             val type = getInvObj(attack.weapon)
             manager.playWeaponFx(this, attack)
+            soundSynth(THROW_SOUND)
             val travel = type.paramOrNull(params.proj_travel)
             val travelName =
                 travel?.let { RSCM.getReverseMapping(RSCMType.SPOTANIM, it.id) }
@@ -111,6 +114,7 @@ constructor(private val areaTargets: AreaTargets, private val eventBus: EventBus
                     0
                 }
             manager.giveCombatXp(this, target, attack, damage)
+            target.spotanim(EXPLODE_SPOT, delay = clientDelay, height = EXPLODE_HEIGHT)
             manager.queueRangedHit(this, target, null, damage, clientDelay, hitDelay)
         }
 
@@ -129,6 +133,14 @@ constructor(private val areaTargets: AreaTargets, private val eventBus: EventBus
                 return
             }
             RangedAmmunition.detractAmmo(player, Wearpos.RightHand, type, 1, eventBus)
+        }
+
+        private companion object {
+            const val THROW_SOUND = "synth.chinchompa_attack"
+            const val EXPLODE_SOUND = "synth.chinchompa_explode"
+            const val EXPLODE_RADIUS = 5
+            const val EXPLODE_SPOT = "spotanim.firewave_impact"
+            const val EXPLODE_HEIGHT = 100
         }
     }
 }

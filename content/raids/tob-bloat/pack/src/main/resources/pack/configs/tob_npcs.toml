@@ -4,6 +4,7 @@ id = "npc.tob_bloat"
 inherit = "npc.tob_bloat"
 [npc.params]
 "param.undead" = 1
+"param.defend_sound" = "synth.tob_bloat_hit"
 
 # Sotetseg's Defence can't be taken below 100.
 [[npc]]
@@ -11,6 +12,7 @@ id = "npc.tob_sotetseg_combat"
 inherit = "npc.tob_sotetseg_combat"
 [npc.params]
 "param.min_defence" = 100
+"param.defend_sound" = "synth.tob_sotetseg_hit"
 
 [[npc]]
 id = "npc.tob_sotetseg_noncombat"
@@ -24,6 +26,7 @@ id = "npc.verzik_phase1"
 inherit = "npc.verzik_phase1"
 [npc.params]
 "param.min_defence" = 1000
+"param.defend_sound" = "synth.tob_verzik_human_hit"
 
 [[npc]]
 id = "npc.verzik_phase1_to2_transition"
@@ -36,6 +39,7 @@ id = "npc.verzik_phase2"
 inherit = "npc.verzik_phase2"
 [npc.params]
 "param.min_defence" = 1000
+"param.defend_sound" = "synth.tob_verzik_vampire_hit"
 
 [[npc]]
 id = "npc.verzik_phase2_to3_transition"
@@ -48,3 +52,143 @@ id = "npc.verzik_phase3"
 inherit = "npc.verzik_phase3"
 [npc.params]
 "param.min_defence" = 1000
+"param.defend_sound" = "synth.tob_verzik_spider_hit"
+
+# Defend sounds: what the attacker hears as a hit lands on each Theatre monster (by the cache's sound names).
+[[npc]]
+id = "npc.tob_maiden_100"
+inherit = "npc.tob_maiden_100"
+[npc.params]
+"param.defend_sound" = "synth.tob_maiden_hit"
+
+[[npc]]
+id = "npc.tob_maiden_70"
+inherit = "npc.tob_maiden_70"
+[npc.params]
+"param.defend_sound" = "synth.tob_maiden_hit"
+
+[[npc]]
+id = "npc.tob_maiden_50"
+inherit = "npc.tob_maiden_50"
+[npc.params]
+"param.defend_sound" = "synth.tob_maiden_hit"
+
+[[npc]]
+id = "npc.tob_maiden_30"
+inherit = "npc.tob_maiden_30"
+[npc.params]
+"param.defend_sound" = "synth.tob_maiden_hit"
+
+[[npc]]
+id = "npc.tob_nylocas_incoming_melee"
+inherit = "npc.tob_nylocas_incoming_melee"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.tob_nylocas_incoming_ranged"
+inherit = "npc.tob_nylocas_incoming_ranged"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.tob_nylocas_incoming_magic"
+inherit = "npc.tob_nylocas_incoming_magic"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.tob_nylocas_fighting_melee"
+inherit = "npc.tob_nylocas_fighting_melee"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.tob_nylocas_fighting_ranged"
+inherit = "npc.tob_nylocas_fighting_ranged"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.tob_nylocas_fighting_magic"
+inherit = "npc.tob_nylocas_fighting_magic"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.tob_nylocas_big_incoming_melee"
+inherit = "npc.tob_nylocas_big_incoming_melee"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.tob_nylocas_big_incoming_ranged"
+inherit = "npc.tob_nylocas_big_incoming_ranged"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.tob_nylocas_big_incoming_magic"
+inherit = "npc.tob_nylocas_big_incoming_magic"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.tob_nylocas_big_fighting_melee"
+inherit = "npc.tob_nylocas_big_fighting_melee"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.tob_nylocas_big_fighting_ranged"
+inherit = "npc.tob_nylocas_big_fighting_ranged"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.tob_nylocas_big_fighting_magic"
+inherit = "npc.tob_nylocas_big_fighting_magic"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.nylocas_boss_melee"
+inherit = "npc.nylocas_boss_melee"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.nylocas_boss_ranged"
+inherit = "npc.nylocas_boss_ranged"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.nylocas_boss_magic"
+inherit = "npc.nylocas_boss_magic"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.verzik_nylocas_melee"
+inherit = "npc.verzik_nylocas_melee"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.verzik_nylocas_ranged"
+inherit = "npc.verzik_nylocas_ranged"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.verzik_nylocas_magic"
+inherit = "npc.verzik_nylocas_magic"
+[npc.params]
+"param.defend_sound" = "synth.tob_nylocas_hit"
+
+[[npc]]
+id = "npc.tob_xarpus_combat"
+inherit = "npc.tob_xarpus_combat"
+[npc.params]
+"param.defend_sound" = "synth.tob_xarpus_hit"

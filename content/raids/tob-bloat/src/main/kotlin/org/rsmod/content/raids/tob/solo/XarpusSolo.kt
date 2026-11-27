@@ -3,6 +3,7 @@ package org.rsmod.content.raids.tob.solo
 import dev.openrune.rscm.RSCM.asRSCM
 import org.rsmod.api.instances.InstanceSession
 import org.rsmod.api.invtx.invAdd
+import org.rsmod.api.player.output.soundSynth
 import org.rsmod.api.player.protect.ProtectedAccess
 import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
@@ -126,7 +127,10 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val e = exhumed
         if (e != null) {
             val age = t - e.born
-            if (age == EXHUMED_LIFE - 1) d.worldRepo.locAnim(e.loc, "seq.tob_xarpus_exhumed_end")
+            if (age == EXHUMED_LIFE - 1) {
+                d.worldRepo.locAnim(e.loc, "seq.tob_xarpus_exhumed_end")
+                sound(EXHUMED_CLOSE_SOUND, e.tile, SOUND_RADIUS)
+            }
             if (age == 1) d.worldRepo.locAnim(e.loc, "seq.tob_xarpus_exhumed_loop")
             if (age >= EXHUMED_LIFE) {
                 delLoc(e.loc)
@@ -135,9 +139,11 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                 val stood = p != null && real(p.coords) == e.tile
                 if (!stood) {
                     val lands = projTiles("spotanim.tob_xarpus_exhumed_energyorb", e.tile, CoordGrid(X + 2, Y + 2, 1), speed = 4, startHeight = 0, endHeight = 80)
+                    sound(HEAL_SHOT_SOUND, e.tile, SOUND_RADIUS)
                     xarpus.anim("seq.tob_xarpus_absorb")
                     // his max rises with each heal, and the heal shows as a hitsplat on him when the orb reaches him
                     later(lands) {
+                        sound(SWALLOW_SOUND, real(xarpus.coords), SOUND_RADIUS)
                         hp += HEAL
                         xarpus.baseHitpointsLvl = hp
                         healNpc(xarpus, HEAL)
@@ -155,6 +161,7 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             // a ground decoration (you stand on it), rising, looping, then sinking
             val l = loc("loc.tob_xarpus_exhumed", tile, shape = LocShape.GroundDecor)
             d.worldRepo.locAnim(l, "seq.tob_xarpus_exhumed_start")
+            sound(EXHUMED_OPEN_SOUND, tile, SOUND_RADIUS)
             exhumed = Exhumed(l, tile, t)
         }
         if (firstExhumed >= 0 && t - firstExhumed >= RISE_AFTER) rise()
@@ -231,6 +238,7 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private fun splat(tile: CoordGrid, bounce: Boolean) {
         if (phase != 2) return
         gfx("spotanim.tob_xarpus_acidsplash", tile)
+        sound(ACID_FLOOR_SOUND, tile, SOUND_RADIUS)
         if (tile !in pools) {
             val pool = loc("loc.tob_xarpus_acidpool", tile)
             pools[tile] = pool
@@ -266,6 +274,7 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     private fun poison(p: Player) {
         if (real(p.coords) in pools) {
             poolTicks++
+            p.soundSynth(ACID_BURN_SOUND)
             hurt(p, minOf(POISON_MAX, POISON_START + poolTicks / 2), source = xarpus)
         } else {
             poolTicks = 0
@@ -354,6 +363,15 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val FEEDING = "npc.tob_xarpus_feeding"
         const val BASE_HP = 3750
         const val HEAL = 20
+        const val EXHUMED_OPEN_SOUND = "synth.tob_xarpus_exhumes_open"
+        const val EXHUMED_CLOSE_SOUND = "synth.tob_xarpus_exhumes_close"
+        const val HEAL_SHOT_SOUND = "synth.tob_xarpus_exhume_health_shots"
+        const val SWALLOW_SOUND = "synth.tob_xarpus_swollowing_health"
+        const val ACID_FLOOR_SOUND = "synth.tob_xarpus_acid_floor_hit"
+        const val ACID_BURN_SOUND = "synth.tob_xarpus_player_acid_burn"
+
+        /** How far his sounds carry: his attack animation's sound reach in the cache. */
+        const val SOUND_RADIUS = 7
         const val EXHUMEDS = 7
         const val FIRST_EXHUMED = 8
         const val EXHUMED_EVERY = 12

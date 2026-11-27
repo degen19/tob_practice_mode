@@ -299,6 +299,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             val dmg = rand(0, P1_MAX)
             later(lands) {
                 gfx("spotanim.verzik_phase1_impactpillar", CoordGrid(pillar.x + 1, pillar.y + 1, 0), height = 60)
+                sound(PILLAR_HIT_SOUND, CoordGrid(pillar.x + 1, pillar.y + 1, 0), SOUND_RADIUS)
                 pillar.hp -= dmg
                 pillar.npc?.let { showDamage(it, dmg, pillar.hp, PILLAR_HP) }
                 if (pillar.hp <= 0) collapse(pillar)
@@ -310,6 +311,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         later(lands) {
             val q = inside() ?: return@later
             q.spotanim("spotanim.verzik_phase1_impact")
+            sound(P1_IMPACT_SOUND, real(q.coords), SOUND_RADIUS)
             hurt(q, if (prays(q, "magic")) roll / 2 else roll, source = v)
         }
     }
@@ -663,6 +665,7 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             v.hitpoints = 0
             v.routeDestination.clear()
             v.anim("seq.verzik_phase3_death_a")
+            sound(P3_DEATH_SOUND, center(v), SOUND_RADIUS)
             unblockWebs()
             tornado?.let { vanish(it) }
             tornado = null
@@ -1099,6 +1102,12 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
 
         /** Her P1 blast's flight, in ticks: a slow, heavy orb (an estimate - Blert has no hits on it to time). */
         const val P1_FLIGHT = 5
+        const val PILLAR_HIT_SOUND = "synth.tob_pillar_hit"
+        const val P1_IMPACT_SOUND = "synth.tob_verzik_spark_2"
+        const val P3_DEATH_SOUND = "synth.tob_verzik_spider_death_1"
+
+        /** How far her sounds carry: her own animations' sound reach in the cache. */
+        const val SOUND_RADIUS = 15
         const val CRAWLER_POP_TICKS = 3
         const val CRAWLER_FIRST_STEP = 3
         const val CRAWLER_LOCK_AGE = 5

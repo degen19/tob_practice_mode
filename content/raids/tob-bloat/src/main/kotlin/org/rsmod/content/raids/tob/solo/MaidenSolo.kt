@@ -1,6 +1,7 @@
 package org.rsmod.content.raids.tob.solo
 
 import org.rsmod.api.instances.InstanceSession
+import org.rsmod.api.player.output.soundSynth
 import org.rsmod.api.player.stat.statSub
 import org.rsmod.api.player.stat.hitpoints
 import org.rsmod.game.entity.Npc
@@ -344,6 +345,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
      */
     private fun throwBlood(p: Player) {
         maiden.anim(THROW_SEQ)
+        sound(THROW_SOUND, centre, SOUND_RADIUS)
         recordAttack(maiden, 2)
         val party = party()
         val tiles = LinkedHashSet<CoordGrid>()
@@ -367,6 +369,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
                 incoming.computeIfPresent(tile) { _, n -> (n - 1).takeIf { it > 0 } }
                 if (tile !in incoming) landing.remove(tile)
                 gfx(SPLAT_GFX[rand(SPLAT_GFX.size)], tile)
+                sound(SPLAT_SOUND, tile, SOUND_RADIUS)
                 splats += Splat(tile, t + SPLAT_TICKS)
             }
         }
@@ -405,6 +408,7 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         val dmg = rand(1, BLOOD_BASE + BLOOD_PER_LEAK * leaks)
         // she heals exactly what the blood takes from you, as it lands; sourceless, so Vengeance doesn't fire off it
         val dealt = hurt(p, dmg)
+        p.soundSynth(BLEED_SOUND)
         val hpBefore = p.hitpoints
         later(1) {
             bled += minOf(dealt, hpBefore)
@@ -599,6 +603,12 @@ class MaidenSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val BLOOD_LAND = 1
         const val BLOOD_PER_5 = 3
         const val CRAB_DEATH = "seq.elemental_death"
+        const val THROW_SOUND = "synth.tob_maiden_blood_attack"
+        const val SPLAT_SOUND = "synth.tob_maiden_blood_impact"
+        const val BLEED_SOUND = "synth.tob_maiden_blood_hit"
+
+        /** How far her sounds carry: the reach her own animations' sounds have in the cache. */
+        const val SOUND_RADIUS = 15
         val SPLAT_GFX = listOf("spotanim.maiden_lingering_blood", "spotanim.maiden_lingering_blood_sw", "spotanim.maiden_lingering_blood_nw", "spotanim.maiden_lingering_blood_ne")
         const val TRAIL = "loc.tob_maiden_blood"
 
