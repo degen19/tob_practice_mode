@@ -21,7 +21,7 @@ function nyloTile(x, z) {
 }
 const STAND = [26, 37, 19, 30];
 const MOUTHS = { W: [26, 24], E: [37, 24], S: [31, 19] };
-const DEATH_REMOVE_SMALL = 2; // a killed one leaves the room's list this long after (its death animation)
+const DEATH_REMOVE_SMALL = 6; // a killed one leaves the room's list this long after (its death animation, as measured on the server)
 
 const ROLES = ['G', 'R', 'M']; // mage, ranger, melee (style each favours)
 const WEAPONS = {
