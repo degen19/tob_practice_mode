@@ -1353,7 +1353,7 @@ class MaidenCrew(
     private fun q30Plan(w: Int, first: Int): QPlan {
         val here = { id: String -> spawned[w]?.contains(id) == true }
         val frz = crew.firstOrNull { it.role == NyloRole.Freezer }
-        val start = mapOf(NyloRole.Freezer to first, NyloRole.Mage to first)
+        val start = mapOf(NyloRole.Freezer to first + 1, NyloRole.Mage to first + 1)
         val p = { b: Bot? -> 1 + (b?.let { max(0, it.next - start.getValue(it.role)) } ?: 0) }
         val pN = p(frz)
         val pS = p(mage)
