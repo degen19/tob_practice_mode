@@ -37,7 +37,7 @@ class NyloCrew(
     private val barrage: Int,
     private val params: NyloCrewParams = NyloCrewParams(),
 ) : BotCrew {
-    override fun starts(): List<CoordGrid> = members.map { room.autoStart }
+    override fun starts(): List<CoordGrid> = members.map { room.entry }
 
     override val walksIn: Boolean
         get() = true
