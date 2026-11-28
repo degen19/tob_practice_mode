@@ -378,12 +378,13 @@ class Room {
     const t = this.t;
     if (p.dc && t >= p.dc.until) { p.dc.charges = DC_CHARGES; p.dc.until = t + DC_TICKS; }
     if (p.plan && (p.plan.n.gone || p.plan.n.hp <= 0 || p.plan.n.exploding >= 0 || (p.plan.n.nulled & (1 << p.i)))) p.plan = null;
-    // decide on the tick before the weapon's ready (the click), as the server's crew does
-    if (p.readyAt <= t + 1 && (!p.plan || p.plan.at < t - 1)) {
+    // NyloCrew chooses again every tick from the one before the weapon's ready: the same target and weapon is no new
+    // click, so it keeps its click tick; a different one is a new click, which goes off the tick after
+    if (p.readyAt <= t + 1) {
       const all = this.targets();
       const choice = this.policy.choose(this, p, all);
       if (choice && choice.post) { p.plan = null; p.post = choice.post; p.tx = choice.x; p.tz = choice.z; }
-      else if (choice) { p.post = null; const spot = this.attackSpot(p, choice.w, choice.n); if (spot) p.plan = { w: choice.w, n: choice.n, x: spot[0], z: spot[1], at: t }; else p.plan = null; }
+      else if (choice) { p.post = null; const spot = this.attackSpot(p, choice.w, choice.n); const same = p.plan && p.plan.n === choice.n && p.plan.w === choice.w; if (spot) p.plan = { w: choice.w, n: choice.n, x: spot[0], z: spot[1], at: same ? p.plan.at : t }; else p.plan = null; }
       else { p.plan = null; const pf = PREFIRES[Math.min(this.wave, PREFIRES.length - 1)][ROLES.indexOf(p.role)]; p.tx = pf[0]; p.tz = pf[1]; }
     }
     if (p.plan) {
