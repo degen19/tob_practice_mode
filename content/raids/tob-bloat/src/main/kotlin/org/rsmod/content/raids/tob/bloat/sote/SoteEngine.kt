@@ -13,8 +13,8 @@ import org.rsmod.content.raids.tob.bloat.maiden.SimRng
  * orbs (prayed, or taken for veng) and their splits, her melee off the flinch (every scale keeps it), the death ball
  * (shared, or tick-eaten), both mazes skipped - stalled on a phoenix necklace with one player under, shark skips,
  * redemption skips with a locator orb (solos skip both that way after going under first) - Heal Other, thralls, spec
- * regen, Lightbearer, surges, the duos' backup maul and the solos' maul until one lands, and the P3 halberd last hit.
- * Running the maze isn't here. Runs a tick at a time ([tick]); [Events] says what happens.
+ * regen, Lightbearer, surges, the duos' backup maul and the solos' maul until one lands, the P3 halberd last hit, and
+ * running the maze. Runs a tick at a time ([tick]); [Events] says what happens.
  */
 class SoteEngine(
     plans: List<SotePlan>,
@@ -38,6 +38,9 @@ class SoteEngine(
         fun maze(t: Int, n: Int, m: Int, under: P?, back: Int) {}
 
         fun stallOut(t: Int, p: P) {}
+
+        /** A maze everyone runs: [under] lights the path, the others follow [run]'s route. */
+        fun mazeRun(t: Int, n: Int, run: Run, under: P?) {}
 
         fun dead(t: Int) {}
     }
@@ -108,6 +111,7 @@ class SoteEngine(
         var eatReady = 0
         var sipReady = 0
         var duoBackingUp = false
+        var ran = -1
 
         /** What they're holding (the last attack), for the look. */
         var holding = "scythe"
@@ -120,6 +124,12 @@ class SoteEngine(
     private class Ball(val at: Int, val tgt: P)
 
     private class SharkSkip(val p: P, val m: Int, val eats: Map<Int, Char>)
+
+    /**
+     * A run maze: the player under is on the first tile on [light] and runs the route from [go]; the runners are on the
+     * first tile on [onFirst], reach row N on [onN], click off on [clickOff] (an i3) and swing 3 ticks later.
+     */
+    class Run(val maze: SoteMaze.Maze, val light: Int, val go: Int, val onFirst: Int, val onN: Int, val clickOff: Int)
 
     val team = plans.size
     private val max = SOTE_HP.getValue(team)
@@ -163,7 +173,6 @@ class SoteEngine(
 
     init {
         ps = plans.mapIndexed { i, pl -> P(i, pl) }
-        require(ps.none { "run" in it.how }) { "running the maze isn't ported" }
         pid = ps.toMutableList().also { shuffle(it) }
         for (p in ps) {
             var after = 0
@@ -314,6 +323,7 @@ class SoteEngine(
         back += attackable
         val live = alive()
         val under = if (live.size > 1) choice(live) else null
+        if (live.any { it.how[mazes.size - 1] == "run" }) return runMaze(t, m, live, under)
         val runners = live.filter { it !== under }
         val skippers = runners.filter { (mazes.size - 1) in it.sharkMazes }
         val stallers = runners.filter { it !in skippers }
@@ -361,6 +371,40 @@ class SoteEngine(
         }
         pendingStall = (m + 8) to stallers
         events.maze(t, mazes.size, m, under, attackable)
+    }
+
+    /**
+     * Running the maze (everyone, if anyone runs): a real maze is rolled. The player under reaches the first tile in
+     * 1-3 ticks by its column and runs the best route; the runners reach it 1-4 ticks after leaving (by its column),
+     * follow the same route, wait on row N and click off on the next i3; she's attackable on the i1 after, everyone
+     * swings on the i2. No maze damage, veng allowed, a shark whenever below 85 HP.
+     */
+    private fun runMaze(t: Int, mSkip: Int, live: List<P>, under: P?) {
+        val mz = SoteMaze.roll(rng)
+        val u = SoteMaze.underToStart(mz.start)
+        val r = SoteMaze.runnersToStart(mz.start)
+        val light = t + 4 + u
+        val leave = max(t + 7, light + 1)
+        val onFirst = leave + r - 1
+        val go = light + 1 + (if (r > 3) 1 else 0)
+        val onN = onFirst + mz.toN
+        var c = onN
+        while (instanceOf(c) != 3) c++
+        attackable = c + 2
+        nextAttack = c + 3
+        back[back.size - 1] = attackable
+        for (p in live) {
+            p.next = c + 3
+            p.thrallBack = true
+            p.mazeEatTill = c + 3
+            p.eatKeep = 0
+            p.noVengUntil = 0
+            p.ran = mazes.size
+        }
+        if (under != null) under.healFrom = c + 3
+        val lost = (c + 1) - (mSkip + 8)
+        L("t$t maze ${mazes.size} RUN: first tile column ${mz.start}, best route ${mz.ticks} ticks (seed ${mz.seed.joinToString(" ")}); ${if (under != null) "${under.name} on the first tile t$light, runs t$go-t${go + mz.ticks - 1}; " else ""}runners on the first tile t$onFirst, row N t$onN, click off t$c (i3), off t${c + 1}, swing t${c + 3} - $lost ticks after a skip")
+        events.mazeRun(t, mazes.size, Run(mz, light, go, onFirst, onN, c), under)
     }
 
     private fun damage(t: Int, amt: Int, label: String) {
@@ -659,7 +703,7 @@ class SoteEngine(
             pendingStall = null
         }
         if (t == HORN_TICK) for (c in alive()) if (c.specs[0].horn > 0 && c.spec >= HORN_COST) castHorn(c, t, 0)
-        if (phase > 0 && !blocked) for (c in alive()) if (c.specs[phase].horn > 0 && !c.hornDone[phase] && c.spec >= HORN_COST && c.swings[phase] >= 1) castHorn(c, t, phase)
+        if (phase > 0 && !blocked) for (c in alive()) if (c.specs[phase].horn > 0 && !c.hornDone[phase] && c.spec >= HORN_COST && (c.swings[phase] >= 1 || (c.ran == phase && t >= (c.next ?: t)))) castHorn(c, t, phase)
         for (p in alive()) {
             if (t < p.vengReady || t < p.noVengUntil) continue
             if (!p.veng) {

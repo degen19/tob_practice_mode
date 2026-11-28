@@ -18,17 +18,26 @@ object SoteRules {
     const val STACK_Y = Y - 1
 
     /**
-     * Where each team stands round her (the tiles used in fast real raids on Blert). 5s: south, south-west, south-east,
-     * east (north end) and north (west end); 4s: east (north end), north, west, south-east; trios: south-east, east,
-     * west; duos: south-east and west; solos: west.
+     * Where each team swings from (the tiles used in fast real raids on Blert), and the tile one step back, out of her
+     * reach, each steps out to the tick after a swing and in from the tick before the next (the flinch). 5s: south,
+     * south-west, south-east, east (north end), north (west end); 4s: east, north, south-west, south-east; trios:
+     * south-east, east, west; duos: south-east and west; solos: west.
      */
     val SPOTS =
         mapOf(
             5 to listOf(3279 to 4325, 3276 to 4326, 3282 to 4326, 3282 to 4330, 3277 to 4331),
-            4 to listOf(3283 to 4330, 3277 to 4332, 3276 to 4326, 3281 to 4325),
-            3 to listOf(3281 to 4325, 3283 to 4330, 3275 to 4326),
+            4 to listOf(3282 to 4330, 3277 to 4331, 3276 to 4326, 3281 to 4325),
+            3 to listOf(3281 to 4325, 3282 to 4330, 3276 to 4326),
             2 to listOf(3281 to 4325, 3276 to 4326),
             1 to listOf(3276 to 4326),
+        )
+    val OUT =
+        mapOf(
+            5 to listOf(3279 to 4324, 3275 to 4326, 3283 to 4326, 3283 to 4330, 3277 to 4332),
+            4 to listOf(3283 to 4330, 3277 to 4332, 3275 to 4326, 3281 to 4324),
+            3 to listOf(3281 to 4324, 3283 to 4330, 3275 to 4326),
+            2 to listOf(3281 to 4324, 3275 to 4326),
+            1 to listOf(3275 to 4325),
         )
 
     /** The entry barrier: four tiles wide on the room's south edge (you come in going north). */
@@ -54,6 +63,9 @@ object SoteRules {
     const val CROSS_X = 3274
     const val CROSS_START_Y = 4307
     const val CROSS_TOP_Y = 4325
+
+    /** A shark skipper with others stalling crosses up column 11, away from their splash (Blert 5s). */
+    const val SKIP_X = 3284
     const val TELEPORT_AFTER = 3
 
     /**

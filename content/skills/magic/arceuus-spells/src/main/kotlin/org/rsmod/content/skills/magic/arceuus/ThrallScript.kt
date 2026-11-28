@@ -31,6 +31,7 @@ import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
 import org.rsmod.game.hit.HitType
 import org.rsmod.game.interact.InteractionNpc
+import org.rsmod.game.inv.isType
 import org.rsmod.game.movement.MoveSpeed
 import org.rsmod.game.proj.ProjAnim
 import org.rsmod.map.CoordGrid
@@ -38,7 +39,6 @@ import org.rsmod.plugin.scripts.PluginScript
 import org.rsmod.plugin.scripts.ScriptContext
 import org.rsmod.routefinder.collision.CollisionFlagMap
 import org.rsmod.routefinder.flag.CollisionFlag
-import org.rsmod.game.inv.isType
 
 private var Player.thrallActive by boolVarBit("varbit.arceuus_resurrection_active")
 
@@ -192,7 +192,11 @@ constructor(
         val npc = thrall.npc
         val dist = edgeDistance(npc, target)
         val reach = if (thrall.kind.style == Style.Melee) 1 else RANGED_REACH
-        if (dist > reach || dist == 0) {
+        if (dist == 0) {
+            npc.walk(owner.coords)
+            return
+        }
+        if (dist > reach) {
             npc.walk(target.coords)
             return
         }

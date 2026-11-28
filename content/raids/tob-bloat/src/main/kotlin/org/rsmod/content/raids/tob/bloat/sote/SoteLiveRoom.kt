@@ -33,14 +33,15 @@ import org.rsmod.map.CoordGrid
  * on the team's tiles and attack as the engine has them (prefires, mauls, ZCBs, claws, scythes, the halberd); her orbs
  * fly at them (prayed or taken for veng) and her melee comes off the flinch. On t12 the west bot drops a shark by her
  * south-west corner. At a maze one goes under (out of sight); the others are teleported south of the maze and run up
- * its first column to that shark through their NPC Contact (the stall), then walk back to their tiles; a solo goes
- * under first, then crosses. One seed, one raid: the same as the index's ([SoteIndex]).
+ * its first column to that shark through their NPC Contact (the stall), then walk back to their tiles; a shark skipper
+ * runs up column 11, away from them; a solo goes under first, then crosses. A run maze: they follow its best route. One seed, one raid: the same as the index's ([SoteIndex]).
  */
 class SoteLiveRoom(
     val session: InstanceSession,
     val sote: Npc,
     val seed: String,
     val team: Int,
+    val way: String,
     private val at: (Int, Int) -> CoordGrid,
     private val npcRepo: NpcRepository,
     private val objRepo: ObjRepository,
@@ -55,12 +56,15 @@ class SoteLiveRoom(
     var log = false
     private val acts = HashMap<Pair<Int, Int>, String>()
     private var her = ""
+    private var lit = ""
+    private val firstSwing = HashMap<Int, CoordGrid>()
     private var shown = 0
-    val engine = SoteEngine(SotePlan.of(team), SimRng(seed), Shows())
+    val engine = SoteEngine(SotePlan.of(team, way), SimRng(seed), Shows())
     private var clock = -PRE_TICKS
     private var idle = 0
     private val later = HashMap<Int, MutableList<() -> Unit>>()
     private var shark: Obj? = null
+    private val busyUntil = HashMap<Int, Int>()
 
     val finished: Boolean
         get() = idle > END_HOLD + 2
@@ -68,6 +72,26 @@ class SoteLiveRoom(
     fun botOf(p: SoteEngine.P): Player? = bots.getOrNull(p.i)
 
     fun stackTile(i: Int): CoordGrid = SoteRules.SPOTS.getValue(team)[i].let { (x, y) -> at(x, y) }
+
+    private fun outTile(i: Int): CoordGrid = SoteRules.OUT.getValue(team)[i].let { (x, y) -> at(x, y) }
+
+    /**
+     * The flinch: out of her reach between swings - in from the tick before a swing, out again the tick after it. Off a
+     * maze the first swing is from the tile beside her nearest them, then they go back to their own (as on Blert).
+     */
+    private fun flinch(p: SoteEngine.P, bot: Player) {
+        if (engine.blocked || p.dead || clock <= ARRIVED || engine.t < busyUntil.getOrDefault(p.i, 0)) return
+        val want = if (p.next == engine.t + 1) firstSwing[p.i] ?: stackTile(p.i) else outTile(p.i)
+        if (bot.coords != want) clicks.walk(bot, want)
+    }
+
+    /** Off the maze: to the tile beside her nearest them, for their first swing. */
+    private fun offMaze(p: SoteEngine.P) {
+        val bot = botOf(p) ?: return
+        val tile = BESIDE.map { (x, y) -> at(x, y) }.minBy { maxOf(kotlin.math.abs(it.x - bot.coords.x), kotlin.math.abs(it.z - bot.coords.z)) }
+        firstSwing[p.i] = tile
+        clicks.walk(bot, tile)
+    }
 
     /** Where each bot waits before the raid: just south of the barrier, on the column it comes in by. */
     fun outsideTile(i: Int): CoordGrid = at(SoteRules.ENTRY_COLUMNS.getValue(team)[i], SoteRules.BARRIER_Y - 1)
@@ -82,11 +106,22 @@ class SoteLiveRoom(
         later.getOrPut(t) { ArrayList() } += f
     }
 
+    private fun start() = at(SoteRules.CROSS_X, SoteRules.CROSS_START_Y)
+
+    /** 3 ticks after the proc: the player under to the shadow realm, the rest south of the maze (a solo under first). */
+    private fun teleport(t: Int, under: SoteEngine.P?, crossers: List<SoteEngine.P>) {
+        at(t + SoteRules.TELEPORT_AFTER) {
+            under?.let { u -> botOf(u)?.let { go(it, at(SoteRules.UNDER_X, SoteRules.UNDER_Y)) } }
+            for (p in crossers) botOf(p)?.let { go(it, if (team == 1) at(SoteRules.UNDER_X, SoteRules.UNDER_Y) else start()) }
+        }
+    }
+
     /** The bot on the west-most tile drops the shark the crossers click, then steps back. */
     private fun dropShark() {
         val i = SoteRules.SPOTS.getValue(team).withIndex().minBy { it.value.first }.index
         val bot = bots.getOrNull(i) ?: return
         val tile = at(SoteRules.CROSS_X, SoteRules.SHARK_Y.getValue(team))
+        busyUntil[i] = SoteRules.SHARK_TICK + 2
         clicks.walk(bot, tile)
         at(SoteRules.SHARK_TICK + 1) {
             shark = objRepo.add(SoteRules.SHARK, tile, Int.MAX_VALUE, reveal = 0)
@@ -113,6 +148,7 @@ class SoteLiveRoom(
         for (p in engine.ps) {
             val bot = botOf(p) ?: continue
             if (!look.wearing(bot)) look.equip(bot, kit(p.prefire))
+            if (engine.kill == null) flinch(p, bot)
             if (!engine.blocked && (clock > ARRIVED || bot.coords == stackTile(p.i))) bot.faceNpc(sote)
             bot.runEnergy = constants.run_max_energy
         }
@@ -128,8 +164,9 @@ class SoteLiveRoom(
             val c = botOf(p)?.coords
             "${p.i},${(c?.x ?: 0) - dx},${(c?.z ?: 0) - dz},${c?.level ?: 0},${p.hp},${acts.remove(engine.t to p.i) ?: ""}"
         }
-        println("sotetrace $seed ${engine.t} ${engine.hp} ${if (engine.blocked) 1 else 0} $her|$bs")
+        println("sotetrace $seed ${engine.t} ${engine.hp} ${if (engine.blocked) 1 else 0} $her|$bs${if (lit.isNotEmpty()) "|$lit" else ""}")
         her = ""
+        lit = ""
     }
 
     fun remove() {
@@ -142,6 +179,7 @@ class SoteLiveRoom(
     private inner class Shows : SoteEngine.Events {
         override fun attack(t: Int, p: SoteEngine.P, act: String, lands: Int) {
             acts[t to p.i] = act
+            if (act != "horn") firstSwing.remove(p.i)
             val bot = botOf(p) ?: return
             if (act == "horn") return bot.say("*Soulflame horn*")
             if (clock <= 0) return
@@ -175,26 +213,48 @@ class SoteLiveRoom(
         }
 
         override fun maze(t: Int, n: Int, m: Int, under: SoteEngine.P?, back: Int) {
-            val crossers = engine.ps.filter { !it.dead && it !== under }.mapNotNull { botOf(it) }
-            val start = at(SoteRules.CROSS_X, SoteRules.CROSS_START_Y)
-            at(t + SoteRules.TELEPORT_AFTER) {
-                under?.let { u -> botOf(u)?.let { go(it, at(SoteRules.UNDER_X, SoteRules.UNDER_Y)) } }
-                // a solo goes under first, then crosses
-                for (bot in crossers) go(bot, if (team == 1) at(SoteRules.UNDER_X, SoteRules.UNDER_Y) else start)
+            val crossers = engine.ps.filter { !it.dead && it !== under }
+            val skippers = crossers.filter { (n - 1) in it.sharkMazes }
+            val stallers = crossers - skippers.toSet()
+            teleport(t, under, crossers)
+            if (team == 1) at(m - 3) { for (p in crossers) botOf(p)?.let { go(it, start()) } }
+            // the stallers run up column 1 to the shark; a shark skipper alone does too, else up column 11, away from them
+            val skipTop = if (stallers.isEmpty()) SoteRules.CROSS_X else SoteRules.SKIP_X
+            at(m - 1) {
+                for (p in stallers) botOf(p)?.let { clicks.walk(it, at(SoteRules.CROSS_X, SoteRules.CROSS_TOP_Y)) }
+                for (p in skippers) botOf(p)?.let { clicks.walk(it, at(skipTop, SoteRules.CROSS_TOP_Y)) }
             }
-            if (team == 1) at(m - 3) { for (bot in crossers) go(bot, start) }
-            at(m - 1) { for (bot in crossers) clicks.walk(bot, at(SoteRules.CROSS_X, SoteRules.CROSS_TOP_Y)) }
             at(m + 1) {
-                for (bot in crossers) {
+                for (p in stallers) {
+                    val bot = botOf(p) ?: continue
                     bot.anim(RSCM.getReverseMapping(RSCMType.SEQ, SoteRules.CONTACT_SEQ))
                     bot.spotanim(RSCM.getReverseMapping(RSCMType.SPOTANIM, SoteRules.CONTACT_GFX), height = 96)
                 }
             }
+            at(m + 8) { for (p in skippers) offMaze(p) }
             under?.let { u -> at(back) { botOf(u)?.let { go(it, stackTile(u.i)) } } }
         }
 
+        /**
+         * A run maze: the runners go south of 3A, then 5A, to the first tile and along the best route a tick behind each
+         * other's clicks, wait on row N and step off when they click off; the player under runs it below, out of sight.
+         */
+        override fun mazeRun(t: Int, n: Int, run: SoteEngine.Run, under: SoteEngine.P?) {
+            val runners = engine.ps.filter { !it.dead && it !== under }
+            teleport(t, under, runners)
+            val route = run.maze.route.map { tile -> at(SoteRules.MAZE_X + tile.x, SoteRules.MAZE_A + SoteMaze.H - 1 - tile.y) }
+            fun all(f: (Player) -> Unit) = runners.forEach { p -> botOf(p)?.let(f) }
+            at(t + 5) { all { clicks.walk(it, at(SoteRules.MAZE_X + 3, SoteRules.MAZE_A - 1)) } }
+            at(t + 6) { all { clicks.walk(it, at(SoteRules.MAZE_X + 5, SoteRules.MAZE_A - 1)) } }
+            at(run.onFirst - SoteMaze.runnersToStart(run.maze.start)) { all { clicks.walk(it, route[0]) } }
+            for (k in 1..run.maze.toN) at(run.onFirst + k - 1) { all { clicks.walk(it, route[k]) } }
+            at(run.light) { lit = run.maze.route.joinToString(";") { "${it.x},${SoteMaze.H - 1 - it.y}" } }
+            at(run.clickOff + 1) { for (p in runners) offMaze(p) }
+            under?.let { u -> at(run.clickOff + 2) { botOf(u)?.let { go(it, stackTile(u.i)) } } }
+        }
+
         override fun stallOut(t: Int, p: SoteEngine.P) {
-            botOf(p)?.let { clicks.walk(it, stackTile(p.i)) }
+            offMaze(p)
         }
 
         override fun dead(t: Int) {
@@ -210,6 +270,11 @@ class SoteLiveRoom(
         const val ARRIVED = 10
         const val END_HOLD = 8
         private val TRACE = System.getenv("SOTE_TRACE") != null
+
+        /** The tiles beside her (her 5x5's edges, no corners). */
+        private val BESIDE =
+            (SoteRules.X until SoteRules.X + SoteRules.SIZE).flatMap { x -> listOf(x to SoteRules.Y - 1, x to SoteRules.Y + SoteRules.SIZE) } +
+                (SoteRules.Y until SoteRules.Y + SoteRules.SIZE).flatMap { y -> listOf(SoteRules.X - 1 to y, SoteRules.X + SoteRules.SIZE to y) }
         val KIT = mapOf("Twisted bow" to "TB", "ZCB auto" to "Z", "ZCB spec" to "ZCB", "zcb" to "ZCB", "maul" to "EM", "bgs" to "BGS", "claw" to "C", "halb" to "HB", "scythe" to "S")
     }
 }
