@@ -4,9 +4,13 @@ import dev.openrune.rscm.RSCM.asRSCM
 import dev.openrune.rscm.RSCMType
 import dev.openrune.util.Wearpos
 import kotlin.math.abs
+import kotlin.math.ln
 import kotlin.math.max
+import kotlin.math.min
+import org.rsmod.api.invtx.invAdd
 import org.rsmod.api.player.vars.VarPlayerIntMapSetter
 import org.rsmod.content.raids.tob.bloat.RaidBots
+import org.rsmod.content.raids.tob.bloat.xarpus.XarpusPlan
 import org.rsmod.game.MapClock
 import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
@@ -20,10 +24,9 @@ import org.rsmod.map.CoordGrid
  *   on his pool for the next ([WAIT]). Four ticks
  *   before he rises they wait under his pool on the middle of each side, and on the tick he rises they step out to the
  *   tile beside it (south, west, north, east, then south again) and attack the tick after. Thralls go up just before.
- * - Specs, by scale: everyone mauls first in trios and up except the 4s' and 5s' scythers, who BGS once the mauls are in
- *   (while his Defence is still above 20); a solo mauls while it has the energy and his Defence is up; a duo's second
- *   player scythes, then mauls. The rest hold a ZCB for the screech (4s, 5s, a trio's second), claw (a trio's third) or
- *   halberd his last hitpoints (solos, duos).
+ * - Specs: the scale's plan ([XarpusPlan.BY_SCALE], Blert's lines) played on what happens - opening specs, mauls again
+ *   by how many opening mauls landed (read off his Defence), backups in turn down to the Defence target, ZCBs held for
+ *   the screech, claws once no Defence spec is to come, the halberd for his last hitpoints, Lightbearer cycles.
  * - The acid: see [place] - the dump-tile dance, under him for a solo.
  */
 class XarpusCrew(
@@ -40,15 +43,34 @@ class XarpusCrew(
         Claws(NyloLoadout.CLAWS, 1, 20, 500),
         Halberd(NyloLoadout.HALBERD, 1, 14, 300),
         Zcb(NyloLoadout.ZCB, 1, 58, 750),
+        Ralos(NyloLoadout.RALOS, 1, 62, 500),
+        ;
+
+        val lands: Int
+            get() = if (this == Ralos) RALOS_LANDS else if (this == Zcb) ZCB_LANDS else MELEE_LANDS
+
+        val lowersDefence: Boolean
+            get() = this == Maul || this == Bgs || this == Ralos
+
+        companion object {
+            fun of(spec: String): Move = when (spec) {
+                "maul" -> Maul
+                "bgs" -> Bgs
+                "ralos" -> Ralos
+                "zcb" -> Zcb
+                else -> Claws
+            }
+        }
     }
 
-    /** A bot's plan: its first Defence spec, the one after, and its damage spec. */
-    private class Role(val open: Move?, val second: Move?, val dps: Move?)
-
-    private inner class Bot(val player: Player, val i: Int, val role: Role) {
-        var opened = role.open == null
-        var seconded = false
-        var dpsDone = false
+    private inner class Bot(val player: Player, val i: Int, val src: XarpusPlan.Player) {
+        val open: Move? = src.open.takeIf { it != "none" }?.let { Move.of(it) }
+        var openDone = open == null
+        var remaulDue = false
+        var used = 0
+        var attacks = 0
+        var lbLeft = src.lbCycles
+        var lastSpec = -1
         var thrallAt = -THRALL_COOLDOWN
         var cover: XarpusSolo.Exhumed? = null
         var lastSwing = -1
@@ -61,8 +83,24 @@ class XarpusCrew(
     }
 
     private val logger = com.github.michaelbull.logging.InlineLogger()
-    private val crew = members.mapIndexed { i, p -> Bot(p, i, roleFor(members.size, i)) }
     private val size = members.size
+    private val plan = XarpusPlan.BY_SCALE.getValue(size.coerceIn(1, XarpusPlan.BY_SCALE.size))
+    private val crew = members.mapIndexed { i, p -> Bot(p, i, plan.players[i % plan.players.size]) }
+
+    /** A spec on its way: who, what, the tick it lands on and his Defence as it went. */
+    private class Flight(val b: Bot, val move: Move, val lands: Int, val defence: Int, val role: String)
+
+    private val flights = ArrayList<Flight>()
+    private val maulers = crew.filter { it.open == Move.Maul }
+    private var openLanded = -1
+    private var maulsLanded = 0
+    private var remaulers: List<Bot>? = if (maulers.isEmpty()) emptyList() else null
+
+    private class Backup(val b: Bot, val move: Move) {
+        var state = "wait"
+    }
+
+    private val backups = plan.backups.mapNotNull { (k, spec) -> crew.getOrNull(k)?.let { Backup(it, Move.of(spec)) } }
 
     /** The tick the room steps next: its counter moves on as each step ends, so a walk now is where it sees them then. */
     private val t: Int
@@ -82,6 +120,9 @@ class XarpusCrew(
 
     override fun prepare(bot: Player) {
         VarPlayerIntMapSetter.set(bot, "varbit.spellbook", ARCEUUS)
+        val b = crew.firstOrNull { it.player === bot } ?: return
+        VarPlayerIntMapSetter.set(bot, "varp.sa_energy", b.src.startSpec * SPEC_UNIT)
+        if (b.src.lbCycles > 0) bot.invAdd(bot.inv, NyloLoadout.LIGHTBEARER, 1, strict = false)
     }
 
     override fun tick() {
@@ -89,6 +130,8 @@ class XarpusCrew(
         for (b in crew) thrall(b)
         trace { "t$t ${room.debug()} rise t${room.riseAt} spit t${room.nextSpit} " + crew.joinToString(" ") { "${it.player.username}@${here(it).x - X},${here(it).z - Y} d${it.player.actionDelay - clock.cycle} s${it.spec}" } }
         if (room.phase == 0) return exhumeds()
+        landings()
+        planDefence()
         for (b in crew) {
             if (place(b)) continue
             swing(b)
@@ -194,52 +237,146 @@ class XarpusCrew(
 
     private fun swing(b: Bot) {
         if (!b.ready || t <= room.riseAt) return
-        val move = next(b)
+        val (move, role) = next(b)
         val p = b.player
         for ((slot, obj) in move.set.worn) {
             val id = obj.asRSCM(RSCMType.OBJ)
             if (p.worn[slot.slot]?.id != id) bots.equip(p, slot.slot, id)
         }
+        if (b.lbLeft > 0 && b.spec < MAX_SPEC) NyloLoadout.LIGHTBEARER.asRSCM(RSCMType.OBJ).let { if (p.worn[Wearpos.Ring.slot]?.id != it) bots.equip(p, Wearpos.Ring.slot, it) }
         if (move == Move.Zcb) NyloLoadout.RUBY_BOLTS.asRSCM(RSCMType.OBJ).let { if (p.worn[Wearpos.Quiver.slot]?.id != it) bots.equip(p, Wearpos.Quiver.slot, it) }
         VarPlayerIntMapSetter.set(p, "varp.com_mode", move.stance)
-        if (move.cost > 0) VarPlayerIntMapSetter.set(p, "varp.sa_attack", 1)
-        when (move) {
-            b.role.open -> b.opened = true
-            b.role.second -> if (b.opened && move.cost > 0) b.seconded = true
-            b.role.dps -> b.dpsDone = move != Move.Claws && move != Move.Maul
-            else -> {}
+        if (move.cost > 0) {
+            VarPlayerIntMapSetter.set(p, "varp.sa_attack", 1)
+            b.lastSpec = b.spec - move.cost
+            flights += Flight(b, move, t + move.lands, room.xarpus.defenceLvl, role)
         }
-        if (move.cost > 0 || current(p) !== room.xarpus || b.lastSwing < 0) bots.attack(p, room.xarpus)
-        b.lastSwing = t
-        trace { "t$t ${p.username} $move (Defence ${room.xarpus.defenceLvl}, hp ${room.xarpus.hitpoints})" }
+        if (move.cost > 0 || current(p) !== room.xarpus || b.attacks == 0) bots.attack(p, room.xarpus)
+        b.attacks++
+        trace { "t$t ${p.username} $move${if (role.isNotEmpty()) " ($role)" else ""} (Defence ${room.xarpus.defenceLvl}, hp ${room.xarpus.hitpoints}, spec ${b.spec})" }
         room.recordEvent(5, "\"player\":{\"name\":\"${p.username}\"},\"attack\":{\"type\":${move.blert},\"weapon\":{\"id\":${p.worn[Wearpos.RightHand.slot]?.id ?: -1}}}", here(b))
     }
 
-    private fun next(b: Bot): Move {
-        val r = b.role
-        val def = room.xarpus.defenceLvl
-        val hp = room.xarpus.hitpoints
-        if (!b.opened && r.open != null) {
-            if (r.open == Move.Bgs && !mauled()) return Move.Scythe
-            if (r.open == Move.Bgs && def <= DEF_TARGET) {
-                b.opened = true
-                return Move.Scythe
+    /* ---- the plan: the sim's rules (verzikSim engine/xarpus.js), on what the room does */
+
+    /** Specs that have landed: mauls counted off his Defence (each that lands takes 35% of it), Lightbearer cycles. */
+    private fun landings() {
+        for (b in crew) {
+            if (b.lbLeft > 0 && b.lastSpec >= 0 && b.spec > b.lastSpec) {
+                b.lbLeft--
+                trace { "t$t ${b.player.username} regens to ${b.spec} (${b.lbLeft} Lightbearer cycles left)" }
             }
-            if (b.spec >= r.open.cost) return r.open
+            b.lastSpec = b.spec
         }
-        if (r.second != null && !b.seconded && b.opened && mauled() && def > DEF_TARGET && b.spec >= r.second.cost) return r.second
-        val dps = r.dps ?: return Move.Scythe
-        if (b.dpsDone || b.spec < dps.cost) return Move.Scythe
-        return when (dps) {
-            Move.Zcb -> if (room.phase == 3) dps else Move.Scythe
-            Move.Halberd -> if (hp <= room.xarpus.baseHitpointsLvl * CHALLY_AT / 100) dps else Move.Scythe
-            Move.Maul -> if (def > SOLO_MAUL_TO) dps else Move.Claws.takeIf { hp <= SOLO_CLAWS_UNDER } ?: Move.Scythe
-            Move.Claws -> if (room.phase == 3 || hp <= SOLO_CLAWS_UNDER) dps else Move.Scythe
-            else -> dps
+        val landed = flights.filter { it.lands < t }
+        if (landed.isEmpty()) return
+        flights -= landed.toSet()
+        for ((_, group) in landed.groupBy { it.lands }) {
+            val mauls = group.filter { it.move == Move.Maul }
+            if (mauls.isEmpty()) continue
+            val before = group.maxOf { it.defence }.coerceAtLeast(1)
+            val now = room.xarpus.defenceLvl.coerceAtLeast(1)
+            val hit = Math.round(ln(now.toDouble() / before) / ln(1 - MAUL_DRAIN)).toInt().coerceIn(0, mauls.size)
+            maulsLanded += hit
+            val open = mauls.count { it.role == "open" }
+            if (open > 0) openLanded = (if (openLanded < 0) 0 else openLanded) + min(hit, open)
+            trace { "t$t ${mauls.size} maul(s) land, $hit hit: Defence $before -> $now" }
         }
     }
 
-    private fun mauled(): Boolean = crew.none { it.role.open == Move.Maul && !it.opened } && t > room.riseAt + MAUL_LANDS
+    private fun canSpec(b: Bot): Boolean = b.used < if (size == 1) SOLO_DEF_SPECS else DEF_SPECS
+
+    private fun defFlying(): Boolean = flights.any { it.move.lowersDefence }
+
+    private fun remaulOpen(): Boolean = remaulers == null || crew.any { it.remaulDue } || flights.any { it.role == "remaul" }
+
+    private fun settled(): Boolean = maulers.all { it.openDone } && !remaulOpen()
+
+    private fun startDefDone(): Boolean = crew.all { it.openDone } && !remaulOpen() && !defFlying()
+
+    private fun defOpen(): Boolean =
+        crew.any { !it.openDone } || remaulOpen() || defFlying() || (room.xarpus.defenceLvl > plan.defTarget && backups.any { it.state == "wait" || it.state == "armed" })
+
+    private fun planDefence() {
+        if (remaulers == null && maulers.all { it.openDone } && flights.none { it.role == "open" && it.move == Move.Maul }) {
+            val r = (plan.remaul[openLanded.coerceAtLeast(0)] ?: emptyList()).mapNotNull { crew.getOrNull(it) }.filter { canSpec(it) }
+            remaulers = r
+            for (b in r) b.remaulDue = true
+            trace { "t$t ${openLanded.coerceAtLeast(0)} of ${maulers.size} opening mauls landed: ${r.joinToString { it.player.username }} maul again" }
+        }
+        if (remaulers == null || backups.any { it.state == "armed" } || defFlying() || !settled() || crew.any { !it.openDone }) return
+        val next = backups.firstOrNull { it.state == "wait" } ?: return
+        val b = next.b
+        if (room.xarpus.defenceLvl <= plan.defTarget) {
+            for (x in backups) if (x.state == "wait") x.state = "skip"
+            return
+        }
+        if (!canSpec(b) || b.spec < next.move.cost || (next.move == Move.Maul && maulsLanded >= MAUL_BACKUP_UNTIL)) {
+            next.state = "skip"
+            return
+        }
+        next.state = "armed"
+        trace { "t$t backup: ${b.player.username} ${next.move} (Defence ${room.xarpus.defenceLvl})" }
+    }
+
+    /** What it swings now, and the spec's part in the plan (open, remaul, backup; "" for the rest). */
+    private fun next(b: Bot): Pair<Move, String> {
+        val hp = room.xarpus.hitpoints
+        defence(b)?.let { return it }
+        b.ownDps()?.let { return it to "" }
+        if (plan.chally && hp <= room.xarpus.baseHitpointsLvl * plan.challyAt / 100 && b.spec >= Move.Halberd.cost) return Move.Halberd to ""
+        return Move.Scythe to ""
+    }
+
+    private fun defence(b: Bot): Pair<Move, String>? {
+        val open = b.open
+        if (!b.openDone && open != null) {
+            if (open == Move.Maul) return if (b.spec >= open.cost) spent(b, open, "open") else null
+            if (b.attacks < 1 || !settled()) return null
+            if (room.xarpus.defenceLvl <= plan.defTarget) {
+                b.openDone = true
+                return null
+            }
+            return if (b.spec >= open.cost) spent(b, open, "open") else null
+        }
+        if (b.remaulDue) return if (b.spec >= Move.Maul.cost) spent(b, Move.Maul, "remaul") else null
+        val backup = backups.firstOrNull { it.b === b && it.state == "armed" } ?: return null
+        if (room.xarpus.defenceLvl <= plan.defTarget || !canSpec(b)) {
+            backup.state = "skip"
+            return null
+        }
+        if (b.spec < backup.move.cost) return null
+        backup.state = "done"
+        return spent(b, backup.move, "backup")
+    }
+
+    private fun spent(b: Bot, move: Move, role: String): Pair<Move, String> {
+        b.used++
+        when (role) {
+            "open" -> b.openDone = true
+            "remaul" -> b.remaulDue = false
+        }
+        return move to role
+    }
+
+    private fun ownDefDone(b: Bot): Boolean =
+        b.openDone && !b.remaulDue && !(remaulers == null && plan.remaul.values.any { b.i in it }) &&
+            !(room.xarpus.defenceLvl > plan.defTarget && backups.any { it.b === b && (it.state == "wait" || it.state == "armed") })
+
+    private fun Bot.ownDps(): Move? {
+        if (!ownDefDone(this)) return null
+        val hp = room.xarpus.hitpoints
+        return when (src.dps) {
+            "zcb" -> when {
+                hp < plan.zcbBelow -> Move.Claws.takeIf { !defOpen() && spec >= it.cost }
+                !startDefDone() -> null
+                plan.holdZcb -> Move.Zcb.takeIf { room.phase == 3 && spec >= it.cost }
+                else -> Move.Zcb.takeIf { settled() && spec >= it.cost }
+            }
+            "claws" -> Move.Claws.takeIf { !defOpen() && spec >= it.cost }
+            else -> null
+        }
+    }
 
     private inline fun trace(text: () -> String) {
         if (TRACING) logger.info { "xarpus crew ${room.owner.username} ${text()}" }
@@ -278,11 +415,15 @@ class XarpusCrew(
         const val THRALL_COOLDOWN = 17
         const val THRALL_GAP = 2
         val START = CoordGrid(3170, 4380, 1)
-        const val DEF_TARGET = 20
-        const val MAUL_LANDS = 2
-        const val CHALLY_AT = 5
-        const val SOLO_MAUL_TO = 40
-        const val SOLO_CLAWS_UNDER = 600
+        const val SPEC_UNIT = 10
+        const val MAX_SPEC = 1000
+        const val MELEE_LANDS = 1
+        const val ZCB_LANDS = 2
+        const val RALOS_LANDS = 3
+        const val MAUL_DRAIN = 0.35
+        const val MAUL_BACKUP_UNTIL = 2
+        const val DEF_SPECS = 2
+        const val SOLO_DEF_SPECS = 3
         const val DEATH_TICKS = 4
         val TRACING = System.getenv("TOB_TRIO_TRACE") != null
 
@@ -297,16 +438,5 @@ class XarpusCrew(
         val RING: List<IntArray> =
             (-1..5).flatMap { x -> (-1..5).map { y -> intArrayOf(x, y) } }
                 .filter { (x, y) -> (x == -1 || x == 5 || y == -1 || y == 5) && !((x == -1 || x == 5) && (y == -1 || y == 5)) }
-
-        fun roleFor(size: Int, i: Int): Role {
-            val m = Move.Maul
-            return when (size) {
-                1 -> Role(m, m, m)
-                2 -> if (i == 0) Role(m, m, Move.Halberd) else Role(null, m, Move.Halberd)
-                3 -> listOf(Role(m, Move.Bgs, Move.Claws), Role(m, null, Move.Zcb), Role(m, null, Move.Claws))[i]
-                4 -> if (i < 3) Role(m, null, if (i == 2) Move.Claws else Move.Zcb) else Role(Move.Bgs, null, Move.Claws)
-                else -> if (i < 3) Role(m, null, Move.Zcb) else Role(Move.Bgs, null, if (i == 3) Move.Claws else Move.Zcb)
-            }
-        }
     }
 }

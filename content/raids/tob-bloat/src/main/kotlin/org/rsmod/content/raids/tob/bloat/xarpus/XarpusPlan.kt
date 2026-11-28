@@ -11,6 +11,11 @@ class XarpusPlan(
     val holdZcb: Boolean = true,
     /** The exhumeds' heals (each raid: this +-2). */
     val heals: Int = 1,
+    /** Chally last hit: a player who'd scythe halberds once his HP is at or under [challyAt]% of his start. */
+    val chally: Boolean = false,
+    val challyAt: Int = 5,
+    /** A planned ZCB becomes claws below this HP. */
+    val zcbBelow: Int = 450,
 ) {
     class Player(
         val open: String,
@@ -23,6 +28,55 @@ class XarpusPlan(
     )
 
     companion object {
+        private const val RALOS = "ralos"
+
+        /**
+         * The plan each scale plays: the lines Blert's fastest teams use (50 rooms a scale), scored in the sim
+         * (verzikSim engine/xarpussolve.js, 4000 raids): its medians are within 0.6s of the Solver's best for solos,
+         * duos and trios, 1.8s behind for 4s and 5s, where the Solver's picks (a fourth mauler, a ZCB for the BGS) are
+         * ones those teams don't play.
+         */
+        val BY_SCALE: Map<Int, XarpusPlan> =
+            mapOf(
+                1 to XarpusPlan(listOf(Player("maul", "claws", lbCycles = 2)), remaul = mapOf(0 to listOf(0), 1 to listOf(0)), backups = listOf(0 to "maul")),
+                2 to
+                    XarpusPlan(
+                        listOf(Player("maul", "none"), Player("maul", "none")),
+                        remaul = mapOf(0 to listOf(0, 1), 1 to listOf(0), 2 to emptyList()),
+                        backups = listOf(1 to "maul", 1 to "bgs", 1 to RALOS, 0 to "bgs"),
+                        chally = true,
+                    ),
+                3 to
+                    XarpusPlan(
+                        listOf(Player("maul", "claws"), Player("maul", "zcb", startSpec = 95), Player("maul", "claws")),
+                        remaul = mapOf(0 to listOf(0, 1, 2), 1 to listOf(0, 1), 2 to emptyList(), 3 to emptyList()),
+                        backups = listOf(0 to "bgs", 2 to RALOS, 1 to RALOS),
+                    ),
+                4 to
+                    XarpusPlan(
+                        listOf(
+                            Player("maul", "zcb", fix = "claw", startSpec = 95),
+                            Player("maul", "zcb", lbCycles = 3),
+                            Player("maul", "claws", lbCycles = 3),
+                            Player("bgs", "claws"),
+                        ),
+                        remaul = mapOf(0 to listOf(0, 1, 2), 1 to listOf(0, 1), 2 to emptyList(), 3 to emptyList()),
+                        backups = listOf(3 to RALOS, 1 to RALOS, 2 to RALOS),
+                    ),
+                5 to
+                    XarpusPlan(
+                        listOf(
+                            Player("maul", "zcb", fix = "claw"),
+                            Player("maul", "zcb", lbCycles = 1, startSpec = 95),
+                            Player("maul", "zcb", lbCycles = 3),
+                            Player("bgs", "claws"),
+                            Player("bgs", "zcb", lbCycles = 1, startSpec = 95),
+                        ),
+                        remaul = mapOf(0 to listOf(0, 1, 2), 1 to listOf(0, 1), 2 to emptyList(), 3 to emptyList()),
+                        backups = listOf(3 to RALOS, 4 to RALOS),
+                    ),
+            )
+
         /**
          * 5s: P1-P3 open with an Elder maul (P1's tick fix a claw spec; P2 / P3 three Lightbearer cycles), P4 / P5 open
          * with a Ralos Spec (95% start, divine ranging, two Lightbearer cycles). Re-mauls: none landed - all three
