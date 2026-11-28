@@ -75,11 +75,15 @@ class XarpusCrew(
         var lbLeft = src.lbCycles
         var lastSpec = -1
         var holdTill = -1
+        var clean: CoordGrid? = null
         var thrallAt = -THRALL_COOLDOWN
         var cover: XarpusSolo.Exhumed? = null
 
-        /** The exhumed a 5s quarter's owner walks to, to take it over from the floater. */
+        /** The exhumed it walks to, to take it over from whoever holds it ([handoffs]). */
         var relief: XarpusSolo.Exhumed? = null
+
+        /** The exhumed it goes to once it's relieved of (or done with) its own. */
+        var then: XarpusSolo.Exhumed? = null
         var lastSwing = -1
         var home: CoordGrid = tile(SPOTS[i % SPOTS.size])
         var dumped: CoordGrid = home
@@ -170,16 +174,13 @@ class XarpusCrew(
         }
         val up = room.exhumedsNow.filter { t < it.gone }
         for (b in crew) {
-            if (b.cover != null && b.cover !in up) b.cover = null
+            if (b.cover != null && b.cover !in up) b.cover = b.then?.takeIf { it in up }.also { b.then = null }
             if (b.relief != null && b.relief !in up) b.relief = null
+            if (b.then != null && b.then !in up) b.then = null
         }
         relieve()
-        for (e in up.sortedBy { it.born }) {
-            if (crew.any { it.cover === e || it.relief === e }) continue
-            val free = crew.filter { it.cover == null && it.relief == null }
-            val b = free.firstOrNull { owns(it, e) } ?: free.firstOrNull { floats(it) } ?: free.minByOrNull { runTicks(here(it), e.tile) } ?: break
-            b.cover = e
-        }
+        for (e in up.sortedBy { it.born }) if (crew.none { it.cover === e || it.relief === e || it.then === e }) assign(e)
+        handoffs()
         for (b in crew) (b.cover ?: b.relief)?.let { walk(b, it.tile) }
         val free = crew.filter { it.cover == null && it.relief == null }
         if (free.isEmpty()) return
@@ -191,6 +192,57 @@ class XarpusCrew(
             spread = cover(free, fixed, up.map { it.tile }.toSet())
         }
         for ((b, to) in free.zip(spread)) walk(b, to)
+    }
+
+    /**
+     * Who takes a new exhumed: whichever way gets someone on it soonest - a free bot running to it, a busy one going
+     * once its own sinks, or a free one relieving a busy one that's nearer, which goes on to it (the owner's: the 5s
+     * floater relieves the quarter's player on its far exhumed and that player takes the new one). Ties: straight
+     * runs first, then the quarter's owner, then the floater, then the orb order.
+     */
+    private fun assign(e: XarpusSolo.Exhumed) {
+        class Way(val arrive: Int, val rank: Int, val go: () -> Unit)
+        val ways = ArrayList<Way>()
+        val free = crew.filter { it.cover == null && it.relief == null }
+        for (f in free) ways += Way(runTicks(here(f), e.tile), if (owns(f, e)) 0 else if (floats(f)) 1 else 2 + f.i) { f.cover = e }
+        for (b in crew) {
+            val held = b.cover ?: continue
+            if (b.then != null || crew.any { it.relief === held }) continue
+            val after = runTicks(held.tile, e.tile)
+            if (held.gone <= t + after) ways += Way(held.gone - t + after, 10 + b.i) { b.then = e }
+            for (f in free) {
+                val r = runTicks(here(f), held.tile)
+                if (t + r >= held.gone) continue
+                ways += Way(r + after, 20 + b.i * 8 + f.i) {
+                    f.relief = held
+                    b.then = e
+                    trace { "t$t ${f.player.username} relieves ${b.player.username}, who takes the new one" }
+                }
+            }
+        }
+        ways.minWithOrNull(compareBy<Way> { max(it.arrive, HEAL_FROM) }.thenBy { it.rank })?.go?.invoke()
+    }
+
+    /**
+     * A relief takes over on the tick it gets there, and the one it relieves steps off that same tick (an exhumed only
+     * needs someone on it each tick - never two).
+     */
+    private fun handoffs() {
+        for (f in crew) {
+            val held = f.relief ?: continue
+            val b = crew.firstOrNull { it !== f && it.cover === held }
+            if (b == null) {
+                f.cover = held
+                f.relief = null
+                continue
+            }
+            if (runTicks(here(f), held.tile) > 1) continue
+            f.cover = held
+            f.relief = null
+            b.cover = b.then
+            b.then = null
+            trace { "t$t ${f.player.username} takes over from ${b.player.username}" }
+        }
     }
 
     /**
@@ -214,25 +266,18 @@ class XarpusCrew(
         crew.filter { it.i < 4 && it.cover?.let { e -> owns(it, e) } == true }.maxByOrNull { it.cover!!.born }?.i ?: -1
 
     /**
-     * 5s: an owner whose exhumed has sunk walks to the one the floater holds in its quarter, and takes it over when it
-     * stands on it - then the floater is free to go to the next quarter.
+     * 5s: an owner whose exhumed has sunk walks to the one the floater holds in its quarter and takes it over as it gets
+     * there ([handoffs]) - then the floater is free to go to the next quarter.
      */
     private fun relieve() {
         if (size != 5) return
         val floater = crew[4]
         val held = floater.cover ?: return
         val owner = crew.firstOrNull { owns(it, held) } ?: return
-        if (owner.cover != null) return
-        if (owner.relief !== held) {
-            owner.relief = held
-            trace { "t$t ${owner.player.username} goes to relieve the floater" }
-        }
-        if (here(owner) == held.tile) {
-            owner.cover = held
-            owner.relief = null
-            floater.cover = null
-            trace { "t$t ${owner.player.username} takes over from the floater" }
-        }
+        if (owner.cover != null || floater.then != null) return
+        if (owner.relief === held || owner.relief != null) return
+        owner.relief = held
+        trace { "t$t ${owner.player.username} goes to relieve the floater" }
     }
 
     private var spreadKey: Any? = null
@@ -282,12 +327,13 @@ class XarpusCrew(
     /* ---- the acid */
 
     /**
-     * The rag dance (the owner's): each bot rags one tile of its own - the middle of its side, its home - and swings
-     * from it, stepping in from a tile further out (clean: nothing lands there) on the tick it swings. On the tick he
-     * spits it steps back to its dump tile two out, so his acid and the bounces land on that band; with its swing due
-     * then or the tick after it takes the spit on home instead (ragging it again) - no swing waits on the walk in. In
-     * phase 3 home moves out of the quarter he's staring at. A solo's dump is the tile under him next to home. True
-     * when it walked.
+     * The rag dance (the owner's): each bot has a ragged tile of its own - the middle of its side, its home - and a clean
+     * one beside it. A swing that goes on his scan (the spit tick) goes from the ragged one, so his acid lands on it
+     * again; the rest go from the clean one, where nothing lands. Between swings a bot waits a tile straight out from
+     * the one it swings from next, and walks straight in on the swing tick. On a spit tick it stands on its dump two
+     * out - straight out from the clean tile when it swings the tick after - so the acid and the bounces land on that
+     * band. In phase 3 it moves out of his stare ([stare]). A solo's dump is the tile under him next to home. True when
+     * it walked.
      */
     private fun place(b: Bot): Boolean {
         val here = here(b)
@@ -295,14 +341,33 @@ class XarpusCrew(
         val due = t + max(0, b.player.actionDelay - clock.cycle)
         if (room.phase == 3) return stare(b, here, due)
         if (due == t) return false
+        val spit = room.nextSpit
+        val clean = clean(b, home)
         val to =
             when {
-                room.phase == 2 && room.nextSpit == t -> if (due == t + 1) home else dump(b, home)
-                else -> rest(home)
+                room.phase != 2 -> out(clean)
+                spit == t -> if (due == t + 1) out(clean, 2) else dump(b, home)
+                spit == due -> out(home)
+                else -> out(clean)
             }
         if (here == to) return false
         walk(b, to)
         return true
+    }
+
+    /** The tile [k] straight out from a tile beside him: a swing from there walks straight in to it. */
+    private fun out(c: CoordGrid, k: Int = 1): CoordGrid = outward(c).let { n -> CoordGrid(c.x + k * n[0], c.z + k * n[1], c.level) }
+
+    /** Its clean swing tile: beside its home along his side, without acid and not another's. */
+    private fun clean(b: Bot, home: CoordGrid): CoordGrid {
+        val cur = b.clean
+        if (cur != null && cur !in room.pooled) return cur
+        val n = outward(home)
+        val taken = crew.filter { it !== b }.flatMap { listOfNotNull(it.home, it.clean) }.toSet()
+        val pick = listOf(1, -1).map { l -> CoordGrid(home.x + l * n[1], home.z + l * n[0], home.level) }
+            .firstOrNull { it !in room.pooled && it !in taken && besideHim(it) } ?: home
+        b.clean = pick
+        return pick
     }
 
     /**
@@ -331,16 +396,6 @@ class XarpusCrew(
     }
 
     private fun besideHim(c: CoordGrid): Boolean = RING.any { tile(it) == c }
-
-    /**
-     * Where a bot waits between swings: the tile a step out from home, or beside that one if a random bounce (duos,
-     * solos) has put acid on it - all a step from home, so the swing still goes from there.
-     */
-    private fun rest(home: CoordGrid): CoordGrid {
-        val n = outward(home)
-        val out = CoordGrid(home.x + n[0], home.z + n[1], home.level)
-        return REST_SHIFTS.map { l -> CoordGrid(out.x + l * n[1], out.z + l * n[0], out.level) }.firstOrNull { it !in room.pooled } ?: out
-    }
 
     /** Its home tile: its own for phase 2 (it rags it); phase 3 moves it ([stare]). */
     private fun home(b: Bot): CoordGrid = b.home
@@ -561,7 +616,6 @@ class XarpusCrew(
 
         /** Sideways from straight out, in the order a dump tile is tried. */
         val DUMP_SHIFTS = listOf(0, 1, -1, 2, -2)
-        val REST_SHIFTS = listOf(0, 1, -1)
         const val ARCEUUS = 3
         const val GREATER_GHOST = "component.magic_spellbook:resurrect_greater_ghost"
         const val THRALL_LEAD = 6
