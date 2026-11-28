@@ -426,7 +426,7 @@ constructor(
     }
 
     private fun packFor(role: NyloRole, sets: List<GearSet>, maiden: Boolean): List<String> {
-        val extra = if (!maiden) emptyList() else if (role.freezes) NyloLoadout.ANCIENT_RUNES + NyloLoadout.SURGE + NyloLoadout.DIAMOND_BOLTS else NyloLoadout.LUNAR_RUNES + NyloLoadout.SURGE + NyloLoadout.BOOK
+        val extra = if (!maiden) NyloLoadout.nyloExtras(role) else if (role.freezes) NyloLoadout.ANCIENT_RUNES + NyloLoadout.SURGE + NyloLoadout.DIAMOND_BOLTS else NyloLoadout.LUNAR_RUNES + NyloLoadout.SURGE + NyloLoadout.BOOK
         return (NyloLoadout.pack(role, sets) + extra).distinct()
     }
 
@@ -460,7 +460,7 @@ constructor(
         org.rsmod.content.raids.tob.bloat.fillCharges(bot.inv)
         val arrows = if (maiden) NyloLoadout.SEEKING_ARROWS else NyloLoadout.ARROWS
         org.rsmod.api.player.worn.DizanasQuiver.store(bot, arrows.asRSCM(dev.openrune.rscm.RSCMType.OBJ), RUNES)
-        val book = if (role.freezes) ANCIENTS else if (maiden) LUNARS else null
+        val book = if (role.freezes) ANCIENTS else if (maiden) LUNARS else ARCEUUS
         book?.let { org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(bot, "varbit.spellbook", it) }
         bot.varMoveSpeed = org.rsmod.game.movement.MoveSpeed.Run
     }
@@ -635,6 +635,7 @@ constructor(
         const val FULL_SPEC = 1000
         const val ANCIENTS = 1
         const val LUNARS = 2
+        const val ARCEUUS = 3
         /** Bots keep each style's prayer on at once: the same as flicking the right one with every switch. */
         val TRIO_START_TICK = System.getenv("TOB_TRIO_START")?.toIntOrNull() ?: 0
         val OFFENSIVE_PRAYERS = listOf("varbit.prayer_piety", "varbit.prayer_rigour", "varbit.prayer_augury")

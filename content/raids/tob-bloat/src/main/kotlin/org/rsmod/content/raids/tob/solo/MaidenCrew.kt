@@ -100,6 +100,9 @@ class MaidenCrew(
         var horned = false
         val react = HashMap<Int, Int>()
         val dpsD = HashMap<Int, MutableSet<String>>()
+
+        /** A 30s crab of the mage's was missing: its ZCB goes after its clump freeze. */
+        var zcbAfter30 = false
         var order: Order? = null
         val spec: Int
             get() = player.vars["varp.sa_energy"] / 10
@@ -625,7 +628,7 @@ class MaidenCrew(
         val next = upcoming(b)
         val far =
             when (next) {
-                "tbr", "tba" -> if (quad && b.role == NyloRole.Mage) QUAD_MAGE_GAP else TBOW_GAP
+                "tbr", "tba" -> tbowGap(b)
                 "zcbs" -> REACH_OF.getValue("zcbs")
                 "tfz", "tpile", "qfz" -> params.casterGap
                 else -> return false
@@ -919,14 +922,45 @@ class MaidenCrew(
     private fun decide(b: Bot) {
         val tt = b.next
         curT = tt
+        if (offTick(b, tt)) return
         // a four's mage rapid-bows on through (its freezes go a tick after the melee freeze's)
         val stand = if (b.role.freezes && b.force == null && !(quad && b.role == NyloRole.Mage && room.phase != WAVES.size - 1)) standFor(b, tt) else null
         val a = onTime(b, stand ?: obligate(b, nextAct(b, tt), tt), tt)
         b.walkedFor = null
         trace { "t$tt ${b.role}@${room.real(b.player.coords).let { "${it.x - ROOM_X},${ROOM_Y - it.z}" }} $a${if (a.startsWith("dinhs")) " from ${b.dinPos?.joinToString(",")}" else ""}" }
+        if (b.role.freezes && (a == "tbr" || a == "tba") && room.gapToHer(room.real(b.player.coords)) < CLOSE_TBOW) {
+            trace { "t$tt ${b.role} steps back to its tbow range first" }
+            hold(b)
+            mageStand(b)
+            return
+        }
         perform(b, a, tt)
         if (a == "wait" && awaits30s(b)) coverSpawns(b)
     }
+
+    /**
+     * The team stays on its tick: the ranger and melee swing together (the mage's tbows go two ticks after theirs - 216
+     * of 221 in Blert's trios - so a DPS off it throws her shots and freezes off too). The tick is the last one both
+     * swung on; a DPS that's slipped off it (a late Dinh's, a walk) waits to swing on it again.
+     */
+    private fun offTick(b: Bot, tt: Int): Boolean {
+        if (b.dps == null) return false
+        val other = crew.firstOrNull { it !== b && it.dps != null && it.player.isSlotAssigned && it.player.hitpoints > 0 } ?: return false
+        if (other.next == tt) {
+            teamTick = Math.floorMod(tt, SWING)
+            return false
+        }
+        val on = teamTick ?: return false
+        if (Math.floorMod(tt, SWING) == on) return false
+        trace { "t$tt ${b.role} waits to swing on the team's tick" }
+        hold(b)
+        return true
+    }
+
+    /** The tick (mod a swing) the ranger and melee last swung on together. */
+    private var teamTick: Int? = null
+
+    private fun tbowGap(b: Bot): Int = if (quad && b.role == NyloRole.Mage) QUAD_MAGE_GAP else TBOW_GAP
 
     /**
      * A melee swing on her that would first have to walk (the bot went for a crab or its Dinh's, and the pick has moved
@@ -1124,6 +1158,11 @@ class MaidenCrew(
             }
             // after the 30s the mage's freezes are its last barrages: on to her (the sim pulls up on the older piles)
             if (a == "tpile" && phase == 0) {
+                if (b.zcbAfter30 && b.spec >= atkOf("zcbs").spec) {
+                    b.zcbAfter30 = false
+                    trace { "t$tt Mage ZCBs after its clump" }
+                    return "zcbs"
+                }
                 if (!last) {
                     b.step++
                     continue
@@ -1163,10 +1202,20 @@ class MaidenCrew(
             }
             if (a == "tfz" || a == "tdps") {
                 val r = if (a == "tfz") tfzPick(b, tt) else dpsSwing(b, tt)
-                // a free hit in the 30s freezes (a crab missing from the list) goes to the ZCB the mage has the energy for
-                if (r == "tbr" && b.role.freezes && phase == 0 && b.owns("zcb") && b.spec >= atkOf("zcbs").spec) {
-                    trace { "t$tt Mage ZCBs its free hit" }
-                    return "zcbs"
+                // a free hit in the 30s freezes (a crab missing from the list): seeing it, the mage waits on its clump and freezes
+                // that first; the ZCB it has the energy for goes after its last freeze
+                if (r == "tbr" && b.role.freezes && phase == 0) {
+                    val w = latestWave()
+                    val owed = w != null && listOf("3s" to THREES, "4s" to FOURS).any { (which, ids) -> which !in b.tfzD[w].orEmpty() && ofWave(w, ids).isNotEmpty() }
+                    if (owed) {
+                        if (b.owns("zcb")) b.zcbAfter30 = true
+                        trace { "t$tt Mage waits on its clump (a 30s crab missing)" }
+                        return "wait"
+                    }
+                    if (b.owns("zcb") && b.spec >= atkOf("zcbs").spec) {
+                        trace { "t$tt Mage ZCBs its free hit" }
+                        return "zcbs"
+                    }
                 }
                 if (r == "wait" || r == "tbr" || r == "ibs:old" || r?.startsWith("aya:") == true || r?.startsWith("ax:") == true) return r
                 if (r == null) {
@@ -2840,6 +2889,9 @@ class MaidenCrew(
         const val MY1 = 14
         const val SWROW = 14
         const val TBOW_GAP = 10
+
+        /** A freezer this near her steps back out before a tbow. */
+        const val CLOSE_TBOW = 6
         const val MAGE_ROW = 11
         const val MAGE_ROWS = 3
         const val SWING = 5

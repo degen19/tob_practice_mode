@@ -2,6 +2,7 @@ package org.rsmod.content.raids.tob.solo
 
 import dev.openrune.rscm.RSCM.asRSCM
 import dev.openrune.rscm.RSCMType
+import dev.openrune.util.Wearpos
 import org.rsmod.api.player.stat.hitpoints
 import org.rsmod.api.player.vars.VarPlayerIntMapSetter
 import org.rsmod.content.raids.tob.bloat.RaidBots
@@ -34,6 +35,18 @@ class NyloCrew(
 
     override fun doneAt(): Int = room.bossTick
 
+    /** The ranger and melee walk in with an upgraded Death Charge up; the mage with her Lightbearer on. */
+    override fun prepare(bot: Player) {
+        val role = members.firstOrNull { it.first === bot }?.second ?: return
+        if (role.freezes) {
+            bots.equip(bot, Wearpos.Ring.slot, NyloLoadout.LIGHTBEARER.asRSCM(RSCMType.OBJ))
+            return
+        }
+        VarPlayerIntMapSetter.set(bot, "varbit.death_charge_scroll_used", 1)
+        VarPlayerIntMapSetter.set(bot, "varbit.death_charge_charges", DEATH_CHARGES)
+        VarPlayerIntMapSetter.set(bot, DC_ACTIVE, 1)
+    }
+
     override fun summary(): String =
         "Vasilias at room tick ${room.bossTick} (${raidTime(room.bossTick)}), waves ${room.wavesSpawned}, nulls ${room.nulls}, stalls ${room.stalls}, pillars ${room.pillarsStanding}"
 
@@ -56,6 +69,7 @@ class NyloCrew(
         Barrage(NyloLoadout.BARRAGE, 'G', 5, 10, Area.Square, 0),
         Dinh(NyloLoadout.DINH, 'M', 5, 1, Area.Bash, 0),
         Claws(NyloLoadout.CLAWS, 'M', 4, 1, Area.Single, 1),
+        TomeSpec(NyloLoadout.TOME, 'G', 3, 10, Area.Single, 0),
     }
 
     enum class Area { Single, Square, Line, Scythe, Bash }
@@ -70,13 +84,16 @@ class NyloCrew(
         }
         for ((bot, role) in members) {
             if (!bot.isSlotAssigned || bot.hitpoints <= 0) continue
-            if (bot.actionDelay > now + 1) continue
+            if (bot.actionDelay > now + 1) {
+                if (!role.freezes && bot.vars[DC_COOLDOWN] == 0) bots.spell(bot, DEATH_CHARGE)
+                continue
+            }
             guard(bot)
             val plan = choose(bot, role)
             if (TRACING && room.wavesSpawned >= TRACE_FROM && room.bossTick < 0) {
                 println("nylo ${members[0].first.username} t${room.t} $role " + (plan?.let { "${it.weapon} w${it.target.wave}${if (it.target.big) "B" else ""}${it.target.style}:${it.target.npc.hitpoints} x${it.victims.size}" } ?: "prefire"))
             }
-            if (plan != null) act(bot, plan) else if (bot !in covering) prefire(bot, role)
+            if (plan != null) act(bot, role, plan) else if (bot !in covering) prefire(bot, role)
         }
     }
 
@@ -89,6 +106,9 @@ class NyloCrew(
 
     /** The lane each bot went to cover for the next wave (set by its choice, until it attacks). */
     private val posts = HashMap<Player, String>()
+
+    /** The specs each bot gets once a room (the mage's Zorya's flow, the melee's Shield Bash) it has used. */
+    private val specced = HashMap<Player, HashSet<Weapon>>()
 
     /** Bots whose choice this tick was a lane to cover: walking there, no prefire. */
     private val covering = HashSet<Player>()
@@ -166,6 +186,8 @@ class NyloCrew(
         for (weapon in KITS.getValue(role)) {
             if (weapon == Weapon.Dinh && bot.vars["varp.sa_energy"] < DINH_ENERGY) continue
             if (weapon == Weapon.Claws && bot.vars["varp.sa_energy"] < CLAW_ENERGY) continue
+            if (weapon == Weapon.TomeSpec && bot.vars["varp.sa_energy"] < TOME_ENERGY) continue
+            if (weapon in ONCE && weapon in specced[bot].orEmpty()) continue
             for (target in wanted) {
                 if (target.style != weapon.hits) continue
                 if (weapon.range <= 1 && !meleeReach(target)) continue
@@ -210,6 +232,7 @@ class NyloCrew(
                 f[33] = target.nulledBy.count { it != bot } / 2.0
                 f[34] = ((room.wavesSpawned - target.wave) / OLD_WAVES).coerceIn(0.0, 2.0)
                 f[35] = if (room.wavesSpawned >= END_FROM) f[34] else 0.0
+                f[36] = if (weapon == Weapon.Tome && bot.vars[FLOW_STACKS] > 0) 1.0 else 0.0
                 var score = weights[NyloPolicy.FEATURES.size + weapon.ordinal]
                 for (i in f.indices) score += weights[i] * f[i]
                 if (score > (best?.score ?: 0.0)) best = Plan(weapon, target, victims, score)
@@ -301,13 +324,18 @@ class NyloCrew(
 
     /* ---- doing it */
 
-    private fun act(bot: Player, plan: Plan) {
+    private fun act(bot: Player, role: NyloRole, plan: Plan) {
         for ((slot, obj) in plan.weapon.set.worn) {
             val id = obj.asRSCM(RSCMType.OBJ)
             if (bot.worn[slot.slot]?.id != id) bots.equip(bot, slot.slot, id)
         }
+        if (role.freezes && plan.weapon.set.worn.none { it.first == Wearpos.Ring }) {
+            val ring = NyloLoadout.LIGHTBEARER.asRSCM(RSCMType.OBJ)
+            if (bot.worn[Wearpos.Ring.slot]?.id != ring) bots.equip(bot, Wearpos.Ring.slot, ring)
+        }
         if (plan.weapon != Weapon.Barrage) VarPlayerIntMapSetter.set(bot, "varp.com_mode", plan.weapon.stance)
-        if (plan.weapon == Weapon.Dinh || plan.weapon == Weapon.Claws) VarPlayerIntMapSetter.set(bot, "varp.sa_attack", 1)
+        if (plan.weapon == Weapon.Dinh || plan.weapon == Weapon.Claws || plan.weapon == Weapon.TomeSpec) VarPlayerIntMapSetter.set(bot, "varp.sa_attack", 1)
+        if (plan.weapon in ONCE) specced.getOrPut(bot) { HashSet() } += plan.weapon
         val npc = plan.target.npc
         if (current(bot) == npc && plan.weapon != Weapon.Barrage) return
         if (plan.weapon == Weapon.Barrage) bots.cast(bot, npc, barrage) else bots.attack(bot, npc)
@@ -343,7 +371,7 @@ class NyloCrew(
             mapOf(
                 NyloRole.Melee to listOf(Weapon.Scythe, Weapon.Smash, Weapon.Thrust, Weapon.Dinh, Weapon.Crossbows, Weapon.Ayak, Weapon.Tbow),
                 NyloRole.Ranger to listOf(Weapon.Tbow, Weapon.Chins, Weapon.Crossbows, Weapon.Ayak, Weapon.Scythe, Weapon.Claws),
-                NyloRole.Mage to listOf(Weapon.Barrage, Weapon.Tome, Weapon.Crossbows, Weapon.Tbow, Weapon.Scythe, Weapon.Claws),
+                NyloRole.Mage to listOf(Weapon.Barrage, Weapon.Tome, Weapon.Crossbows, Weapon.Tbow, Weapon.Scythe, Weapon.Claws, Weapon.TomeSpec),
             )
         val PROTECT = mapOf('M' to "varbit.prayer_protectfrommelee", 'R' to "varbit.prayer_protectfrommissiles", 'G' to "varbit.prayer_protectfrommagic")
         const val LINE_TILES = 3
@@ -356,6 +384,13 @@ class NyloCrew(
         const val BASH_MAX = 10
         const val DINH_ENERGY = 500
         const val CLAW_ENERGY = 500
+        const val TOME_ENERGY = 500
+        val ONCE = setOf(Weapon.Dinh, Weapon.TomeSpec)
+        const val DEATH_CHARGE = "component.magic_spellbook:death_charge"
+        const val DEATH_CHARGES = 2
+        const val DC_ACTIVE = "varbit.arceuus_death_charge_active"
+        const val DC_COOLDOWN = "varbit.arceuus_death_charge_cooldown"
+        const val FLOW_STACKS = "varp.zoryas_tome_stacks"
         val STAND_X = 3290..3301
         val STAND_Z = 4243..4254
 

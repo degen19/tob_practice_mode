@@ -85,6 +85,10 @@ object NyloLoadout {
     const val DIAMOND_BOLTS = "obj.ascension_bolts_diamond_enchanted"
     const val BOOK = "obj.book_of_the_dead"
     const val SURGE = "obj.4dosesurge"
+    const val LIGHTBEARER = "obj.lightbearer"
+
+    /** Death Charge's runes: the ranger and melee recast it through the Nylocas waves. */
+    val DEATH_CHARGE_RUNES = listOf("obj.bloodrune", "obj.deathrune", "obj.soulrune")
 
     /** Vengeance, Spellbook Swap, thralls and Death Charge: the runes the ranger and melee cast with. */
     val LUNAR_RUNES = listOf("obj.astralrune", "obj.earthrune", "obj.lawrune", "obj.cosmicrune", "obj.soulrune", "obj.bloodrune", "obj.deathrune", "obj.firerune")
@@ -120,6 +124,9 @@ object NyloLoadout {
     /** Worn at the start: the first set plus bolts in the ammo slot. */
     fun worn(sets: List<GearSet>): List<Pair<Int, String>> =
         sets.first().worn.map { it.first.slot to it.second } + (Wearpos.Quiver.slot to BOLTS)
+
+    /** What a Nylocas bot carries beyond its sets: the mage's Lightbearer, everyone else's Death Charge runes. */
+    fun nyloExtras(role: NyloRole): List<String> = if (role.freezes) listOf(LIGHTBEARER) else DEATH_CHARGE_RUNES
 
     /** Everything else the sets need, once each, in the pack. */
     fun pack(role: NyloRole, sets: List<GearSet>): List<String> {
