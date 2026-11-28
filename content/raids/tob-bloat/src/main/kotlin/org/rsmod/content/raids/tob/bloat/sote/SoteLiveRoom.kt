@@ -382,13 +382,19 @@ class SoteLiveRoom(
             val rolled = SoteMaze.roll(SimRng("$seed|maze$n"))
             maze = Visual(rolled, crossers, t + SoteRules.TELEPORT_AFTER, under?.let { t + 4 + SoteMaze.underToStart(rolled.start) })
             if (team == 1) at(m - 3) { for (p in crossers) botOf(p)?.let { go(it, start()) } }
-            // the stallers run up column 1 to the shark; a shark skipper alone does too, else up column 11, away from them
-            val skipTop = if (stallers.isEmpty()) SoteRules.CROSS_X else SoteRules.SKIP_X
+            // the stallers run up column 1 to the shark; a shark skipper alone does too. With others stalling, a skipper
+            // can't run with them (their wrong-tile splash): two ticks diagonally north-east, then on to column 11 and up it
+            val apart = stallers.isNotEmpty()
             at(m - 1) {
                 for (p in stallers) botOf(p)?.let { clicks.walk(it, at(SoteRules.CROSS_X, SoteRules.CROSS_TOP_Y)) }
-                for (p in skippers) botOf(p)?.let { clicks.walk(it, at(skipTop, SoteRules.CROSS_TOP_Y)) }
+                for (p in skippers) botOf(p)?.let { clicks.walk(it, if (apart) at(SoteRules.SKIP_DIAGONAL_X, SoteRules.SKIP_DIAGONAL_Y) else at(SoteRules.CROSS_X, SoteRules.CROSS_TOP_Y)) }
             }
-            at(m + 1) {
+            if (apart) {
+                at(m + 1) { for (p in skippers) botOf(p)?.let { clicks.walk(it, at(SoteRules.SKIP_X, SoteRules.SKIP_TURN_Y)) } }
+                at(m + 4) { for (p in skippers) botOf(p)?.let { clicks.walk(it, at(SoteRules.SKIP_X, SoteRules.CROSS_TOP_Y)) } }
+            }
+            // NPC Contact on row 3, two tiles a tick after the first step (Blert: cast 2 ticks after it, swing 8 after the cast)
+            at(m + 2) {
                 for (p in stallers) {
                     val bot = botOf(p) ?: continue
                     bot.anim(RSCM.getReverseMapping(RSCMType.SEQ, SoteRules.CONTACT_SEQ))

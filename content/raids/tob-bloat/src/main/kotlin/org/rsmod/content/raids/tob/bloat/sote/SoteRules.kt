@@ -58,14 +58,20 @@ object SoteRules {
     /**
      * The maze crossing (every raid on Blert): the players skipping it are teleported 3 ticks after the proc to column
      * 1, three south of row A; they set off up the column the tick before the stall starts, two tiles a tick, cast NPC
-     * Contact on row 3 (the stall's first tick) and are on row 15, by her south-west corner, as it ends.
+     * Contact on row 3 and are on row 15, by her south-west corner, as it ends.
      */
     const val CROSS_X = 3274
     const val CROSS_START_Y = 4307
     const val CROSS_TOP_Y = 4325
 
-    /** A shark skipper with others stalling crosses up column 11, away from their splash (Blert 5s). */
+    /**
+     * A shark skipper with others stalling can't run with them (their wrong-tile splash): two ticks diagonally north-east
+     * (to column 5, row 1), then diagonally on to column 11 (row 7) and up it (Blert 5s).
+     */
+    const val SKIP_DIAGONAL_X = 3278
+    const val SKIP_DIAGONAL_Y = 4311
     const val SKIP_X = 3284
+    const val SKIP_TURN_Y = 4317
     const val TELEPORT_AFTER = 3
 
     /**
