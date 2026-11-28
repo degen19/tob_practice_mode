@@ -932,10 +932,10 @@ class MaidenCrew(
         val a = onTime(b, stand ?: obligate(b, nextAct(b, tt), tt), tt)
         b.walkedFor = null
         trace { "t$tt ${b.role}@${room.real(b.player.coords).let { "${it.x - ROOM_X},${ROOM_Y - it.z}" }} $a${if (a.startsWith("dinhs")) " from ${b.dinPos?.joinToString(",")}" else ""}" }
-        if (b.role.freezes && (a == "tbr" || a == "tba") && room.gapToHer(room.real(b.player.coords)) < CLOSE_TBOW) {
-            trace { "t$tt ${b.role} steps back to its tbow range first" }
-            hold(b)
-            mageStand(b)
+        // a freezer this near her doesn't tbow: a crossbow shot instead (no tick lost), walking back out on its cooldown
+        if (b.role.freezes && (a == "tbr" || a == "tba") && room.gapToHer(room.real(b.player.coords)) < CLOSE_TBOW && b.owns("xbows")) {
+            trace { "t$tt ${b.role} crossbows from up close; back out to tbow range after" }
+            perform(b, "ax", tt)
             return
         }
         perform(b, a, tt)
