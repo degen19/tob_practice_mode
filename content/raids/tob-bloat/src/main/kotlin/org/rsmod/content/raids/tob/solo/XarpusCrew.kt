@@ -92,6 +92,7 @@ class XarpusCrew(
         var lastSwing = -1
         var home: CoordGrid = tile(SPOTS[i % SPOTS.size])
         var dumped: CoordGrid = home
+        var backFor = -1
         val spec: Int
             get() = player.vars["varp.sa_energy"]
         val ready: Boolean
@@ -150,6 +151,8 @@ class XarpusCrew(
         }
         trace { "t$t ${room.debug()} rise t${room.riseAt} spit t${room.nextSpit} " + crew.joinToString(" ") { "${it.player.username}@${here(it).x - X},${here(it).z - Y} d${it.player.actionDelay - clock.cycle} s${it.spec}" } }
         if (room.phase == 0) return exhumeds()
+        if (room.lastSpitAt == t - 1) for (b in crew) incoming[here(b)] = t + ACID_FLIGHT
+        incoming.values.removeIf { it < t }
         landings()
         planDefence()
         for (b in crew) {
@@ -372,8 +375,8 @@ class XarpusCrew(
         val to =
             when {
                 room.phase != 2 -> out(clean)
-                spit == t -> if (due == t + 1) out(clean, 2) else dump(b, home)
                 spit == due -> out(home)
+                spit < due -> stepBack(b, here, spit, due).let { if (spit == t) it else out(it, -1) }
                 else -> out(clean)
             }
         if (here == to) return false
@@ -384,22 +387,38 @@ class XarpusCrew(
     /**
      * Duos (Blert's fastest): both stand on one tile beside him and swing from it, and on each spit tick both step two
      * straight out together (a spit at one can't bounce to the other on the same tile). A swing on his scan rags their
-     * tile; then they step one round clockwise to a clean one, so they never stand in their own acid for long.
+     * tile; then they move clockwise to the next clean middle or end of a side, never the tiles beside a middle.
      */
     private fun pair(b: Bot, here: CoordGrid, due: Int): Boolean {
-        if (room.phase == 2 && pairHome in room.pooled) {
-            val i = CLOCKWISE.indexOfFirst { tile(it) == pairHome }
-            pairHome = (1..CLOCKWISE.size).map { tile(CLOCKWISE[(i + it) % CLOCKWISE.size]) }.firstOrNull { it !in room.pooled } ?: pairHome
+        if (room.phase == 2 && fouled(pairHome)) {
+            val i = PAIR_RAGS.indexOfFirst { tile(it) == pairHome }
+            pairHome = (1..PAIR_RAGS.size).map { tile(PAIR_RAGS[(i + it) % PAIR_RAGS.size]) }.firstOrNull { !fouled(it) } ?: pairHome
             trace { "t$t the pair moves round to ${pairHome.x - X},${pairHome.z - Y}" }
         }
         b.home = pairHome
-        val to = if (room.phase == 2 && room.nextSpit == t && due != t + 1) out(pairHome, 2) else pairHome
+        val to = if (room.phase == 2 && room.nextSpit == t) pairBack(here, due) else pairHome
         if (here == to) return false
         walk(b, to)
         return true
     }
 
     private var pairHome: CoordGrid = tile(SPOTS[0])
+    private var pairBackAt = -1
+    private var pairBackTo: CoordGrid = pairHome
+
+    /** The pair's step-back for this spit, shared: both go to the same tile. */
+    private fun pairBack(here: CoordGrid, due: Int): CoordGrid {
+        if (pairBackAt != t) {
+            pairBackAt = t
+            pairBackTo = back(here, pairHome, pairHome, due, emptySet())
+        }
+        return pairBackTo
+    }
+
+    /** The tiles acid is on its way to: everyone's tile on his last spit, until the pool lands. */
+    private val incoming = HashMap<CoordGrid, Int>()
+
+    private fun fouled(c: CoordGrid): Boolean = c in room.pooled || c in incoming
 
     /**
      * Solos (Blert's 50 fastest, by where his spit falls between their swings): on the swing tick the spit rags the tile
@@ -450,11 +469,11 @@ class XarpusCrew(
     /** Its clean swing tile: beside its home along his side, without acid and not another's. */
     private fun clean(b: Bot, home: CoordGrid): CoordGrid {
         val cur = b.clean
-        if (cur != null && cur !in room.pooled) return cur
+        if (cur != null && !fouled(cur)) return cur
         val n = outward(home)
         val taken = crew.filter { it !== b }.flatMap { listOfNotNull(it.home, it.clean) }.toSet()
         val pick = listOf(1, -1).map { l -> CoordGrid(home.x + l * n[1], home.z + l * n[0], home.level) }
-            .firstOrNull { it !in room.pooled && it !in taken && besideHim(it) } ?: home
+            .firstOrNull { !fouled(it) && it !in taken && besideHim(it) } ?: home
         b.clean = pick
         return pick
     }
@@ -462,10 +481,11 @@ class XarpusCrew(
     /**
      * Phase 3: he never turns back to the quarter he's staring at. A swing that lands before his next turn goes from any
      * other quarter; one the tick after it, with no time to see where he turned, from the quarter he's staring at now
-     * (standing there costs nothing, only hitting does); a later one stays put and moves once it sees the turn. A bot
-     * moves when where it stands isn't safe for its next swing or is acid - to a safe tile beside him it can reach in
-     * time, clean if it can, so a turn never costs a swing. A crew tick's swing is judged on the
-     * stare after the room's step before it: it lands after the turn when it's past the turn's tick.
+     * (standing there costs nothing, only hitting does); a later one waits where, whichever quarter he turns to, a
+     * tile outside it is a run tick away, and moves once it sees the turn. A bot moves when where it stands isn't safe
+     * for its next swing or is acid - to a safe tile beside him it can reach in time, clean if it can - so a turn never
+     * costs a swing. A crew tick's swing is judged on the stare after the room's step before it: it lands after the
+     * turn when it's past the turn's tick.
      */
     private fun stare(b: Bot, here: CoordGrid, due: Int): Boolean {
         val turn = room.nextTurnAt
@@ -473,7 +493,7 @@ class XarpusCrew(
             when {
                 due <= turn -> { c -> room.quarter(c) != room.gaze }
                 due == turn + 1 -> { c -> room.quarter(c) == room.gaze }
-                else -> { _ -> true }
+                else -> { c -> (0..3).all { q -> q == room.gaze || RING.any { r -> tile(r).let { room.quarter(it) != q && cheb(c, it) <= 2 } } } }
             }
         if (!safe(b.home) || b.home in room.pooled) {
             val homes = crew.filter { it !== b }.map { it.home }.toSet()
@@ -496,14 +516,45 @@ class XarpusCrew(
     /** Its home tile: its own for phase 2 (it rags it); phase 3 moves it ([stare]). */
     private fun home(b: Bot): CoordGrid = b.home
 
-    private fun dump(b: Bot, home: CoordGrid): CoordGrid {
+    /**
+     * Where it steps back to on the spit before its next swing (Blert: the line three out from him, along its side and
+     * round the corners), picked once it knows: without acid or acid on its way, not another's, reachable by the spit
+     * and close enough to its swing tile after. A swing the tick after the spit walks straight in from the step-back,
+     * so then it's straight out from a clean tile beside him it can swing from.
+     */
+    private fun stepBack(b: Bot, here: CoordGrid, spit: Int, due: Int): CoordGrid {
+        if (b.backFor == spit && !fouled(b.dumped)) return b.dumped
+        val home = home(b)
         val n = outward(home)
-        if (size == 1) return CoordGrid(home.x - n[0], home.z - n[1], home.level)
         val lat = intArrayOf(n[1], n[0])
         val others = crew.filter { it !== b }.flatMap { listOf(it.home, it.dumped) }.toSet()
-        return DUMP_SHIFTS.map { l -> CoordGrid(home.x + 2 * n[0] + l * lat[0], home.z + 2 * n[1] + l * lat[1], home.level) }
-            .firstOrNull { it.x in MIN_X..MAX_X && it.z in MIN_Y..MAX_Y && it !in room.pooled && it !in others }
-            ?.also { b.dumped = it } ?: home
+        val reach = { c: CoordGrid -> c.x in MIN_X..MAX_X && c.z in MIN_Y..MAX_Y && !fouled(c) && c !in others && runTicks(here, c) <= max(1, spit - t) }
+        val pick =
+            if (due == spit + 1) {
+                BACK_SHIFTS.map { l -> CoordGrid(home.x + l * lat[0], home.z + l * lat[1], home.level) }
+                    .firstOrNull { besideHim(it) && it != home && !fouled(it) && reach(out(it, 2)) }
+                    ?.also { b.clean = it }?.let { out(it, 2) }
+            } else {
+                BACK_SHIFTS.map { l -> CoordGrid(home.x + 2 * n[0] + l * lat[0], home.z + 2 * n[1] + l * lat[1], home.level) }
+                    .firstOrNull { reach(it) && runTicks(it, home) <= due - spit }
+            }
+        b.backFor = spit
+        b.dumped = pick ?: if (due == spit + 1) out(clean(b, home), 2) else out(home, 2)
+        return b.dumped
+    }
+
+    /**
+     * A step-back for the spit: two out from [from] along his side (Blert's line three out from him), without acid or
+     * acid on its way, reachable this tick and close enough to get back to [swing] for the swing on [due].
+     */
+    private fun back(here: CoordGrid, from: CoordGrid, swing: CoordGrid, due: Int, others: Set<CoordGrid>): CoordGrid {
+        val n = outward(from)
+        val lat = intArrayOf(n[1], n[0])
+        return BACK_SHIFTS.map { l -> CoordGrid(from.x + 2 * n[0] + l * lat[0], from.z + 2 * n[1] + l * lat[1], from.level) }
+            .firstOrNull {
+                it.x in MIN_X..MAX_X && it.z in MIN_Y..MAX_Y && !fouled(it) && it !in others &&
+                    runTicks(here, it) <= 1 && runTicks(it, swing) <= max(1, due - t)
+            } ?: out(from, 2)
     }
 
     /** The way out from his 5x5 at a tile beside it (a corner's diagonal neighbours count as their side). */
@@ -702,6 +753,7 @@ class XarpusCrew(
         const val X = 3168
         const val Y = 4385
         const val WAIT_UNDER = 4
+        const val ACID_FLIGHT = 6
         const val COVER_ROUNDS = 4
         const val HEAL_FROM = 3
         const val HEAL_COST = 100
@@ -712,7 +764,7 @@ class XarpusCrew(
         const val MAX_Y = 4394
 
         /** Sideways from straight out, in the order a dump tile is tried. */
-        val DUMP_SHIFTS = listOf(0, 1, -1, 2, -2)
+        val BACK_SHIFTS = listOf(0, 1, -1, 2, -2, 3, -3, 4, -4)
         const val ARCEUUS = 3
         const val REDEMPTION = "varbit.prayer_redemption"
         const val PIETY = "varbit.prayer_piety"
@@ -763,6 +815,12 @@ class XarpusCrew(
         val CLOCKWISE: List<IntArray> =
             (2 downTo 0).map { intArrayOf(it, -1) } + (0..4).map { intArrayOf(-1, it) } + (0..4).map { intArrayOf(it, 5) } +
                 (4 downTo 0).map { intArrayOf(5, it) } + (4 downTo 3).map { intArrayOf(it, -1) }
+
+        /**
+         * The tiles a duo rags, clockwise: the middle and the ends of each side (Blert). The two beside each middle stay
+         * clean for the P3 safespots.
+         */
+        val PAIR_RAGS: List<IntArray> = CLOCKWISE.filter { (x, y) -> !((y == -1 || y == 5) && (x == 1 || x == 3)) && !((x == -1 || x == 5) && (y == 1 || y == 3)) }
 
         /** Every tile touching his 5x5. */
         val RING: List<IntArray> =
