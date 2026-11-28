@@ -70,6 +70,10 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
 
     class Exhumed(val loc: LocInfo, val tile: CoordGrid, val born: Int) {
         val heals = ArrayList<Int>()
+
+        /** The tick it sinks: it heals him on every tick before this nobody stands on it. */
+        val gone: Int
+            get() = born + EXHUMED_LIFE
     }
 
     private val exhumedsUp = ArrayList<Exhumed>()
@@ -84,6 +88,10 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     /** The room tick he rises on, once the first exhumed is up (-1 before). */
     val riseAt: Int
         get() = if (firstExhumed < 0) -1 else firstExhumed + (scale.exhumeds - 1) * scale.exhumedGap + RISE_AFTER_LAST
+
+    /** The tick the next exhumed comes up (-1 before the first and after the last). */
+    val nextExhumedAt: Int
+        get() = if (firstExhumed < 0 || exhumeds >= scale.exhumeds) -1 else firstExhumed + exhumeds * scale.exhumedGap
 
     /** Who his next spit goes at. */
     fun nextSpitAt(): Player? = order().let { if (it.isEmpty()) null else it[Math.floorMod(spitTurn, it.size)] }

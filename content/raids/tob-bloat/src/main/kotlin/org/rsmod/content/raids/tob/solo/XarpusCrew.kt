@@ -20,11 +20,11 @@ import org.rsmod.map.CoordGrid
 /**
  * Bots playing Xarpus as Blert's 50 fastest rooms of their scale do.
  *
- * - Exhumeds: the nearest free bot stands on each one as it comes up (a heal only goes while nobody's on it), and waits
- *   on his pool for the next ([WAIT]). Four ticks
+ * - Exhumeds: the nearest free bot stands on each one as it comes up (a heal only goes while nobody's on it) and steps
+ *   off on the tick it can't heal any more; the free ones spread to cover the room ([cover]). Four ticks
  *   before he rises they wait under his pool on the middle of each side, and on the tick he rises they step out to the
  *   tile beside it (south, west, north, east, then south again) and attack the tick after. Thralls go up just before.
- * - Specs: the scale's plan ([XarpusPlan.BY_SCALE], Blert's lines) played on what happens - opening specs, mauls again
+ * - Specs: the scale's plan ([XarpusPlan.BY_SCALE], the sim's Solver) played on what happens - opening specs, mauls again
  *   by how many opening mauls landed (read off his Defence), backups in turn down to the Defence target, ZCBs held for
  *   the screech, claws once no Defence spec is to come, the halberd for his last hitpoints, Lightbearer cycles.
  * - The acid: see [place] - the dump-tile dance, under him for a solo.
@@ -161,15 +161,77 @@ class XarpusCrew(
             }
             return
         }
-        val up = room.exhumedsNow
-        for (b in crew) if (b.cover !in up) b.cover = null
+        val up = room.exhumedsNow.filter { t < it.gone }
+        for (b in crew) if (b.cover != null && b.cover !in up) b.cover = null
         for (e in up.sortedBy { it.born }) {
             if (crew.any { it.cover === e }) continue
-            val b = crew.filter { it.cover == null }.minByOrNull { cheb(here(it), e.tile) } ?: break
+            val free = crew.filter { it.cover == null }
+            val b = free.firstOrNull { quarterOf(it) == room.quarter(e.tile) } ?: free.minByOrNull { cheb(here(it), e.tile) } ?: break
             b.cover = e
         }
-        for (b in crew) walk(b, b.cover?.tile ?: tile(WAIT[b.i % WAIT.size]))
+        for (b in crew) b.cover?.let { walk(b, it.tile) }
+        val free = crew.filter { it.cover == null }
+        if (free.isEmpty()) return
+        val next = room.nextExhumedAt
+        val fixed = crew.mapNotNull { b -> b.cover?.takeIf { next < 0 || it.gone <= next }?.tile }
+        val key = listOf(free.map { it.i }, fixed, up.map { it.tile })
+        if (key != spreadKey) {
+            spreadKey = key
+            spread = cover(free, fixed, up.map { it.tile }.toSet())
+        }
+        for ((b, to) in free.zip(spread)) walk(b, to)
     }
+
+    /**
+     * The quarter a free bot keeps to (0 NE, 1 SE, 2 SW, 3 NW), or -1: in 5s the first four each own one and the fifth
+     * floats; in 4s each keeps its own while nobody's on an exhumed, then the three left spread as they need.
+     */
+    private fun quarterOf(b: Bot): Int =
+        when {
+            size == 5 && b.i < 4 -> b.i
+            size == 4 && crew.none { it.cover != null } -> b.i
+            else -> -1
+        }
+
+    private var spreadKey: Any? = null
+    private var spread: List<CoordGrid> = emptyList()
+
+    /**
+     * Where the free bots stand for the next exhumed (the owner: 5s a quarter each and a floater into the quarter whose
+     * player just took one, 4s a quarter each then spread, trios and duos spread, a solo back to the middle): the tiles
+     * (in each one's quarter, [quarterOf]) that leave the fewest heals if it comes up on any tile of the room, counting
+     * the bots whose exhumed sinks before it as free where they stand. From where they are, each moved to its best tile
+     * in turn until none improves.
+     */
+    private fun cover(bots: List<Bot>, fixed: List<CoordGrid>, up: Set<CoordGrid>): List<CoordGrid> {
+        val spawns = SPAWNS.filter { it !in up }
+        fun total(pts: List<CoordGrid>): Int = spawns.sumOf { s -> cost(pts.minOf { cheb(it, s) }) }
+        val allowed = bots.map { b -> quarterOf(b).let { q -> if (q < 0) ARENA else ARENA.filter { room.quarter(it) == q } } }
+        val cur = bots.mapIndexed { i, b -> here(b).let { h -> allowed[i].minBy { cheb(it, h) } } }.toMutableList()
+        var best = total(fixed + cur)
+        repeat(COVER_ROUNDS) {
+            var moved = false
+            for (i in cur.indices) {
+                val keep = cur[i]
+                var pick = keep
+                for (c in allowed[i]) {
+                    cur[i] = c
+                    val v = total(fixed + cur)
+                    if (v < best) {
+                        best = v
+                        pick = c
+                    }
+                }
+                cur[i] = pick
+                if (pick != keep) moved = true
+            }
+            if (!moved) return cur
+        }
+        return cur
+    }
+
+    /** A bot reaching a tile d away heals him on each tick from the exhumed's third it's not there: a run of 2 a tick. */
+    private fun cost(d: Int): Int = HEAL_COST * max(0, (d + 1) / 2 - HEAL_FROM) + d
 
     /* ---- the acid */
 
@@ -401,6 +463,9 @@ class XarpusCrew(
         const val X = 3168
         const val Y = 4385
         const val WAIT_UNDER = 4
+        const val COVER_ROUNDS = 4
+        const val HEAL_FROM = 3
+        const val HEAL_COST = 100
         const val SIZE = 5
         const val MIN_X = 3163
         const val MAX_X = 3177
@@ -431,8 +496,9 @@ class XarpusCrew(
         val UNDER = arrayOf(intArrayOf(2, 1), intArrayOf(1, 2), intArrayOf(2, 3), intArrayOf(3, 2), intArrayOf(3, 1))
         val SPOTS = arrayOf(intArrayOf(2, -1), intArrayOf(-1, 2), intArrayOf(2, 5), intArrayOf(5, 2), intArrayOf(4, -1))
 
-        /** Where they wait for the next exhumed: on his pool, within a run of three ticks of any tile (Blert's solos and duos). */
-        val WAIT = arrayOf(intArrayOf(1, 1), intArrayOf(3, 3), intArrayOf(1, 3), intArrayOf(3, 1), intArrayOf(2, 2))
+        /** The room's floor, and the tiles an exhumed can come up on (any but under his 5x5). */
+        val ARENA: List<CoordGrid> = (3163..3177).flatMap { x -> (4380..4394).map { z -> CoordGrid(x, z, 1) } }
+        val SPAWNS: List<CoordGrid> = ARENA.filter { it.x !in X until X + 5 || it.z !in Y until Y + 5 }
 
         /** Every tile touching his 5x5. */
         val RING: List<IntArray> =

@@ -31,34 +31,35 @@ class XarpusPlan(
         private const val RALOS = "ralos"
 
         /**
-         * The plan each scale plays: the lines Blert's fastest teams use (50 rooms a scale), scored in the sim
-         * (verzikSim engine/xarpussolve.js, 4000 raids): its medians are within 0.6s of the Solver's best for solos,
-         * duos and trios, 1.8s behind for 4s and 5s, where the Solver's picks (a fourth mauler, a ZCB for the BGS) are
-         * ones those teams don't play.
+         * The plan each scale plays: the sim's Xarpus Solver (verzikSim engine/xarpussolve.js) at its normal effort,
+         * default players with an Elder maul and a BGS, no surge or horn - kept to three maulers. Its 5s pick had a
+         * fourth; with a BGS opener in that seat it's the same median in the sim (2:01.8, 4000 raids), and in 4s a
+         * fourth mauler is 2.4s slower: its gain is the ZCBs, 95% starts and Lightbearer cycles, not the maul.
          */
         val BY_SCALE: Map<Int, XarpusPlan> =
             mapOf(
-                1 to XarpusPlan(listOf(Player("maul", "claws", lbCycles = 2)), remaul = mapOf(0 to listOf(0), 1 to listOf(0)), backups = listOf(0 to "maul")),
+                1 to XarpusPlan(listOf(Player("maul", "claws", lbCycles = 2)), remaul = mapOf(0 to listOf(0), 1 to listOf(0)), backups = emptyList()),
                 2 to
                     XarpusPlan(
-                        listOf(Player("maul", "none"), Player("maul", "none")),
+                        listOf(Player("maul", "claws"), Player("maul", "zcb", startSpec = 95)),
                         remaul = mapOf(0 to listOf(0, 1), 1 to listOf(0), 2 to emptyList()),
-                        backups = listOf(1 to "maul", 1 to "bgs", 1 to RALOS, 0 to "bgs"),
+                        backups = listOf(1 to "maul", 1 to RALOS, 1 to RALOS, 1 to "bgs", 0 to "bgs"),
                         chally = true,
                     ),
                 3 to
                     XarpusPlan(
-                        listOf(Player("maul", "claws"), Player("maul", "zcb", startSpec = 95), Player("maul", "claws")),
-                        remaul = mapOf(0 to listOf(0, 1, 2), 1 to listOf(0, 1), 2 to emptyList(), 3 to emptyList()),
-                        backups = listOf(0 to "bgs", 2 to RALOS, 1 to RALOS),
+                        listOf(Player("maul", "claws"), Player("maul", "zcb", startSpec = 95), Player("bgs", "zcb", startSpec = 95)),
+                        remaul = mapOf(0 to listOf(0, 1, 2), 1 to listOf(0, 1), 2 to emptyList()),
+                        backups = listOf(0 to RALOS, 1 to RALOS, 2 to RALOS, 0 to "bgs"),
+                        holdZcb = false,
                     ),
                 4 to
                     XarpusPlan(
                         listOf(
                             Player("maul", "zcb", fix = "claw", startSpec = 95),
                             Player("maul", "zcb", lbCycles = 3),
-                            Player("maul", "claws", lbCycles = 3),
-                            Player("bgs", "claws"),
+                            Player("maul", "zcb", lbCycles = 3),
+                            Player("bgs", "zcb", startSpec = 95),
                         ),
                         remaul = mapOf(0 to listOf(0, 1, 2), 1 to listOf(0, 1), 2 to emptyList(), 3 to emptyList()),
                         backups = listOf(3 to RALOS, 1 to RALOS, 2 to RALOS),
@@ -68,12 +69,12 @@ class XarpusPlan(
                         listOf(
                             Player("maul", "zcb", fix = "claw"),
                             Player("maul", "zcb", lbCycles = 1, startSpec = 95),
-                            Player("maul", "zcb", lbCycles = 3),
-                            Player("bgs", "claws"),
+                            Player("bgs", "zcb", lbCycles = 1, startSpec = 95),
+                            Player("maul", "zcb", lbCycles = 1, startSpec = 95),
                             Player("bgs", "zcb", lbCycles = 1, startSpec = 95),
                         ),
                         remaul = mapOf(0 to listOf(0, 1, 2), 1 to listOf(0, 1), 2 to emptyList(), 3 to emptyList()),
-                        backups = listOf(3 to RALOS, 4 to RALOS),
+                        backups = listOf(3 to RALOS, 4 to RALOS, 3 to "bgs"),
                     ),
             )
 
