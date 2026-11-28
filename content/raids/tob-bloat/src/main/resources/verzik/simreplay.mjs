@@ -39,6 +39,13 @@ const SIDES = [
   (f) => [f.x + f.size, f.y + (f.size >> 1)],
 ];
 
+/** The tile off the corner between two neighbouring sides (south, west, north, east) of a footprint. */
+function corner(f, a, b) {
+  const s = new Set([a, b]);
+  const x = s.has(1) ? f.x - 1 : f.x + f.size, y = s.has(0) ? f.y - 1 : f.y + f.size;
+  return [x, y];
+}
+
 /** Which way round her a template player went during webs: 1 south-west-north-east, -1 the other way. */
 function webTurn(tpl, p, from) {
   const v = tpl.npcs.find((x) => x.track.some((s) => s[1] === P3)).track;
@@ -60,7 +67,7 @@ function webTurn(tpl, p, from) {
 
 const NYLOS = new Set([8381, 8382, 8383]);
 const HER_SWINGS = new Set(['Attack', 'Lightning', 'Purple crab', 'Blood heal']);
-const PURPLE_WINDOW = 16, LEAD = 2, WEB_TICKS = 44;
+const PURPLE_WINDOW = 16, LEAD = 2, WEB_TICKS = 44, WEB_ROUND = 5;
 const MELEE = new Set(['SCYTHE', 'CLAW_SCRATCH', 'CLAW_SPEC', 'CHALLY_SPEC', 'ELDER_MAUL', 'SULPHUR_BLADES']);
 const DAWN_DROP_AFTER = 2, DAWN_PICK_AFTER = 1, TRANSFER_ANIM = 4411, TRANSFER_GFX = 734;
 
@@ -148,7 +155,10 @@ function convert(sim, tpl0, scale) {
   const prayers = tpl.prayers.map((list) => { const out = []; for (let t = 0; t <= end; t++) { const k = w(t); const h = list.filter((e) => e[0] <= k).at(-1)?.[1] ?? ''; if (!out.length || out.at(-1)[1] !== h) out.push([t, h]); } return out; });
   // her: one NPC through her forms, on the template's tiles, with the sim's hitpoints
   const vt = tpl.npcs.find((x) => x.track.some((s) => s[1] === P2)).track;
-  const herTile = (t) => { const k = w(t); let s = vt[0]; for (const r of vt) { if (r[0] > k) break; s = r; } return [s[2], s[3]]; };
+  const spinAt = at(sim, 'Webs');
+  const tileAt = (t) => { const k = w(t); let s = vt[0]; for (const r of vt) { if (r[0] > k) break; s = r; } return [s[2], s[3]]; };
+  // she spins her webs where she stands: no step from the spin's first tick to its last
+  const herTile = (t) => tileAt(spinAt != null && t >= spinAt && t <= spinAt + WEB_TICKS ? spinAt : t);
   const hpAt = (t) => { let h = null; for (const r of sim.hp) { if (r[0] > t) break; h = r; } return h; };
   const formAt = (t) => {
     if (t < sp.p1dies + P1_DEATH_GAP) return P1;
@@ -315,6 +325,7 @@ function convert(sim, tpl0, scale) {
   // (Blert: 3,324 of 3,515 web swings from a side's middle, 5 ticks apart, mostly south-west-north-east)
   const websAt = at(sim, 'Webs');
   const spinning = (t) => websAt != null && t >= websAt && t <= websAt + WEB_TICKS;
+  const webStep = desired.map(() => new Set());
   if (websAt != null) {
     const tplWebs = tpl.her.find((h) => h[2] === 'P3_WEBS')?.[0];
     for (let p = 0; p < n; p++) {
@@ -326,11 +337,23 @@ function convert(sim, tpl0, scale) {
       let at0 = 0, bd = Infinity;
       SIDES.forEach((_, k) => { const [x, y] = mid(k); const d = Math.abs(x - x0) + Math.abs(y - y0); if (d < bd) { bd = d; at0 = k; } });
       const dir = tplWebs != null ? webTurn(tpl, p, tplWebs) : 1;
+      const side = (k) => (((at0 + dir * k) % 4) + 4) % 4;
       let k = 0;
       for (let t = websAt; t <= Math.min(end, websAt + WEB_TICKS); t++) {
         while (k < swings.length && swings[k].t < t) k++;
         if (k >= swings.length) break;
-        desired[p][t] = mid((((at0 + dir * k) % 4) + 4) % 4);
+        desired[p][t] = mid(side(k));
+      }
+      // the 5-tick round: swing and click (1), two tiles along (2), the corner (3), two tiles round it (4), the next
+      // middle, clicking to swing (5), the swing (6); a longer gap waits on the middle, a shorter one is a chance
+      for (let j = 0; j + 1 < swings.length; j++) {
+        const t0 = swings[j].t, t1 = swings[j + 1].t;
+        if (t1 - t0 < WEB_ROUND) continue;
+        const a0 = mid(side(j)), b0 = mid(side(j + 1)), c = corner(f, side(j), side(j + 1));
+        const half = (u, v) => [(u[0] + v[0]) >> 1, (u[1] + v[1]) >> 1];
+        const path = [half(a0, c), c, half(c, b0), b0];
+        for (let t = t0 + 1; t < t1 - path.length; t++) desired[p][t] = [...a0];
+        path.forEach((xy, i) => { const t = t1 - path.length + i; if (t <= end) { desired[p][t] = [...xy]; webStep[p].add(t); } });
       }
     }
   }
@@ -368,6 +391,7 @@ function convert(sim, tpl0, scale) {
     const out = [row[0]];
     for (let t = 1; t <= end; t++) {
       const hit = reach[p].get(t);
+      if (webStep[p].has(t) && Math.max(Math.abs(row[t][0] - out[t - 1][0]), Math.abs(row[t][1] - out[t - 1][1])) <= 2) { out.push([...row[t]]); continue; }
       const [x0, y0] = out[t - 1], [x1, y1] = row[t];
       const f = spinning(t) && !inside(x0, y0, footprint(t)) ? footprint(t) : null;
       let best = [x0, y0], bd = Infinity;

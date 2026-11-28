@@ -215,7 +215,12 @@ class VerzikReplayRoom(
 
     private fun check(t: Int) {
         checked++
-        bots.forEachIndexed { i, b -> if (b.coords != at(raid.x(i, t), raid.y(i, t))) botDrift++ }
+        bots.forEachIndexed { i, b ->
+            if (b.coords != at(raid.x(i, t), raid.y(i, t))) {
+                botDrift++
+                fx("bot $i off at t$t: at ${b.coords}, planned ${at(raid.x(i, t), raid.y(i, t))}")
+            }
+        }
         for ((i, npc) in npcs) {
             val s = shown[i] ?: continue
             if (npc.isSlotAssigned && npc.coords != at(s.x, s.y)) npcDrift++

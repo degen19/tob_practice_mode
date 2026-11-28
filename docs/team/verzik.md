@@ -139,6 +139,13 @@ chart, thresholds), fails that carry on to the kill.
    claw that didn't last-hit, a halberd that didn't kill) comes from the tile on the way that reaches her (a corner
    tile): over the 1,200 sim raids 6,899 of 8,326 web swings from a middle tile. A web never lands on a tile a
    player will stand on while it's up.
+   The round is tick-perfect (the owner): swing and click (1), two tiles along the side (2), the corner tile (3), two
+   tiles round it (4), the next side's middle, clicking to swing (5), swing (6). Every 5-tick gap in the sim plays
+   exactly that; a longer gap waits on the middle, a shorter one is the tank's (the sim puts the tank off the cycle;
+   34 of 6,574 web gaps over the 1,200 raids) and goes the nearest way. She no longer steps while she spins (the
+   template's P3 walk moved her mid-spin, which threw their corner steps into her blocked tiles). Selftest bot drift:
+   4s v76 33 -> 9, 5s v133 0, 3s v131 4 - none of it in webs now; what's left is 1-2 tiles near the pillars as she
+   climbs down (4s, 3s) and two single ticks late in P3 (3s).
 9. A heal splat of her full P3 hitpoints on her P2 form as she died (the sim's P3 hitpoints read too early): gone.
 10. Players under her: no one's planned tile is under her, and while she spins webs (her tiles block players) every
     step goes round her. Swings from a tile that can't reach: 386 of 177,715 over the 1,200 raids.
