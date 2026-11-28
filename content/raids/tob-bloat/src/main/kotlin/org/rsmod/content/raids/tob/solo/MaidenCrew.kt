@@ -965,7 +965,7 @@ class MaidenCrew(
 
     /**
      * The hit that brings a DPS back on the team's tick: lost one, a 4-tick claw hit (from beside her or a crab); lost
-     * two, a 3-tick blowpipe. Else it waits.
+     * two, a 3-tick blowpipe; three, a 2-tick one. Else it waits.
      */
     private fun catchUp(b: Bot, lost: Int): String? {
         val here = room.real(b.player.coords)
@@ -974,6 +974,7 @@ class MaidenCrew(
             lost == 1 && b.owns("claws") && beside != null -> "claw4:${beside.key}"
             lost == 1 && b.owns("claws") && room.besideHer(here) -> "claw4"
             lost == 2 && b.owns("bp") -> "bp3"
+            lost == 3 && b.owns("bp") -> "bp"
             else -> null
         }
     }
