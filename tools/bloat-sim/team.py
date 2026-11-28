@@ -282,11 +282,12 @@ def run(proc, seed, record=False, weapons=None):
             first_act = min([p.first] + [k for k in p.walk_specs if k >= t])
             if down is None and t <= first_act and first_act - t <= 6:
                 target = plan_tile(p, room, t, hands_by, stallers, ready=first_act, side="any", still=True)
-            elif nxt is not None and nxt < 10 ** 6 and not p.stall and t >= p.first and down is None:
+            elif nxt is not None and nxt < 10 ** 6 and t >= p.first and down is None and (not p.stall or t > p.stall_cast + STALL_LOCK) and t < nxt:
+                hiding = True
                 target = sneak(p, room, t, nxt, hands_by, stallers, [q.pos for q in ps if q is not p and not q.dead and 8 <= q.pos[0] < 24])
             elif hiding:
                 danger = set().union(*[v for when, v in hands_by.items() if t < when <= t + 3]) if hands_by else set()
-                target = hide_tile(p, room, danger, 5 if nxt is None else min(nxt - t, 8))
+                target = hide_tile(p, room, danger, 5 if nxt is None else min(nxt - t, 8), stallers)
             elif not p.stall and down is None:
                 target = plan_tile(p, room, t, hands_by, stallers)
             else:
@@ -376,7 +377,7 @@ def run(proc, seed, record=False, weapons=None):
     return result
 
 
-def hide_tile(p, room, danger, lead):
+def hide_tile(p, room, danger, lead, stallers=()):
     """Out of his sight now and a tick on, clear of hands, near where he'll be in `lead` ticks; hugging the tank if it can."""
     fx, fy = future_sw(room, lead)
     bx, by = room.sw
@@ -384,7 +385,8 @@ def hide_tile(p, room, danger, lead):
     near = [c for c in OUTER if max(abs(c[0] - p.pos[0]), abs(c[1] - p.pos[1])) <= 6]
     def cost(c):
         seen = ray_clear(bx + 2, by + 2, *c) or ray_clear(nx + 2, ny + 2, *c)
-        return (c in danger, c not in RING_SET, seen, c in footprint(bx, by), abs(c[0] - fx - 2) + abs(c[1] - fy - 2))
+        watched = not p.stall and any(ray_clear(*a, *c) for a in stallers)
+        return (c in danger, c not in RING_SET, watched, seen, c in footprint(bx, by), abs(c[0] - fx - 2) + abs(c[1] - fy - 2))
     return min(near or OUTER, key=cost)
 
 
@@ -442,7 +444,8 @@ def plan_tile(p, room, t, hands_by, stallers, ready=None, side="front", still=Fa
             ahead = -ahead
         elif side == "any":
             ahead = 0
-        cost = (c in hand_at, ahead, d, ring, seen_now and bounce, seen_now) if still else (c in hand_at, ring, ahead, seen_now and bounce, seen_now, d)
+        staller_los = not p.stall and bounce
+        cost = (c in hand_at, ahead, d, ring, seen_now and bounce, seen_now) if still else (c in hand_at, ring, staller_los, ahead, seen_now and bounce, seen_now, d)
         if best_cost is None or cost < best_cost:
             best, best_cost = c, cost
     return best or goal_tile(p, nbx, nby, hand_at, stallers)
@@ -466,14 +469,23 @@ def sneak(p, room, t, swing_at, hands_by, stallers, others=()):
     best, best_cost = None, None
     near = [c for c in OUTER if max(abs(c[0] - p.pos[0]), abs(c[1] - p.pos[1])) <= 2 and steps_to(p.pos, c, bx, by) <= 2]
     lane = [c for c in near if (c in RING_SET or c == goal) and c not in landing_next]
+    cx, cy = nx + 2, ny + 2
+    away = lambda c: max(abs(c[0] - cx), abs(c[1] - cy))
+    if p.pos in landing_next:
+        back = [c for c in lane if away(c) >= away(p.pos) and steps_to(c, goal, bx, by) <= budget]
+        if back:
+            return min(back, key=lambda c: (ray_clear(nx + 2, ny + 2, *c), -away(c), steps_to(c, goal, bx, by)))
+        out = [c for c in near if c not in RING_SET and c not in landing_next and steps_to(p.pos, c, bx, by) == 1 and steps_to(c, goal, bx, by) <= budget]
+        if out:
+            return min(out, key=lambda c: steps_to(c, goal, bx, by))
     for c in lane or near:
         hidden = len(route(c, goal, bx, by, seen_set)) - 1
         to_goal = hidden if hidden <= budget else steps_to(c, goal, bx, by)
         if to_goal > budget:
             continue
         seen = ray_clear(nx + 2, ny + 2, *c) or ray_clear(bx + 2, by + 2, *c)
-        bounce = any(ray_clear(*q, *c) for q in exposed)
-        cost = (c in landing_next, seen, bounce, hidden > budget, to_goal, max(abs(c[0] - p.pos[0]), abs(c[1] - p.pos[1])))
+        bounce = any(ray_clear(*q, *c) for q in (stallers if not p.stall else exposed))
+        cost = (c in landing_next, bounce, seen, hidden > budget, to_goal, max(abs(c[0] - p.pos[0]), abs(c[1] - p.pos[1]))) if not p.stall else (c in landing_next, seen, bounce, hidden > budget, to_goal, max(abs(c[0] - p.pos[0]), abs(c[1] - p.pos[1])))
         if best_cost is None or cost < best_cost:
             best, best_cost = c, cost
     return best or goal
