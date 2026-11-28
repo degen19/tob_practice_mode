@@ -76,6 +76,8 @@ constructor(
     override fun ScriptContext.startup() {
         raids.travel = { p, r, a -> travel(p, r, a) }
         raids.rewatch = { p -> rewatch(p) }
+        raids.startGroup = { leader, group, room -> startGroup(leader, group, room) }
+        SoloBarrier.onStarted = { room -> followIn(room) }
         if (System.getenv("TOB_NODEATH") != null) org.rsmod.api.player.PracticeSettings.noDeaths = true
         onEvent<GameLifecycle.StartCycle> { tickRooms() }
         onEvent<GameLifecycle.LateCycle> {
@@ -160,9 +162,9 @@ constructor(
     /** Leaves the room you're in (or stops watching a bot team) for the lobby; from inside a script ([access]) the jump is made there. */
     private fun returnToLobby(player: Player, access: ProtectedAccess? = null) {
         val dest = raids.lobby ?: EXIT
-        val watched = watching(player)
+        val watched = watching(player) ?: roomOf(player)?.takeIf { it in trios }
         if (watched != null) {
-            endTrio(watched)
+            endTrio(watched, player)
         } else {
             val room = raids.byOwner[player.username] ?: return player.mes("You're not in the Theatre.")
             close(room)
@@ -364,6 +366,7 @@ constructor(
             org.rsmod.game.entity.util.PathingEntityCommon.telejump(bot, d.collision, room.at(room.entry))
         }
         groups[room] = group
+        seated[room] = crew.map { it.second!! }
         trios[room] = crewFor(room, crew.map { it.second!! to it.first.role }, params) ?: return null
         return room
     }
@@ -392,6 +395,60 @@ constructor(
         groups[room] = TobGroup.botTeam(owner.username, List(crew.size) { NyloRole.Melee })
         trios[room] = BloatCrew(room, crew.map { (seat, bot) -> bot!! to seat }, bots, plan)
         return room
+    }
+
+    /** Each team's members in seat order (Player 1 first), people and bots, by its room. */
+    private val seated = HashMap<SoloRoom, List<Player>>()
+    private var groupRuns = 0
+
+    private fun roomOf(player: Player): SoloRoom? = raids.byOwner[player.username] ?: seated.entries.firstOrNull { player in it.value }?.key
+
+    /**
+     * The lobby's Start: [leader]'s [group] goes to the corridor outside [where], each person in their seat and a bot,
+     * kitted for it, in every other one. The bots wait outside for one of the people to start the room. Null once it's
+     * done, else why it can't be.
+     */
+    private fun startGroup(leader: Player, group: TobGroup, where: TobRoom): String? {
+        val people = group.people.map { name -> d.players.firstOrNull { it.username == name } ?: return "$name isn't online." }
+        if (people.any { roomOf(it) != null || watching(it) != null }) return "Someone in the team is already in the Theatre."
+        if (group.bots.isNotEmpty()) {
+            val sizes = BOT_TEAM_SIZES[where] ?: return "There are no bots for ${where.label} yet: seat only people, or start at the Maiden."
+            if (group.size !in sizes) return "The bots play ${where.label} as a team of ${sizes.first}${if (sizes.last > sizes.first) " to ${sizes.last}" else ""} for now."
+        }
+        val maiden = where == TobRoom.MAIDEN
+        val quad = group.size == 4
+        val tag = "g${++groupRuns}"
+        val members =
+            group.seats.map { seat ->
+                seat.person?.let { name -> people.first { it.username == name } }
+                    ?: spawnCrewBot("${seat.role.name}$tag", seat, if (maiden) NyloLoadout.maidenSets(seat.role, quad) else NyloLoadout.sets(seat.role), maiden)
+            }
+        if (members.any { it == null }) {
+            for (m in members) if (m != null) bots.remove(m)
+            return "There's no room for the bots right now."
+        }
+        val team = members.map { it!! }
+        for (p in team) if (p in bots.all) raids.undying += p
+        travel(leader, where)
+        val room = raids.byOwner[leader.username]
+        if (room == null) {
+            for (p in team) if (p in bots.all) bots.remove(p)
+            return "No instance space free; try again shortly."
+        }
+        for (p in team) {
+            if (p === leader) continue
+            room.helpers += p
+            org.rsmod.game.entity.util.PathingEntityCommon.telejump(p, d.collision, room.at(room.entry))
+            if (p in bots.all) continue
+            p.npcViewDistance = VIEW_DISTANCE
+            p.playerViewDistance = VIEW_DISTANCE
+            TobHud.open(p, d.eventBus)
+            p.mes("${leader.displayName} takes the team to ${where.label}.")
+        }
+        groups[room] = group
+        seated[room] = team
+        if (group.bots.isNotEmpty()) trios[room] = crewFor(room, team.zip(group.roles), "") ?: return "The bots can't play ${where.label}."
+        return null
     }
 
     private fun crewFor(room: SoloRoom, members: List<Pair<Player, NyloRole>>, params: String): BotCrew? =
@@ -427,27 +484,41 @@ constructor(
 
     private fun watching(player: Player): SoloRoom? = spectators.entries.firstOrNull { player in it.value }?.key
 
-    /** The potato's Restart room while watching: the room and its bots start over from outside the barrier; you stay put. */
+    /**
+     * The potato's Restart room while watching a bot team, or in a team with bots: the room and its bots start over from
+     * outside the barrier. Someone watching stays put; the team's people go back outside with the bots.
+     */
     private fun rewatch(player: Player): Boolean {
-        val room = watching(player) ?: return false
+        val room = watching(player) ?: roomOf(player)?.takeIf { it in trios } ?: return false
         val seats = groups[room]?.seats ?: return false
-        val crew = seats.zip(listOf(room.owner) + room.helpers)
+        val crew = seats.zip(seated[room] ?: (listOf(room.owner) + room.helpers))
         room.reset()
         finished -= room
         readied -= room
         val maiden = room.id == TobRoom.MAIDEN
-        for ((seat, bot) in crew) {
-            refit(bot, seat, maiden, seats.size == 4)
-            org.rsmod.game.entity.util.PathingEntityCommon.telejump(bot, d.collision, room.at(room.entry))
+        for ((seat, member) in crew) {
+            if (member in bots.all) refit(member, seat, maiden, seats.size == 4)
+            org.rsmod.game.entity.util.PathingEntityCommon.telejump(member, d.collision, room.at(room.entry))
         }
         trios[room] = crewFor(room, crew.map { (seat, bot) -> bot to seat.role }, "") ?: return false
         return true
     }
 
-    private fun endTrio(room: SoloRoom) {
-        val crew = listOf(room.owner) + room.helpers
+    /** Ends a bot team's room: its bots log out, and anyone in it but [leaving] (who makes their own way) goes to the lobby. */
+    private fun endTrio(room: SoloRoom, leaving: Player? = null) {
+        val crew = seated[room] ?: (listOf(room.owner) + room.helpers)
+        for (p in crew) {
+            if (p in bots.all || p === leaving || !p.isSlotAssigned) continue
+            TobHud.close(p, d.eventBus)
+            p.npcViewDistance = null
+            p.playerViewDistance = null
+            val dest = raids.lobby ?: EXIT
+            protectedAccess.launch(p) { telejump(dest, TeleportType.Exempt) }
+            p.mes("Your team returns to the lobby.")
+        }
         trios.remove(room)
         groups.remove(room)
+        seated.remove(room)
         readied.remove(room)
         finished.remove(room)
         auto.remove(room.owner)
@@ -529,9 +600,11 @@ constructor(
 
     /** A trio's tick: start on a 4 like a team does, then play until the crew's run is over. */
     private fun trioTick(room: SoloRoom, trio: BotCrew) {
-        val crew = listOf(room.owner) + room.helpers
+        val crew = seated[room] ?: (listOf(room.owner) + room.helpers)
+        val people = crew.filter { it !in bots.all }
         if (room.t < 0) {
             if (d.mapClock.cycle - room.builtAt < 4) return
+            if (people.isNotEmpty()) return ready(room, trio, crew)
             if (trio.walksIn) return walkIn(room, trio, crew)
             // entering on the right tick (Blert: wave 1 on room tick 4, Vasilias on a multiple of 4)
             if (room.instanceTick != TRIO_START_TICK) return
@@ -555,7 +628,7 @@ constructor(
         }
         val watchers = spectators[room].orEmpty()
         if (room in finished) {
-            if (watchers.none { it.isSlotAssigned && room.contains(it.coords) }) endTrio(room)
+            if ((watchers + people).none { it.isSlotAssigned && room.contains(it.coords) }) endTrio(room)
             return
         }
         trio.tick()
@@ -563,9 +636,9 @@ constructor(
         val done = trio.doneAt()
         if (done < 0 || room.t < done + linger) return
         logger.info { "${room.id.name.lowercase()} trio ${room.owner.username}: ${trio.summary()}" }
-        val staying = watchers.filter { it.isSlotAssigned }
+        val staying = (watchers + people).filter { it.isSlotAssigned }
         if (staying.isEmpty()) return endTrio(room)
-        for (p in staying) p.mes("The bots are done: ${trio.summary()}. Restart room on the potato for another run; ::tob stop to leave.")
+        for (p in staying) p.mes("The bots are done: ${trio.summary()}. Restart room on the potato for another run; the vyrewatch takes you back to the lobby.")
         finished += room
     }
 
@@ -594,6 +667,39 @@ constructor(
             val here = room.real(p.coords)
             val (tile, barrier) = barriers.minByOrNull { (at, _) -> kotlin.math.abs(at.x - here.x) + kotlin.math.abs(at.z - here.z) } ?: return
             bots.opLoc(p, barrier.id, room.at(tile))
+        }
+    }
+
+    /** A team with people: the bots pot up outside on their spots, and wait for one of the people to start the room. */
+    private fun ready(room: SoloRoom, trio: BotCrew, crew: List<Player>) {
+        if (!readied.add(room)) return
+        val tiles = trio.starts()
+        for ((i, p) in crew.withIndex()) {
+            if (p !in bots.all) continue
+            val at = if (trio.walksIn) tiles.getOrNull(i) ?: room.entry else room.entry
+            if (room.real(p.coords) != at) org.rsmod.game.entity.util.PathingEntityCommon.telejump(p, d.collision, room.at(at))
+            potUp(p)
+            trio.prepare(p)
+            SoloBarrier.noAsk += p
+        }
+    }
+
+    /** One of a team's people has started [room]: its bots go in with them on the same tick (through the barrier, or on to their spots). */
+    private fun followIn(room: SoloRoom) {
+        val trio = trios[room] ?: return
+        val crew = seated[room] ?: return
+        if (crew.all { it in bots.all }) return
+        if (!trio.walksIn) {
+            for ((p, at) in crew.zip(trio.starts())) if (p in bots.all) org.rsmod.game.entity.util.PathingEntityCommon.telejump(p, d.collision, room.at(at))
+            return
+        }
+        val barriers = room.findLocs(BARRIER)
+        for (p in crew) {
+            if (p !in bots.all) continue
+            val here = room.real(p.coords)
+            val (_, barrier) = barriers.minByOrNull { (at, _) -> kotlin.math.abs(at.x - here.x) + kotlin.math.abs(at.z - here.z) } ?: return
+            val type = dev.openrune.ServerCacheManager.getObject(barrier.id) ?: return
+            protectedAccess.launch(p) { SoloBarrier.pass(this, room, org.rsmod.game.loc.BoundLocInfo(barrier, type).bounds()) }
         }
     }
 
@@ -662,6 +768,9 @@ constructor(
 
     companion object {
         const val VYREWATCH = "npc.tob_lobby_vyrewatch"
+
+        /** The team sizes each room's bots play beside people (rooms not here have no bots for it yet). */
+        val BOT_TEAM_SIZES = mapOf(TobRoom.MAIDEN to 3..4, TobRoom.NYLOCAS to 3..3)
 
         /** NPCs and players in a room drawn from this far (3x the game's 15): the whole room, end to end. */
         const val VIEW_DISTANCE = 45
@@ -734,6 +843,9 @@ object SoloBarrier {
     /** Bots, who go in without the "ready to fight?" question. */
     val noAsk = HashSet<Player>()
 
+    /** Set by [SoloRaidScript]: someone just started [SoloRoom] at its barrier (a team's bots go in with them). */
+    var onStarted: ((SoloRoom) -> Unit)? = null
+
     suspend fun pass(access: ProtectedAccess, room: SoloRoom, barrier: Bounds) {
         with(access) {
             val here = room.real(player.coords)
@@ -759,7 +871,10 @@ object SoloBarrier {
                     p.z in zs -> CoordGrid(if (p.x < xs.first) xs.last + 1 else xs.first - 1, p.z, p.level)
                     else -> return
                 }
-            if (!inside && room.t < 0 && !watching) room.start()
+            if (!inside && room.t < 0 && !watching) {
+                room.start()
+                onStarted?.invoke(room)
+            }
             val dir =
                 when {
                     dest.x > p.x -> constants.em_face_east

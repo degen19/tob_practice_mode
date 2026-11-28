@@ -110,6 +110,9 @@ class SoloRaids {
     /** Set by [SoloRaidScript]: the potato's Restart room for someone watching a bot trio (false: they aren't). */
     var rewatch: ((Player) -> Boolean)? = null
 
+    /** Set by [SoloRaidScript]: the lobby's Start, a team's [TobGroup] taken to a room; null once done, else why not. */
+    var startGroup: ((Player, TobGroup, TobRoom) -> String?)? = null
+
     /** Set by the lobby once it's built: its spawn tile, where leaving the Theatre takes you. */
     var lobby: CoordGrid? = null
 
