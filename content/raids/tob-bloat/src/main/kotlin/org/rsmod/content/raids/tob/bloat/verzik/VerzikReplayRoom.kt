@@ -18,9 +18,9 @@ import org.rsmod.api.instances.InstanceSession
 import org.rsmod.api.player.stat.baseHitpointsLvl
 import org.rsmod.api.player.stat.hitpoints
 import org.rsmod.api.player.stat.statHeal
-import org.rsmod.api.player.vars.boolVarBit
 import org.rsmod.api.player.stat.statRestore
 import org.rsmod.api.player.stat.statSub
+import org.rsmod.api.player.vars.boolVarBit
 import org.rsmod.api.repo.loc.LocRepository
 import org.rsmod.api.repo.npc.NpcRepository
 import org.rsmod.api.repo.obj.ObjRepository
@@ -43,16 +43,16 @@ import org.rsmod.routefinder.collision.CollisionFlagMap
 import org.rsmod.routefinder.flag.CollisionFlag
 
 /**
- * One of Blert's fastest Verzik rooms ([VerzikBlert]) played back 1:1: each bot stands on its player's recorded tile
+ * A Verzik raid ([VerzikReplays]: one of Blert's fastest, or one of verzikSim's) played back 1:1: each bot stands on its player's recorded tile
  * every tick (walking one tile, running two, thrown back by her bounce, jumping otherwise), wears the recorded gear and
  * overhead, and shows each recorded attack as the server's combat would ([BlertLooks]); every NPC spawns, moves,
  * changes form and dies where and when it did, its hitpoints as recorded on our scale; Verzik's attacks, deaths,
  * rises, reds and purples look and sound as in the solo room ([VerzikLooks]). [botDrift] and [npcDrift] count the
- * ticks anything stood off its recorded tile.
+ * ticks anything stood off its recorded tile, [hpDrift] the ticks her hitpoints weren't the raid's.
  */
 class VerzikReplayRoom(
     val session: InstanceSession,
-    val raid: VerzikBlert.Raid,
+    val raid: VerzikReplays.Raid,
     private val at: (Int, Int) -> CoordGrid,
     private val instances: InstanceManager,
     private val npcRepo: NpcRepository,
@@ -64,7 +64,7 @@ class VerzikReplayRoom(
     val bots = ArrayList<Player>()
     val watchers = ArrayList<Player>()
     private val npcs = HashMap<Int, Npc>()
-    private val shown = HashMap<Int, VerzikBlert.Step>()
+    private val shown = HashMap<Int, VerzikReplays.Step>()
     private val pillarLocs = HashMap<Int, LocInfo>()
     private val locs = ArrayList<LocInfo>()
     private val pending = ArrayList<Pair<Int, () -> Unit>>()
@@ -119,6 +119,8 @@ class VerzikReplayRoom(
         private set
     var npcDrift = 0
         private set
+    var hpDrift = 0
+        private set
     var checked = 0
         private set
 
@@ -171,7 +173,8 @@ class VerzikReplayRoom(
         for (i in npcs.keys.toList()) {
             val npc = npcs[i] ?: continue
             npc.mode = NpcMode.None
-            stepsAt.getValue(i)[t]?.let { step(i, npc, it) }
+            val step = stepsAt.getValue(i)[t]
+            if (step != null) step(i, npc, step) else shown[i]?.let { hitpoints(npc, it) }
         }
         pivotsAt[t]?.forEach { i ->
             val n = npcs[i] ?: return@forEach
@@ -205,6 +208,7 @@ class VerzikReplayRoom(
         for ((i, npc) in npcs) {
             val s = shown[i] ?: continue
             if (npc.isSlotAssigned && npc.coords != at(s.x, s.y)) npcDrift++
+            if (i == her && npc.isSlotAssigned && ours(s).second > 0 && npc.hitpoints != ours(s).first.coerceIn(0, ours(s).second)) hpDrift++
         }
     }
 
@@ -257,7 +261,7 @@ class VerzikReplayRoom(
     }
 
     /** The Dawnbringer on the floor from the tick it's dropped until it's picked up, where Blert saw it. */
-    private fun dawnbringer(d: VerzikBlert.Drop) {
+    private fun dawnbringer(d: VerzikReplays.Drop) {
         dawnOnFloor?.let { objRepo.del(it) }
         dawnOnFloor = if (d.dropped) objRepo.add(DAWNBRINGER, at(d.x, d.y), Int.MAX_VALUE) else null
         fx("dawn ${if (d.dropped) "dropped" else "picked"} at ${d.x},${d.y}")
@@ -323,7 +327,7 @@ class VerzikReplayRoom(
         blocked.clear()
     }
 
-    private fun under(tile: CoordGrid, sw: VerzikBlert.Step, size: Int) = tile.x in sw.x until sw.x + size && tile.z in sw.y until sw.y + size
+    private fun under(tile: CoordGrid, sw: VerzikReplays.Step, size: Int) = tile.x in sw.x until sw.x + size && tile.z in sw.y until sw.y + size
 
     private fun inArena(c: CoordGrid) = c.x in ARENA_X && c.z in ARENA_Y
 
@@ -346,7 +350,7 @@ class VerzikReplayRoom(
         b.rebuildAppearance()
     }
 
-    private fun newNpc(i: Int, s: VerzikBlert.Step): Npc? {
+    private fun newNpc(i: Int, s: VerzikReplays.Step): Npc? {
         val id = if (s.type == INITIAL_QUICKSTART.asRSCM(RSCMType.NPC)) INITIAL.asRSCM(RSCMType.NPC) else s.type
         val type = ServerCacheManager.getNpc(id) ?: return null
         val npc = Npc(type, at(s.x, s.y))
@@ -355,6 +359,7 @@ class VerzikReplayRoom(
         npc.respawns = false
         npc.moveRestrict = MoveRestrict.PassThru
         npc.ignoreCombatInteractions = true
+        npc.regenClock = Int.MAX_VALUE
         instances.attachNpc(session.id, npc)
         npcs[i] = npc
         shown[i] = s
@@ -398,7 +403,7 @@ class VerzikReplayRoom(
         if (v != null && v.visType.id == P3.asRSCM(RSCMType.NPC) && list.any { raid.npcs[it].type0 in crawlerStyle }) looks.summonCrawler(v)
     }
 
-    private fun step(i: Int, npc: Npc, s: VerzikBlert.Step) {
+    private fun step(i: Int, npc: Npc, s: VerzikReplays.Step) {
         val was = shown[i] ?: s
         if (s.type != was.type) {
             form(i, npc, was, s)
@@ -433,7 +438,7 @@ class VerzikReplayRoom(
      * animation carries over), the P2 rises a tick after it appears, the P2-to-P3 form plays her rise, the death bat comes
      * up in the middle of where she fell; her first form turns on the spot.
      */
-    private fun form(i: Int, npc: Npc, was: VerzikBlert.Step, s: VerzikBlert.Step) {
+    private fun form(i: Int, npc: Npc, was: VerzikReplays.Step, s: VerzikReplays.Step) {
         if (was.type == INITIAL.asRSCM(RSCMType.NPC) || was.type == INITIAL_QUICKSTART.asRSCM(RSCMType.NPC)) {
             ServerCacheManager.getNpc(s.type)?.let { npc.transmog(it, Int.MAX_VALUE) }
             shown[i] = s
@@ -449,7 +454,7 @@ class VerzikReplayRoom(
         }
     }
 
-    private fun hitpoints(npc: Npc, s: VerzikBlert.Step): Pair<Int, Int> {
+    private fun hitpoints(npc: Npc, s: VerzikReplays.Step): Pair<Int, Int> {
         val (hp, base) = ours(s)
         if (base > 0) {
             npc.baseHitpointsLvl = base
@@ -459,7 +464,7 @@ class VerzikReplayRoom(
     }
 
     /** Blert's hitpoints on our scale: its Verzik P2/P3 (and so red crab) bases are off; the fraction left is right. */
-    private fun ours(s: VerzikBlert.Step): Pair<Int, Int> {
+    private fun ours(s: VerzikReplays.Step): Pair<Int, Int> {
         if (s.base <= 0) return 0 to 0
         val p2 = VerzikRules.P2_HP.getValue(raid.scale)
         val base =
@@ -580,7 +585,7 @@ class VerzikReplayRoom(
         }
     }
 
-    private fun attack(a: VerzikBlert.Attack) {
+    private fun attack(a: VerzikReplays.Attack) {
         val bot = bots.getOrNull(a.player) ?: return
         val target = npcs[a.target]?.takeIf { it.isSlotAssigned }
         if (target == null) {
@@ -590,14 +595,14 @@ class VerzikReplayRoom(
         attackLooks.attack(bot, a.name, a.anim, a.weapon, target)
     }
 
-    private fun spell(s: VerzikBlert.Spell) {
+    private fun spell(s: VerzikReplays.Spell) {
         val bot = bots.getOrNull(s.player) ?: return
         bots.getOrNull(s.target)?.let { bot.facePlayer(it) }
         if (s.anim >= 0) RSCM.getReverseMapping(RSCMType.SEQ, s.anim)?.let { bot.anim(it, priority = ATTACK_PRIORITY) }
         if (s.gfx >= 0) RSCM.getReverseMapping(RSCMType.SPOTANIM, s.gfx)?.let { (bots.getOrNull(s.target) ?: bot).spotanim(it) }
     }
 
-    private fun herAttack(h: VerzikBlert.Her) {
+    private fun herAttack(h: VerzikReplays.Her) {
         val v = npcs[h.npc]?.takeIf { it.isSlotAssigned } ?: return
         val vs = shown[h.npc] ?: return
         val vc = centre(vs, v.size)
@@ -637,7 +642,7 @@ class VerzikReplayRoom(
         return centre(n.steps.first(), ServerCacheManager.getNpc(purple)?.size ?: 1)
     }
 
-    private fun purpleNear(): Pair<Npc, VerzikBlert.Step>? {
+    private fun purpleNear(): Pair<Npc, VerzikReplays.Step>? {
         val purple = VerzikRules.PURPLE.asRSCM(RSCMType.NPC)
         val (i, n) = npcs.entries.firstOrNull { (i, n) -> n.isSlotAssigned && shown[i]?.type == purple && raid.npcs[i].death.let { it == null || it > clock } } ?: return null
         return n to shown.getValue(i)
@@ -657,7 +662,7 @@ class VerzikReplayRoom(
         return null
     }
 
-    private fun centre(s: VerzikBlert.Step, size: Int) = CoordGrid(s.x + size / 2, s.y + size / 2, 0)
+    private fun centre(s: VerzikReplays.Step, size: Int) = CoordGrid(s.x + size / 2, s.y + size / 2, 0)
 
     fun remove() {
         unblock()

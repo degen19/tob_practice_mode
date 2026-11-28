@@ -2,13 +2,16 @@
 
 **Files:**
 - `solo/VerzikSolo.kt`: the room (P1 to P3 and the transitions);
-- `bloat/verzik/*`: the live room;
-- `bloat/VVerzikScript.kt`: the practice commands;
-- `resources/verzik/verzik5.json.gz`: 5s plans exported from verzikSim (`solve5.mjs`, `vexport.mjs`);
-- `resources/verzik/blert.json.gz`: Blert's 50 fastest rooms per scale (2-5), replayed by `::verzik blert <scale> [rank]`
-  (`bloat/verzik/VerzikReplayRoom.kt`; exported by `tools/blert/verzik.py export`);
-- `bloat/verzik/VerzikLooks.kt`: how her room looks and sounds, shared by the replay and the sim's raids;
-  `bloat/BlertLooks.kt`: a recorded attack shown as the server's combat shows it.
+- `bloat/VVerzikScript.kt`: the practice commands - `::verzik [2-5] [median | top10 | slow | fail | time | seed vN]`
+  plays one of verzikSim's raids, `::verzik blert <2-5> [rank]` one of Blert's 50 fastest; `VERZIK_SELFTEST` runs them
+  headless and logs tile and hitpoint drift; `VERZIK_FX=1` traces every effect with its tick;
+- `bloat/verzik/VerzikReplayRoom.kt`: the room both play in; `VerzikReplays.kt`: the raids;
+  `VerzikLooks.kt`: how her room looks and sounds; `bloat/BlertLooks.kt`: a bot's attack as combat shows it;
+- `resources/verzik/`: `blert.json.gz` (Blert's rooms, `tools/blert/verzik.py export`); `sim.json.gz` (300 sim raids
+  a scale: `VERZIKSIM=<sim> node solve.mjs <n>`, `node vexport.mjs <n> 300 /tmp/verzik<n>.json.gz`, then
+  `node simreplay.mjs blert.json.gz <tools/blert/defs> sim.json.gz 2=... 3=... 4=... 5=...`); `cfgs<n>.json`, the
+  chart template's setup with the solver's P1 per scale. A sim raid's movement comes from a Blert raid of its scale,
+  time-warped phase by phase onto the sim's; its attacks, her attacks and hitpoints are the sim's.
 
 **verzikSim.JS** (`degen19/verzikSim.JS`) is the Verzik sim: Monte Carlo, 2–5 man, an optimizer and solver, and the
 chart template. Read its `HANDOFF.md`, `README.md` and `CONVENTIONS.md`.
@@ -38,6 +41,10 @@ from Blert and build the PPO learner to optimize the room at each scale.
 - verzikSim's Boak blocks give the same cost for West once Blert's attack tick is taken as the sim's tick -2
   (3 / 2 / 1); East gives 2 / 1 / 1 where real players lose 3 / 2 / 1. To settle: which tick Blert's NPC attack is in
   the sim's count, then East's blocks.
+
+**The sim's setup vs Blert:** the chart template has no purple DC at 5s (and the other scales' solved setups the
+same), so in the sim the purple heals her every 4 ticks until reds (~160 HP); every top Blert team blowpipes it dead
+13-15 ticks after it lands. That's the lobby's procedure to set.
 
 **What Blert shows (`tools/blert`, top 50 per scale):**
 - Her P1 blast and her P2 spark both hurt 2 ticks after her attack (537 of 566, 320 of 345).
