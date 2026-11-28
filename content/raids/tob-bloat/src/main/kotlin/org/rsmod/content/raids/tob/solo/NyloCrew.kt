@@ -83,7 +83,7 @@ class NyloCrew(
             println("nylo ${members[0].first.username} t${room.t} alive " + everyone.joinToString(" ") { "w${it.wave}${if (it.big) "B" else ""}${it.style}:${it.npc.hitpoints}/${room.lifeLeft(it)}${if (it.nulledBy.isNotEmpty()) "n" + it.nulledBy.joinToString("") { p -> p.username.take(2) } else ""}${if (it.doomed) "d" else ""}${if (it.onPillar) "p" + room.real(it.npc.coords).let { c -> "@${c.x},${c.z}" } + if (meleeReach(it)) "+" else "-" else ""}" })
         }
         for ((bot, role) in members) {
-            if (!bot.isSlotAssigned || bot.hitpoints <= 0) continue
+            if (!bot.isSlotAssigned || bot.hitpoints <= 0 || bot !in bots.all) continue
             if (bot.actionDelay > now + 1) {
                 if (!role.freezes && bot.vars[DC_COOLDOWN] == 0) bots.spell(bot, DEATH_CHARGE)
                 continue

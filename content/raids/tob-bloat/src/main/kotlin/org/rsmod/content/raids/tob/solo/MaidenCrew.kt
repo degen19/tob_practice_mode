@@ -209,7 +209,7 @@ class MaidenCrew(
         if (!charged) {
             charged = true
             for (b in crew) {
-                if (b.role.freezes) continue
+                if (b.role.freezes || b.player !in bots.all) continue
                 VarPlayerIntMapSetter.set(b.player, DC_COOLDOWN, 1)
                 b.player.queue(DC_EXPIRE, DC_LEFT)
             }
@@ -227,7 +227,7 @@ class MaidenCrew(
         val flinching = herAttack()
         for (b in crew) {
             val p = b.player
-            if (!p.isSlotAssigned || p.hitpoints <= 0) continue
+            if (!p.isSlotAssigned || p.hitpoints <= 0 || p !in bots.all) continue
             protect(b)
             if (p in flinching || !room.inArena(room.real(p.coords)) || t < FIRST_ACT) continue
             if (!b.role.freezes && spells(b)) continue
@@ -268,7 +268,7 @@ class MaidenCrew(
     /** A swing going off this cycle at a crab no order of this swing picked (the game's next swing on its last target) is stopped. */
     private fun unaimed(b: Bot) {
         val p = b.player
-        if (p.actionDelay > clock.cycle) return
+        if (p.actionDelay > clock.cycle || p !in bots.all) return
         val target = current(p)?.takeIf { it !== her } ?: return
         if (b.aimed === target && b.aimedFor >= p.actionDelay) return
         if (b.order?.let { it.target === target && !it.held } == true) return

@@ -58,7 +58,6 @@ constructor(private val d: SoloDeps, private val raids: SoloRaids, private val b
             PathingEntityCommon.telejump(player, d.collision, at.translate(SPAWN.first, SPAWN.second))
         }
         for ((npc, room) in ENTRANCES) onOpNpc1(npc) { enter(room) }
-        onOpNpc1(TEACHER) { mes("Mr. Mordaut: Build Team is being set up. For now, click a boss to go in, or use ::watch.") }
         onOpNpc1(TM19) { mes("TM 19: Behind that door, a random room, role and scale. I'll brief you once it's open.") }
         onOpLoc1(CASTLE_DOOR) { if (inLobby(player)) mes("The castle door is locked for now: the random raid isn't ready yet.") }
         onOpLoc1(NOTICE_BOARD) { if (inLobby(player)) mes("The party board isn't up yet: invites and join requests are coming.") }
