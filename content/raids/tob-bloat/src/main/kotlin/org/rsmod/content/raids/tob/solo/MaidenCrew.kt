@@ -941,12 +941,12 @@ class MaidenCrew(
     }
 
     /**
-     * The team stays on its tick: the ranger and melee swing together (the mage's tbows go two ticks after theirs - 216
+     * The team stays on its tick until the 30s proc (no proc comes after it): the ranger and melee swing together (the mage's tbows go two ticks after theirs - 216
      * of 221 in Blert's trios - so a DPS off it throws her shots and freezes off too). The tick is the last one both
      * swung on; a DPS that's slipped off it (a late Dinh's, a walk) waits to swing on it again.
      */
     private fun offTick(b: Bot, tt: Int): Boolean {
-        if (b.dps == null) return false
+        if (b.dps == null || phase == 0) return false
         val other = crew.firstOrNull { it !== b && it.dps != null && it.player.isSlotAssigned && it.player.hitpoints > 0 } ?: return false
         if (other.next == tt) {
             teamTick = Math.floorMod(tt, SWING)
