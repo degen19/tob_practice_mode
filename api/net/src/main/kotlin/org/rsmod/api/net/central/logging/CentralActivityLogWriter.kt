@@ -165,6 +165,7 @@ constructor(
      * (Central worlds-link no longer writes login logs.)
      */
     public fun logPlayerLogin(player: Player) {
+        if (player.characterId <= 0) return
         val repo = repository ?: return
         val worldId = config.world
         val worldType = player.worldType.key
@@ -197,6 +198,7 @@ constructor(
         player: Player,
         centralSessionId: Long? = null,
     ) {
+        if (player.characterId <= 0) return
         val repo = repository ?: return
         val worldId = config.world
         val worldType = player.worldType.key
