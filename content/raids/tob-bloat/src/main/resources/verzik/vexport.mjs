@@ -2,9 +2,10 @@
 // log, through the Show raid trace. node vexport.mjs N out.json
 import { readFileSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
-import { runOneLogged } from '/root/verzikSim.JS/engine/optimize.js';
-import { Rng } from '/root/verzikSim.JS/engine/rng.js';
-import { verzTrace } from '/root/verzikSim.JS/verzraid.js';
+const SIM = process.env.VERZIKSIM || new URL('../../../../../../../../verzikSim.JS/', import.meta.url).pathname;
+const { runOneLogged } = await import(`${SIM}/engine/optimize.js`);
+const { Rng } = await import(`${SIM}/engine/rng.js`);
+const { verzTrace } = await import(`${SIM}/verzraid.js`);
 const cfgs = JSON.parse(readFileSync('cfgs5.json', 'utf8'));
 const n = Number(process.argv[2] || 300), raids = [];
 for (let k = 1; k <= n; k++) {
