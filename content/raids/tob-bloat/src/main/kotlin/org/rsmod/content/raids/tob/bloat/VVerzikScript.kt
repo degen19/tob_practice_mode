@@ -134,6 +134,8 @@ constructor(
         room.start()
         replays[key] = room
         if (player != null) {
+            room.watchers += player
+            room.throne(false)
             protectedAccess.launch(player) { telejump(at(VerzikRules.WATCH_X, VerzikRules.WATCH_Y), TeleportType.Exempt) }
             player.npcViewDistance = 32
         }

@@ -26,14 +26,14 @@ class VerzikLooks(
         v.anim(P1_ATTACK)
         for ((p, pillar) in targets) {
             if (pillar != null) {
-                val lands = projTiles(P1_PROJ, vCentre, pillar, delay = P1_LANDS * 30, speed = 0, startHeight = 120, endHeight = 60, angle = P1_ANGLE, start = P1_LAUNCH)
+                val lands = projTiles(P1_PROJ, vCentre, pillar, delay = P1_LAND_CYCLES, speed = 0, startHeight = P1_START_HEIGHT, endHeight = 60, angle = P1_ANGLE, start = P1_LAUNCH)
                 later(lands) {
                     gfx(P1_IMPACT_PILLAR, pillar, height = 60)
                     sound(PILLAR_HIT_SOUND, pillar)
                 }
                 continue
             }
-            val lands = flight(P1_PROJ, v, p, start = P1_LAUNCH, end = P1_LANDS * 30, startHeight = 120, angle = P1_ANGLE)
+            val lands = flight(P1_PROJ, v, p, start = P1_LAUNCH, end = P1_LAND_CYCLES, startHeight = P1_START_HEIGHT, angle = P1_ANGLE)
             later(lands) {
                 p.spotanim(P1_IMPACT)
                 worldRepo.soundArea(p, P1_IMPACT_SOUND, radius = SOUND_RADIUS)
@@ -79,6 +79,9 @@ class VerzikLooks(
     }
 
     fun summonReds(v: Npc) = v.anim(P2_HEAL)
+
+    /** The shield's dome round her (a real raid: it holds for the shield's ticks); resent each tick, it lasts one. */
+    fun shield(v: Npc) = v.spotanim(SHIELD_GFX)
 
     fun spawning(tile: CoordGrid) = gfx(SPAWNING_GFX, tile)
 
@@ -180,10 +183,12 @@ class VerzikLooks(
         const val SOUND_RADIUS = 15
 
         /** Blert: her P1 blast hurts 2 ticks after her attack (537 of 566), the P2 spark too (320 of 345). */
-        const val P1_LANDS = 2
         const val ZAP_LANDS = 2
-        const val P1_LAUNCH = 20
-        const val P1_ANGLE = 40
+        /** A real raid frame by frame: the orb leaves her hands ~1.5 ticks into her attack, high, and lands ~2.3 ticks in. */
+        const val P1_LAUNCH = 45
+        const val P1_LAND_CYCLES = 70
+        const val P1_START_HEIGHT = 140
+        const val P1_ANGLE = 16
         const val URN_TICKS = 6
         const val ATHANATOS_FLIGHT = 6
         const val RED_HEAL_SPEED = 4
@@ -208,6 +213,7 @@ class VerzikLooks(
         const val PURPLE_HEAL_PROJ = "spotanim.verzik_phase2_poisonglobule"
         const val SPAWNING_GFX = "spotanim.verzik_phase2_spawning"
         const val RED_SPAWN_SEQ = "seq.elemental_spawn"
+        const val SHIELD_GFX = "spotanim.verzik_phase2_poisonaura"
         const val PURPLE_SPAWN_SEQ = "seq.tob_spider_tank_spawn"
         const val RED_POP_SEQ = "seq.elemental_death"
         const val RED_HEAL_PROJ = "spotanim.verzik_phase2_bloodproj"

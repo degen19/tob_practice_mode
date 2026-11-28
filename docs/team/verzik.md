@@ -37,10 +37,13 @@ chart template. Read its `HANDOFF.md`, `README.md` and `CONVENTIONS.md`.
 **Bugs from the owner's first look at `::verzik blert` (04d9848), and their state:**
 1. P1 tile: she was the size-1 `verzik_initial_quickstart` transmogged into P1, so her model sat west of the throne.
    Now each form is a new NPC of its own size; the start form is `verzik_initial` (size 5) at Blert's tile. Checked:
-   size 5 at 3166,4323 on the 5x4 throne (3166,4324). Needs eyes.
-2. P1 orb: lands 2 ticks after her attack (Blert), leaving 20 client cycles in on a steeper arc. Checked: every orb
-   lands on the tick the recorded player hitpoints drop. Launch frame and arc are a guess until a real-game capture
-   (`get_projectile_history`).
+   size 5 at 3166,4323 on the 5x4 throne (3166,4324). The real raid (the 4s WR clip) shows the second cause: her
+   seated forms are drawn in their own throne, so the empty throne (`tob_verzik_throne_visible`) must be hidden
+   until she climbs down; it was left visible (the solo room sets it at its start), so two thrones showed. The replay
+   now hides it until her climb-down form. The solo room has the same bug (to port once the replay is confirmed).
+2. P1 orb: the real raid frame by frame: she winds up, the orb leaves her hands ~1.5 ticks in (45 client cycles),
+   high, and lands ~2.3 ticks in (70), as Blert's +2 hurt. Checked: every orb lands on the tick the recorded player
+   hitpoints drop.
 3. P1 death / transition: her death animation now plays when she dies (4 ticks before the climb-down form), and every
    form comes in as a new NPC on Blert's tile. Checked: NPC drift 0 on 8 raids, her 3 deaths each raid.
 4. Dawnbringer on the floor: from each Blert drop to its pick-up, on Blert's tile. Checked against the recorded drops.
@@ -49,10 +52,14 @@ chart template. Read its `HANDOFF.md`, `README.md` and `CONVENTIONS.md`.
 6. Hitsplats on players: from the recorded hitpoints (Blert has them for the players who recorded).
 7. Reds' spawn: `elemental_spawn` on their first tick (was a tick late); the purple climbs out (`tob_spider_tank_spawn`).
 8. Nylocas deaths: turn for 2 ticks (detonate animation), then pop on Blert's tick; killed ones pivot, then pop.
-9. P2 shield effect: not done; which spotanim the shield's cloud is needs a real-game capture (`get_effect_history`).
+9. P2 shield: the real raid shows a translucent dome round her for the shield's ticks; the cache's
+   `verzik_phase2_poisonaura` (a druid's shield, widened) is that dome. Shown each tick of the 10-tick shield. Needs
+   eyes to confirm it's the right one.
 10. Webs: the solo room's volleys while she spins (Blert doesn't record webs), web NPC and loc for 30 ticks.
 11. Under her during webs: her tiles block players for the spin. Checked: 49 tiles flagged.
 - The owner has a few more to send.
+- Found in the solo room, not yet fixed there: the death bat comes up 2 tiles off (it's transmogged from her 7x7 P3;
+  it's 3x3, centred) and the empty throne shows while she sits on it.
 
 **Next:** the owner's remaining bugs; a real-game capture for her projectiles and effects; the sim's raids at every
 scale in the server with the same looks; P2 crab popping (Boak and its early ends) from Blert; the PPO learner for the

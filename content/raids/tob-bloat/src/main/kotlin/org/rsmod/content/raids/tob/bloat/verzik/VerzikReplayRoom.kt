@@ -18,6 +18,7 @@ import org.rsmod.api.instances.InstanceSession
 import org.rsmod.api.player.stat.baseHitpointsLvl
 import org.rsmod.api.player.stat.hitpoints
 import org.rsmod.api.player.stat.statHeal
+import org.rsmod.api.player.vars.boolVarBit
 import org.rsmod.api.player.stat.statRestore
 import org.rsmod.api.player.stat.statSub
 import org.rsmod.api.repo.loc.LocRepository
@@ -61,6 +62,7 @@ class VerzikReplayRoom(
     private val collision: CollisionFlagMap,
 ) {
     val bots = ArrayList<Player>()
+    val watchers = ArrayList<Player>()
     private val npcs = HashMap<Int, Npc>()
     private val shown = HashMap<Int, VerzikBlert.Step>()
     private val pillarLocs = HashMap<Int, LocInfo>()
@@ -71,6 +73,7 @@ class VerzikReplayRoom(
     private var websUntil = -1
     private val blocked = ArrayList<CoordGrid>()
     private var dawnOnFloor: Obj? = null
+    private var shieldUntil = -1
     private val dropsAt = raid.drops.groupBy { it.t }
     private val dawnDamage = raid.dawns.associate { (it.t to it.player) to it.damage }
     private val random = java.util.Random(raid.uuid.hashCode().toLong())
@@ -124,7 +127,13 @@ class VerzikReplayRoom(
 
     fun spot(i: Int): CoordGrid = at(raid.x(i, 0), raid.y(i, 0))
 
+    /** The empty throne shows only once she's left it (her seated forms are drawn in it). */
+    fun throne(visible: Boolean) {
+        for (w in watchers) w.throneVisible = visible
+    }
+
     fun start() {
+        throne(false)
         bots.forEachIndexed { i, b ->
             for (slot in 0 until b.worn.size) b.worn[slot] = null
             wear(i, b, 0)
@@ -175,6 +184,7 @@ class VerzikReplayRoom(
         deathsAt[t]?.forEach { die(it) }
         herAt[t]?.forEach { herAttack(it) }
         dropsAt[t]?.forEach { dawnbringer(it) }
+        if (t <= shieldUntil) her?.let { npcs[it] }?.let { looks.shield(it) }
         websTick(t)
         bots.forEachIndexed { i, b ->
             if (t > 0) {
@@ -366,7 +376,10 @@ class VerzikReplayRoom(
     private fun arrivals(list: List<Int>) {
         val v = her?.let { npcs[it] }
         val red = VerzikRules.RED.asRSCM(RSCMType.NPC)
-        if (v != null && list.any { raid.npcs[it].type0 == red }) looks.summonReds(v)
+        if (v != null && list.any { raid.npcs[it].type0 == red }) {
+            looks.summonReds(v)
+            shieldUntil = clock + SHIELD_TICKS
+        }
         for (i in list) {
             val s = raid.npcs[i].steps.first()
             val n = npcs[i] ?: continue
@@ -429,6 +442,7 @@ class VerzikReplayRoom(
         }
         if (npc.isSlotAssigned) npcRepo.del(npc, Int.MAX_VALUE)
         val next = newNpc(i, s) ?: return
+        if (s.type == P1_TO_P2.asRSCM(RSCMType.NPC)) throne(true)
         when (s.type) {
             P2.asRSCM(RSCMType.NPC) -> looks.p2Arrives(next)
             P2_TO_P3.asRSCM(RSCMType.NPC) -> looks.p3Rises(next)
@@ -660,6 +674,7 @@ class VerzikReplayRoom(
     }
 
     companion object {
+        const val SHIELD_TICKS = 10
         const val WEB_TICKS = 44
         const val WEB_AFTER = 14
         const val WEB_LIFE = 30
@@ -726,3 +741,5 @@ class VerzikReplayRoom(
             )
     }
 }
+
+private var Player.throneVisible by boolVarBit("varbit.tob_verzik_throne_visible")
