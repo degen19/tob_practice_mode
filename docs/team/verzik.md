@@ -46,6 +46,13 @@ from Blert and build the PPO learner to optimize the room at each scale.
 same), so in the sim the purple heals her every 4 ticks until reds (~160 HP); every top Blert team blowpipes it dead
 13-15 ticks after it lands. That's the lobby's procedure to set.
 
+**Learner (verzikSim `room/verzik`, `cli/learn.mjs`):** a policy-gradient learner over the optimizer's chart inputs
+(death-charge owners, Boak sides, East bounce tech, amulets, East patterns), reward -end for a kill and -1000 for a
+fail. On each scale's template setup (256 fresh raids): 2s kills 36 -> 73, median 581 -> 548; 3s 7 -> 10, 337 -> 326;
+4s 121 -> 116, 301 -> 295; 5s 214 -> 216, 285 -> 279 (Blert's top-50 medians 541.5 / 332 / 298.5 / 289). Most of it
+is the death charges the template leaves unset. Next: the lobby's procedures as its start, its inputs widened (P1
+chart, thresholds), fails that carry on to the kill.
+
 **What Blert shows (`tools/blert`, top 50 per scale):**
 - Her P1 blast and her P2 spark both hurt 2 ticks after her attack (537 of 566, 320 of 345).
 - Her death: Blert seldom has the tick her hitpoints reach 0; P1 dies 4 ticks before her climb-down form, P2 and P3 2
