@@ -2600,7 +2600,12 @@ class MaidenCrew(
         val under = { x: Int, y: Int -> live.any { x >= it.x && x <= it.x + 1 && y >= it.y && y <= it.y + 1 } }
         val opts = ArrayList<DinOpt>()
         for (c in live.filter { it.base in DINH_POOL && !(it.meta.rushed && !clumpDone(it)) && skip?.contains(it.key) != true && it.hp > SAFE_HP && (crabRef(it.key)?.let { q -> reachOf(q) > tt + 1 } ?: true) }) {
-            val sides = if (c.id == "S2" || c.id == "S1") listOf("north", "west") else listOf("north", "south", "west", "east")
+            val sides =
+                when (c.id) {
+                    "S2", "S1" -> listOf("north", "west")
+                    "N2" -> listOf("south")
+                    else -> listOf("north", "south", "west", "east")
+                }
             var best: DinOpt? = null
             for (sd in sides) {
                 val tiles =
@@ -2888,7 +2893,8 @@ class MaidenCrew(
             // a trio DPS swing due now never waits or walks: it goes on what it reaches from where it stands
             if (quad || b.dps == null || !o.move.melee || p.actionDelay > clock.cycle) return
             val here = room.real(p.coords)
-            target = crabs.filter { besideAt(here, it) && it.npc.hitpoints > 0 }.maxByOrNull { it.hp }?.npc ?: her.takeIf { room.besideHer(here) } ?: return
+            target = crabs.filter { besideAt(here, it) && it.npc.hitpoints > 0 && !(o.move == Move.Dinh && it.id == "N2" && ROOM_Y - here.z < it.y + 2) }
+                .maxByOrNull { it.hp }?.npc ?: her.takeIf { room.besideHer(here) } ?: return
             trace { "t$t ${b.role} keeps its tick: its ${o.move} goes on ${crabs.firstOrNull { it.npc === target }?.key ?: "her"}" }
             b.order = null
         }
@@ -2943,7 +2949,7 @@ class MaidenCrew(
             o.meeting = true
             return false
         }
-        return walkFor(b, o) { besideAt(it, c) }
+        return walkFor(b, o) { besideAt(it, c) && !(o.move == Move.Dinh && c.id == "N2" && ROOM_Y - it.z < c.y + 2) }
     }
 
     private fun walkFor(b: Bot, o: Order, ok: (CoordGrid) -> Boolean): Boolean {
