@@ -50,5 +50,7 @@ and goes in with bots filling the empty seats.
 - **b778219 is held, not deployed.** With the lobby up, the six wandering bots (character ids -1 to -6) are saved like
   players: `AccountSavingService` writes their varps, and every save fails on the `character_varps` and
   `activity_logs` foreign keys (24 `BatchUpdateException`s in a 12-room Maiden batch, none on main). Keep the lobby
-  bots out of account saving and the activity log, the way the raid crews' bots are, then push again. Everything
+  bots out of account saving and the activity log, the way the raid crews' bots are, then push again. Still there in d802b01 / 641f17d. The lobby's bots come from `RaidBots.spawn` like every crew's, but they
+  live long enough to reach the periodic save; the raid crews' bots are gone before it, so the fix probably belongs in
+  `RaidBots` (shared file: say so in the commit). Everything
   else checked out: the cache builds, "tob lobby at 10304,64: 6 bosses, 6 bots", Maiden trio 130.2 on 12 rooms.
