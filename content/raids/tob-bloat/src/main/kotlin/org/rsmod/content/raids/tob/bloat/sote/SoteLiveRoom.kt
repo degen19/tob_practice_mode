@@ -452,7 +452,7 @@ class SoteLiveRoom(
         const val PLAIN = "loc.tob_sotetseg_plaintile"
         const val DARK = "loc.tob_sotetseg_darktile"
         private val TRACE = System.getenv("SOTE_TRACE") != null
-        val KIT = mapOf("Twisted bow" to "TB", "ZCB auto" to "Z", "ZCB spec" to "ZCB", "zcb" to "ZCB", "maul" to "EM", "bgs" to "BGS", "claw" to "C", "halb" to "HB", "scythe" to "S")
+        val KIT = mapOf("Twisted bow" to "TB", "Tumeken's shadow" to "SH", "Shadow Barrage" to "IBS", "ZCB auto" to "Z", "ZCB spec" to "ZCB", "zcb" to "ZCB", "maul" to "EM", "bgs" to "BGS", "claw" to "C", "halb" to "HB", "scythe" to "S")
 
         /** The tiles beside her (her 5x5's edges, no corners). */
         private val BESIDE =
