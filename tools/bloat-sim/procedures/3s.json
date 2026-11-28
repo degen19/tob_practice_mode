@@ -18,7 +18,31 @@
      "at": 14
     }
    ],
-   "enter": 0
+   "enter": 0,
+   "walk_swings": [
+    2,
+    7,
+    16,
+    21,
+    26,
+    31,
+    36,
+    41,
+    46,
+    51,
+    56,
+    61,
+    66
+   ],
+   "walk_sides": [
+    "front",
+    "back",
+    "front",
+    "any",
+    "front",
+    "any",
+    "front"
+   ]
   },
   {
    "name": "Melee",

@@ -83,9 +83,54 @@ def in_reach(p, bx, by):
     return (bx <= x <= bx + 4 and y in (by - 1, by + 5)) or (by <= y <= by + 4 and x in (bx - 1, bx + 5))
 
 
-def safe_step(p, goal, landing_next):
+def route(p, goal, bx, by, avoid=()):
+    """Tiles from p to goal round the tank (8-way, the game's corner rule), tiles under him or in his sight costing more."""
+    import heapq
+    if p == goal:
+        return [p]
+    under = footprint(bx, by)
+    best = {p: 0}
+    prev = {}
+    q = [(0, p)]
+    while q:
+        c, cur = heapq.heappop(q)
+        if cur == goal:
+            break
+        if c > best[cur]:
+            continue
+        x, y = cur
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                n = (x + dx, y + dy)
+                if (dx or dy) and 8 <= n[0] <= 23 and 8 <= n[1] <= 23 and not in_tank(*n):
+                    if dx and dy and (in_tank(x + dx, y) or in_tank(x, y + dy)):
+                        continue
+                    w = 1 + (5 if n in under else 0) + (6 if n in avoid else 0) + (0 if n in RING_SET else 0.5)
+                    if c + w < best.get(n, 10 ** 9):
+                        best[n] = c + w
+                        prev[n] = cur
+                        heapq.heappush(q, (c + w, n))
+    if goal not in prev:
+        return [p, goal]
+    path = [goal]
+    while path[-1] != p:
+        path.append(prev[path[-1]])
+    return path[::-1]
+
+
+def steps_to(p, goal, bx, by):
+    return len(route(p, goal, bx, by)) - 1
+
+
+def safe_step(p, goal, landing_next, bx=None, by=None):
     """Up to 2 tiles toward the goal, ending the tick off any tile a hand lands on next tick."""
-    nxt = step_towards(p, goal, 2)
+    if bx is not None:
+        path = route(p, goal, bx, by)
+        nxt = path[min(2, len(path) - 1)]
+        if len(path) > 2 and path[1] not in landing_next and nxt in landing_next:
+            nxt = path[1]
+    else:
+        nxt = step_towards(p, goal, 2)
     if nxt not in landing_next:
         return nxt
     opts = [(x, y) for x in range(p[0] - 2, p[0] + 3) for y in range(p[1] - 2, p[1] + 3)
@@ -125,6 +170,7 @@ class Player:
         self.down_specs = {}
         self.rewalk_attack = spec.get("rewalk_attack", True)
         self.walk_swings = spec.get("walk_swings")
+        self.walk_sides = spec.get("walk_sides", [])
         self.down_start = spec.get("down_start", [0])
         self.pray = spec.get("pray_missiles", True)
         self.pos = pos
@@ -207,7 +253,9 @@ def run(proc, seed, record=False, weapons=None):
             if p.walk_swings is not None and down is None and room.walk_n == 1:
                 nxt = min([x for x in p.walk_swings if x > p.last_swing] or [10 ** 6])
             hiding = (t < p.first and down is None) or (rewalk and not p.rewalk_attack) or (nxt is not None and nxt - t > 4 and t >= p.next_attack - 1)
-            if hiding:
+            if nxt is not None and nxt < 10 ** 6 and not p.stall and t >= p.first and down is None:
+                target = sneak(p, room, t, nxt, hands_by, stallers)
+            elif hiding:
                 danger = set().union(*[v for when, v in hands_by.items() if t < when <= t + 3]) if hands_by else set()
                 target = hide_tile(p, room, danger, 5 if nxt is None else min(nxt - t, 8))
             elif not p.stall and down is None:
@@ -232,7 +280,7 @@ def run(proc, seed, record=False, weapons=None):
             landing_soon = set().union(*[v for when, v in hands_by.items() if t < when <= t + 3]) if hands_by else set()
             moving = hiding or not p.stall or down is not None or t < p.first or t >= p.next_attack or p.pos in landing_soon
             if moving:
-                p.pos = safe_step(p.pos, target, hands_by.get(t + 1, set()))
+                p.pos = safe_step(p.pos, target, hands_by.get(t + 1, set()), bx, by)
             elif p.pos in hands_by.get(t + 1, set()):
                 p.pos = safe_step(p.pos, p.pos, hands_by.get(t + 1, set()))
             if wpn in SPEC_COST and p.energy < SPEC_COST[wpn]:
@@ -336,27 +384,53 @@ def future_sw(room, k):
     return LOOP[li]
 
 
-def plan_tile(p, room, t, hands_by, stallers):
+def plan_tile(p, room, t, hands_by, stallers, ready=None, side="front"):
     """A non-staller's tile for its next swing: in reach of where he'll be when the scythe is ready, hugging the tank,
     out of his sight and the stallers' while it waits, clear of hands, and reachable in time (running 2 tiles a tick)."""
-    ready = max(p.next_attack, t)
+    ready = max(p.next_attack, t) if ready is None else ready
     fbx, fby = future_sw(room, ready - t)
     nbx, nby = room.sw
-    hand_at = set().union(*[v for when, v in hands_by.items() if t < when <= ready + 1]) if hands_by else set()
+    hand_at = set().union(*[v for when, v in hands_by.items() if ready <= when <= ready + 1]) if hands_by else set()
     best, best_cost = None, None
+    ax, ay = future_sw(room, ready - t + 1)
+    heading = (ax - fbx, ay - fby)
     for c in OUTER:
         if not in_reach(c, fbx, fby) or c in footprint(fbx, fby):
             continue
-        d = max(abs(c[0] - p.pos[0]), abs(c[1] - p.pos[1]))
-        if d > 2 * max(ready - t, 1):
+        if max(abs(c[0] - p.pos[0]), abs(c[1] - p.pos[1])) > 2 * (ready - t + 1):
+            continue
+        d = steps_to(p.pos, c, nbx, nby)
+        if d > 2 * (ready - t + 1):
             continue
         seen_now = ray_clear(nbx + 2, nby + 2, *c)
         bounce = any(ray_clear(*a, *c) for a in stallers)
         ring = 0 if c in RING_SET else 1
-        cost = (c in hand_at, seen_now and bounce, seen_now, ring, d)
+        ahead = -((c[0] - fbx - 2) * heading[0] + (c[1] - fby - 2) * heading[1])
+        if side == "back":
+            ahead = -ahead
+        elif side == "any":
+            ahead = 0
+        cost = (c in hand_at, ring, ahead, seen_now and bounce, seen_now, d)
         if best_cost is None or cost < best_cost:
             best, best_cost = c, cost
     return best or goal_tile(p, nbx, nby, hand_at, stallers)
+
+
+def sneak(p, room, t, swing_at, hands_by, stallers):
+    """A long gap between swings: route to the next swing's tile out of his sight (round the tank if need be), and wait
+    on the last tile of that route he can't see until it's time to step out and swing."""
+    bx, by = room.sw
+    k = p.walk_swings.index(swing_at) if swing_at in p.walk_swings else -1
+    side = p.walk_sides[k] if 0 <= k < len(p.walk_sides) else "front"
+    goal = plan_tile(p, room, t, hands_by, stallers, ready=swing_at, side=side)
+    seen = {c for c in OUTER if ray_clear(bx + 2, by + 2, *c)}
+    path = route(p.pos, goal, bx, by, avoid=seen)
+    left = swing_at - t
+    best = goal
+    for i, c in enumerate(path):
+        if c not in seen and len(path) - 1 - i <= 2 * (left - 1):
+            best = c
+    return best
 
 
 def duck_tile(p, bx, by, danger, stallers):
