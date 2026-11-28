@@ -116,8 +116,8 @@ object NyloLoadout {
      */
     fun maidenSets(role: NyloRole, quad: Boolean = false): List<GearSet> =
         when (role) {
-            NyloRole.Melee -> listOf(TBOW, RALOS, SCYTHE, DINH, ZCB, OBLIGATOR) + if (quad) listOf(MAUL, CLAWS) else emptyList()
-            NyloRole.Ranger -> listOf(TBOW, RALOS, SCYTHE, ZCB) + if (quad) listOf(CHINS, CLAWS, HORN) else emptyList()
+            NyloRole.Melee -> listOf(TBOW, RALOS, SCYTHE, DINH, ZCB, OBLIGATOR) + if (quad) listOf(MAUL, CLAWS) else listOf(CLAWS, BLOWPIPE)
+            NyloRole.Ranger -> listOf(TBOW, RALOS, SCYTHE, ZCB) + if (quad) listOf(CHINS, CLAWS, HORN) else listOf(CLAWS, BLOWPIPE)
             NyloRole.Mage, NyloRole.Freezer -> listOf(TBOW, RALOS, BARRAGE, SCYTHE, ZCB, CROSSBOWS, TOME, CLAWS)
         }
 

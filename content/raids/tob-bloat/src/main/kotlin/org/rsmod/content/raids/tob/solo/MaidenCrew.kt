@@ -59,6 +59,8 @@ class MaidenCrew(
         Obligator(NyloLoadout.OBLIGATOR, 0),
         Dinh(NyloLoadout.DINH, 0, 500),
         Claws(NyloLoadout.CLAWS, 1, 500),
+        ClawsHit(NyloLoadout.CLAWS, 1),
+        BlowpipeAcc(NyloLoadout.BLOWPIPE, 0),
         Barrage(NyloLoadout.BARRAGE, 0),
         Rush(NyloLoadout.BARRAGE, 0),
         Tome(NyloLoadout.TOME, 0),
@@ -68,7 +70,7 @@ class MaidenCrew(
             get() = cost > 0
 
         val melee: Boolean
-            get() = this == Scythe || this == Obligator || this == Dinh || this == Claws || this == Maul
+            get() = this == Scythe || this == Obligator || this == Dinh || this == Claws || this == ClawsHit || this == Maul
     }
 
     /** A line's attack: its speed (ticks to the next), style, whether it goes at a crab, and its spec cost (in %). */
@@ -951,10 +953,27 @@ class MaidenCrew(
             return false
         }
         val on = teamTick ?: return false
-        if (Math.floorMod(tt, SWING) == on) return false
-        trace { "t$tt ${b.role} waits to swing on the team's tick" }
-        hold(b)
+        val lost = Math.floorMod(tt - on, SWING)
+        if (lost == 0) return false
+        val fill = catchUp(b, lost)
+        trace { "t$tt ${b.role} is $lost off the team's tick: ${fill ?: "waits"}" }
+        if (fill == null) hold(b) else perform(b, fill, tt)
         return true
+    }
+
+    /**
+     * The hit that brings a DPS back on the team's tick: lost one, a 4-tick claw hit (from beside her or a crab); lost
+     * two, a 3-tick blowpipe. Else it waits.
+     */
+    private fun catchUp(b: Bot, lost: Int): String? {
+        val here = room.real(b.player.coords)
+        val beside = crabs.filter { besideAt(here, it) && it.npc.hitpoints > 0 }.maxByOrNull { it.hp }
+        return when {
+            lost == 1 && b.owns("claws") && beside != null -> "claw4:${beside.key}"
+            lost == 1 && b.owns("claws") && room.besideHer(here) -> "claw4"
+            lost == 2 && b.owns("bp") -> "bp3"
+            else -> null
+        }
     }
 
     /** The tick (mod a swing) the ranger and melee last swung on together. */
@@ -2611,6 +2630,8 @@ class MaidenCrew(
                 act(b, Move.Zcb, her)
             }
             "claws" -> act(b, Move.Claws, her)
+            "claw4" -> act(b, Move.ClawsHit, crab?.npc ?: her)
+            "bp3" -> act(b, Move.BlowpipeAcc, crab?.npc ?: her)
             "scyk", "scyc", "scys" -> crab?.let { act(b, Move.Scythe, it.npc) } ?: hold(b)
             "ibs" -> crab?.let { act(b, Move.Barrage, it.npc) } ?: hold(b)
             "ir" -> crab?.let {
@@ -2755,10 +2776,11 @@ class MaidenCrew(
         val p = b.player
         var target = o.target
         if (!within(b, o)) {
-            // a DPS swing due on the team's tick never waits on a crab: it goes on her instead
-            if (b.dps == null || !o.move.melee || p.actionDelay > clock.cycle || teamTick != Math.floorMod(t, SWING) || !room.besideHer(room.real(p.coords))) return
-            trace { "t$t ${b.role} keeps the team's tick: its ${o.move} goes on her" }
-            target = her
+            // a DPS swing due now never waits or walks: it goes on what it reaches from where it stands
+            if (b.dps == null || !o.move.melee || p.actionDelay > clock.cycle) return
+            val here = room.real(p.coords)
+            target = crabs.filter { besideAt(here, it) && it.npc.hitpoints > 0 }.maxByOrNull { it.hp }?.npc ?: her.takeIf { room.besideHer(here) } ?: return
+            trace { "t$t ${b.role} keeps its tick: its ${o.move} goes on ${crabs.firstOrNull { it.npc === target }?.key ?: "her"}" }
             b.order = null
         }
         o.walkTo = null
@@ -3125,14 +3147,14 @@ class MaidenCrew(
         val OWNS =
             mapOf(
                 NyloRole.Mage to setOf("scythe", "tbow", "ralos", "xbows", "zcb", "claws"),
-                NyloRole.Ranger to setOf("scythe", "tbow", "ralos", "bp", "zcb"),
-                NyloRole.Melee to setOf("scythe", "tbow", "ralos", "bp", "zcb", "dinh", "obligator"),
+                NyloRole.Ranger to setOf("scythe", "tbow", "ralos", "bp", "zcb", "claws"),
+                NyloRole.Melee to setOf("scythe", "tbow", "ralos", "bp", "zcb", "dinh", "obligator", "claws"),
             )
 
         val WEAPON =
             mapOf(
                 "tbr" to "tbow", "tba" to "tbow", "maul" to "maul", "chin" to "chins", "china" to "chins", "bp" to "bp", "ax" to "xbows", "ralos" to "ralos", "zcbs" to "zcb", "claws" to "claws", "scythe" to "scythe", "scyk" to "scythe",
-                "scyc" to "scythe", "scys" to "scythe", "tdps" to "scythe", "tdin" to "scythe", "tdin2" to "scythe", "dinhs" to "dinh",
+                "scyc" to "scythe", "scys" to "scythe", "tdps" to "scythe", "tdin" to "scythe", "tdin2" to "scythe", "dinhs" to "dinh", "claw4" to "claws", "bp3" to "bp",
             )
 
         /** Style: r ranged, m melee, f a freeze, g magic, - no attack. */
@@ -3144,7 +3166,7 @@ class MaidenCrew(
                 "scythe" to Atk(5, 'm'), "scyk" to Atk(5, 'm', true), "scyc" to Atk(5, 'm', true), "scys" to Atk(5, 'm', true),
                 "tdps" to Atk(5, 'm', true), "tdin" to Atk(5, 'm'), "tdin2" to Atk(5, 'm'), "dinhs" to Atk(5, 'm', true, 50), "obl" to Atk(5, 'm', true),
                 "tfz" to Atk(5, 'f', true), "ibs" to Atk(5, 'f', true), "ir" to Atk(5, 'f', true), "aya" to Atk(3, 'g', true),
-                "tpile" to Atk(5, 'r'), "wait" to Atk(1, '-'), "surge" to Atk(0, '-'),
+                "tpile" to Atk(5, 'r'), "claw4" to Atk(4, 'm'), "bp3" to Atk(3, 'r'), "wait" to Atk(1, '-'), "surge" to Atk(0, '-'),
             )
 
         val LAND_DELAY = mapOf(Move.Tbow to 3, Move.TbowAcc to 3, Move.Maul to 1, Move.Chins to 2, Move.ChinsAcc to 2, Move.Blowpipe to 2, Move.Crossbows to 2, Move.Zcb to 3, Move.Ralos to 3, Move.Scythe to 1, Move.Obligator to 1, Move.Dinh to 1, Move.Claws to 1, Move.Barrage to 2)
