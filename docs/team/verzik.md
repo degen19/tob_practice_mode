@@ -27,6 +27,18 @@ chart template. Read its `HANDOFF.md`, `README.md` and `CONVENTIONS.md`.
   depending on the crabs' spawns and aggro. Model it from Blert, then bring it back to the sim.
 - Animations and sounds have to feel 1:1.
 
+**When the owner's away** (no answer within an hour, for the next two weeks from 2026-11-27): model the other scales
+from Blert and build the PPO learner to optimize the room at each scale.
+
+**P2 crabs (`tools/blert/verzik_crabs.py`, 3-5 man):**
+- 2-3 nylocas a raid; they pop at 10-13 ticks old (911 of 923 are never attacked). The purple is always blowpiped,
+  dead at 13-15 ticks old; the first blowpipe comes a median 14 ticks after her purple attack.
+- A purple costs each melee player a median 1 tick (mean 1.3-1.4) on either side. By where the player's next swing
+  falls (ticks after her purple attack): due on 1 -> 3 lost, on 2 -> 2, on 3 -> 1 (most teams: 89-121 of ~150).
+- verzikSim's Boak blocks give the same cost for West once Blert's attack tick is taken as the sim's tick -2
+  (3 / 2 / 1); East gives 2 / 1 / 1 where real players lose 3 / 2 / 1. To settle: which tick Blert's NPC attack is in
+  the sim's count, then East's blocks.
+
 **What Blert shows (`tools/blert`, top 50 per scale):**
 - Her P1 blast and her P2 spark both hurt 2 ticks after her attack (537 of 566, 320 of 345).
 - Her death: Blert seldom has the tick her hitpoints reach 0; P1 dies 4 ticks before her climb-down form, P2 and P3 2
