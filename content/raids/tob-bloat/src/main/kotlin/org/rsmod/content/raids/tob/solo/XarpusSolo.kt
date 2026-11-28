@@ -93,6 +93,21 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     val nextExhumedAt: Int
         get() = if (firstExhumed < 0 || exhumeds >= scale.exhumeds) -1 else firstExhumed + exhumeds * scale.exhumedGap
 
+    /** The tick he next turns his stare (-1 outside phase 3). */
+    val nextTurnAt: Int
+        get() = if (phase == 3) gazeAt + GAZE_TICKS else -1
+
+    /**
+     * The tick he'll screech on, once he's at or under 33% in phase 2 (-1 till then): the next instance tick 1. Asked
+     * between steps, when [t] is the next one and [instanceTick] still the last one's.
+     */
+    fun screechDue(): Int {
+        if (phase != 2 || xarpus.hitpoints > hp * SCREECH_PCT / 100) return -1
+        var s = t
+        while (Math.floorMod(instanceTick + s - (t - 1), CYCLE) != CYCLE_TICK) s++
+        return s
+    }
+
     /** Who his next spit goes at. */
     fun nextSpitAt(): Player? = order().let { if (it.isEmpty()) null else it[Math.floorMod(spitTurn, it.size)] }
 
