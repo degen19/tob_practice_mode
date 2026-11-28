@@ -88,6 +88,7 @@ class MaidenCrew(
         var predodgeAt = -1
         var aimed: Npc? = null
         var aimedMove: Move? = null
+        var pileFor = -1
         val route = ArrayDeque<CoordGrid>()
         var routeAt: CoordGrid? = null
         var aimedFor = -1
@@ -574,7 +575,19 @@ class MaidenCrew(
         if (a == "zcbs" && clawsOver(b, spec)) return "claws"
         if (a != "tpile") return a
         if (phase == 0) return "scythe"
-        return if (pileWorth(tt, true, "pile").second * 2 >= params.pileWorth) a else "tbr"
+        return if (pileSwing(b, tt)) a else "tbr"
+    }
+
+    /**
+     * Whether the mage's pile slot on [tt] is a barrage (else a tbow). Once it's a barrage the mage has walked in for it,
+     * so it stays one: a tbow from up there is worse than a barrage on a thinner pile.
+     */
+    private fun pileSwing(b: Bot, tt: Int): Boolean {
+        if (barrageProcs(barragePrim("pile", tt), tt)) return false
+        if (b.pileFor == tt) return true
+        if (pileWorth(tt, true, "pile").second * 2 < params.pileWorth) return false
+        b.pileFor = tt
+        return true
     }
 
     /**
@@ -1096,7 +1109,7 @@ class MaidenCrew(
         val others = crew.filter { it !== b }.minOf { it.next }
         // queued behind the DPS hits: it goes only once their last swings have landed without a proc (seen two ticks on)
         val seen = crew.filter { it !== b && it.dps != null }.all { it.next - SWING + PROC_SEEN <= tt }
-        if (seen && tt + atkOf("tfz").speed <= others + PROC_SEEN && pileWorth(tt, false).second >= params.preloadWorth) {
+        if (seen && tt + atkOf("tfz").speed <= others + PROC_SEEN && pileWorth(tt, false).second >= params.preloadWorth && !barrageProcs(barragePrim("pile", tt), tt)) {
             b.force = "ibs:pile"
             return null
         }
@@ -1136,6 +1149,20 @@ class MaidenCrew(
      * Whether the mage's ZCB would be what procs her (what else lands by then leaves her above it): a proc off its own
      * spec puts its freezes a tick late, so it tbows and keeps the ZCB for after them.
      */
+    /**
+     * Whether a barrage on [prim] would proc her: she's in its splash (the crab against her) and what lands by then leaves
+     * her above the line, close enough that its hit on her takes her past it. It lands two ticks on, with the mage still
+     * on its cooldown at the spawn, so its freezes would go late.
+     */
+    private fun barrageProcs(prim: Crab?, tt: Int): Boolean {
+        if (prim == null || phase == 0) return false
+        val splash = prim.x - 1 <= MX1 && prim.x + 2 >= MT_X && prim.y - 1 <= MY1 && prim.y + 2 >= MT_Y
+        if (!splash) return false
+        val left = hp - landing(tt, tt + LAND_DELAY.getValue(Move.Barrage) - 1).first
+        val line = full * phase / 100.0
+        return left >= line && left - BARRAGE_MAX < line
+    }
+
     private fun zcbProcs(tt: Int): Boolean {
         if (phase == 0) return false
         val left = hp - landing(tt, tt + LAND_DELAY.getValue(Move.Zcb) - 1).first
@@ -1277,7 +1304,7 @@ class MaidenCrew(
                 trace { "t$tt Mage keeps its ZCB: it would proc her" }
                 return "tbr"
             }
-            if (a == "tpile") return if (pileWorth(tt, true, "pile").second * 2 >= params.pileWorth) "ibs:pile" else "tbr"
+            if (a == "tpile") return if (pileSwing(b, tt)) "ibs:pile" else "tbr"
             if (a in QUAD_LINES) {
                 val r = quadLine(b, a, tt)
                 if (r == null) {
@@ -1296,15 +1323,15 @@ class MaidenCrew(
             }
             if (a == "tfz" || a == "tdps") {
                 val r = if (a == "tfz") tfzPick(b, tt) else dpsSwing(b, tt)
-                // a free hit in the 30s freezes (a crab missing from the list): seeing it, the mage waits on its clump and freezes
-                // that first; the ZCB it has the energy for goes after its last freeze
+                // a free hit in the 30s freezes (a crab missing from the list): a tbow while a clump is still to come (the owner),
+                // the ZCB it has the energy for after its last freeze
                 if (r == "tbr" && b.role.freezes && phase == 0) {
                     val w = latestWave()
                     val owed = w != null && listOf("3s" to THREES, "4s" to FOURS).any { (which, ids) -> which !in b.tfzD[w].orEmpty() && ofWave(w, ids).isNotEmpty() }
                     if (owed) {
                         if (b.owns("zcb")) b.zcbAfter30 = true
-                        trace { "t$tt Mage waits on its clump (a 30s crab missing)" }
-                        return "wait"
+                        trace { "t$tt Mage tbows its free hit before its clump (a 30s crab missing)" }
+                        return "tbr"
                     }
                     if (b.owns("zcb") && b.spec >= atkOf("zcbs").spec) {
                         trace { "t$tt Mage ZCBs its free hit" }
@@ -1947,7 +1974,7 @@ class MaidenCrew(
         // the N2 the wave's only 1 / 2: the first barrage goes on the old pile, the N2 on the second, frozen closer in
         // (nearer the DPS when it thaws, and where a later wave's N2 stops, to stack) - on the 30s, with no pile worth it,
         // the N2 at once (no later wave to stack with)
-        if (plan.fz == listOf("N2") && w != WAVES[0] && "N2" !in done && LATE_N2 !in done) {
+        if (plan.fz == listOf("N2") && w == WAVES[1] && "N2" !in done && LATE_N2 !in done) {
             val c = crabRef("N2@$w")
             if (c != null && tt > c.frozenTo && tt + atkOf("ibs").speed <= reachOf(c) - FZ_LAND) {
                 done += LATE_N2
@@ -2017,6 +2044,10 @@ class MaidenCrew(
                     return "aya:${loose?.key ?: "maiden"}"
                 }
                 return "wait"
+            }
+            if (w == 30 && plan.fz.isEmpty() && OLD_30 !in done) {
+                done += OLD_30
+                if (barragePrim("old", tt) != null) return "ibs:old"
             }
             if (tt + 5 <= due) {
                 if (w != 70) {
@@ -2129,6 +2160,7 @@ class MaidenCrew(
      * single a rush where a barrage would catch them.
      */
     private fun singleCast(c: Crab, tt: Int): String? {
+        if (c.wave == WAVES.last()) return "ibs"
         val early = aoe3(c).any { it !== c && (it.base in THREES || it.base in FOURS) && tt > it.frozenTo }
         return when {
             c.base != "S2" -> if (early) "ir" else "ibs"
@@ -2960,6 +2992,7 @@ class MaidenCrew(
     private companion object {
         val TRACING = System.getenv("TOB_TRIO_TRACE") != null
         const val ATTACK_EVENT = 5
+        const val OLD_30 = "old30"
         const val SPELLBOOK_SWAP = "component.magic_spellbook:spellbook_swap"
         const val HEAL_OTHER = "component.magic_spellbook:heal_other"
         const val HEAL_MIN = 10
@@ -3056,6 +3089,7 @@ class MaidenCrew(
         const val PILE_CRAB_CAP = 20
         const val PROC_RATE = 22.0
         const val BARRAGE_CAP = 9
+        const val BARRAGE_MAX = 30
         const val SPLAT = 21
         const val DINH_HITS = 10
         const val DINH_REACH = 5
