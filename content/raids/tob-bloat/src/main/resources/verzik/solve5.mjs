@@ -1,9 +1,10 @@
 // The 5s Verzik setup: the chart template's 5-man setup with the Verz Solver's best P1 chart (as cli/solve.mjs picks it).
 import { readFileSync, writeFileSync } from 'node:fs';
-import { readXlsx } from '/root/verzikSim.JS/engine/xlsx.js';
-import { parse_chart } from '/root/verzikSim.JS/engine/sim.js';
-import { makeContext, solve, simP1, chartKey } from '/root/verzikSim.JS/engine/solver.js';
-const cfgs = await parse_chart(await readXlsx(readFileSync('/root/verzikSim.JS/verzik_chart_template.xlsx')), 5, null, 'A');
+const SIM = process.env.VERZIKSIM || new URL('../../../../../../../../verzikSim.JS/', import.meta.url).pathname;
+const { readXlsx } = await import(`${SIM}/engine/xlsx.js`);
+const { parse_chart } = await import(`${SIM}/engine/sim.js`);
+const { makeContext, solve, simP1, chartKey } = await import(`${SIM}/engine/solver.js`);
+const cfgs = await parse_chart(await readXlsx(readFileSync(`${SIM}/verzik_chart_template.xlsx`)), 5, null, 'A');
 const ctx = makeContext(cfgs, 5, { transfers: true });
 const res = solve(ctx, { beam: 150, slots: 16 });
 const finals = res.tops.slice(0, 8);

@@ -11,6 +11,17 @@ owner's word.
 - **`data/solo_*.json`, `data/entry/`:** solos and entry mode.
 - **`bloat*.py`, `sote*.py`, `los.py`:** earlier analysis scripts.
 
+## Verzik, the 50 fastest rooms at each scale
+
+- **`verzik-top.tgz`:** the 50 fastest regular Verzik rooms on Blert for 2, 3, 4 and 5 players (sorted by the Verzik
+  split, 85), each room's events. To unpack: `tar xzf verzik-top.tgz -C data` (gives `data/verzik/<scale>/`).
+  `./fetch_verzik.sh <scale> [count]` fetches them again; it waits out Blert's limit of 120 requests a window.
+- **`verzik.py summary`:** splits per scale. **`verzik.py export <out.json.gz>`:** the replays the server plays
+  (`content/raids/tob-bloat/src/main/resources/verzik/blert.json.gz`, `::verzik blert <scale> [rank]`).
+- **`verzik_plans.mjs`:** each top team's P1 Dawn rotation as a verzikSim plan, simulated, and the best one improved
+  with the sim's plan search.
+- **`defs/`:** Blert's attack, spell and NPC definitions (from blert-io/protos, MIT).
+
 ## Fetching more
 
 ```
