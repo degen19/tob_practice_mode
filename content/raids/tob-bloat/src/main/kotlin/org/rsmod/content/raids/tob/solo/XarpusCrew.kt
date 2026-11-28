@@ -27,7 +27,7 @@ import org.rsmod.map.CoordGrid
  * - Specs: the scale's plan ([XarpusPlan.BY_SCALE], the sim's Solver) played on what happens - opening specs, mauls again
  *   by how many opening mauls landed (read off his Defence), backups in turn down to the Defence target, ZCBs held for
  *   the screech, claws once no Defence spec is to come, the halberd for his last hitpoints, Lightbearer cycles.
- * - The acid: see [place] - the dump-tile dance, under him for a solo.
+ * - The acid: see [place] - the rag dance, under him for a solo.
  */
 class XarpusCrew(
     override val room: XarpusSolo,
@@ -73,6 +73,9 @@ class XarpusCrew(
         var lastSpec = -1
         var thrallAt = -THRALL_COOLDOWN
         var cover: XarpusSolo.Exhumed? = null
+
+        /** The exhumed a 5s quarter's owner walks to, to take it over from the floater. */
+        var relief: XarpusSolo.Exhumed? = null
         var lastSwing = -1
         var home: CoordGrid = tile(SPOTS[i % SPOTS.size])
         var dumped: CoordGrid = home
@@ -162,19 +165,23 @@ class XarpusCrew(
             return
         }
         val up = room.exhumedsNow.filter { t < it.gone }
-        for (b in crew) if (b.cover != null && b.cover !in up) b.cover = null
+        for (b in crew) {
+            if (b.cover != null && b.cover !in up) b.cover = null
+            if (b.relief != null && b.relief !in up) b.relief = null
+        }
+        relieve()
         for (e in up.sortedBy { it.born }) {
-            if (crew.any { it.cover === e }) continue
-            val free = crew.filter { it.cover == null }
-            val b = free.firstOrNull { quarterOf(it) == room.quarter(e.tile) } ?: free.minByOrNull { cheb(here(it), e.tile) } ?: break
+            if (crew.any { it.cover === e || it.relief === e }) continue
+            val free = crew.filter { it.cover == null && it.relief == null }
+            val b = free.firstOrNull { owns(it, e) } ?: free.firstOrNull { floats(it) } ?: free.minByOrNull { runTicks(here(it), e.tile) } ?: break
             b.cover = e
         }
-        for (b in crew) b.cover?.let { walk(b, it.tile) }
-        val free = crew.filter { it.cover == null }
+        for (b in crew) (b.cover ?: b.relief)?.let { walk(b, it.tile) }
+        val free = crew.filter { it.cover == null && it.relief == null }
         if (free.isEmpty()) return
         val next = room.nextExhumedAt
         val fixed = crew.mapNotNull { b -> b.cover?.takeIf { next < 0 || it.gone <= next }?.tile }
-        val key = listOf(free.map { it.i }, fixed, up.map { it.tile })
+        val key = listOf(free.map { it.i }, fixed, up.map { it.tile }, free.map { quarterOf(it) })
         if (key != spreadKey) {
             spreadKey = key
             spread = cover(free, fixed, up.map { it.tile }.toSet())
@@ -189,24 +196,56 @@ class XarpusCrew(
     private fun quarterOf(b: Bot): Int =
         when {
             size == 5 && b.i < 4 -> b.i
+            floats(b) -> lastBusyQuarter()
             size == 4 && crew.none { it.cover != null } -> b.i
             else -> -1
         }
+
+    private fun floats(b: Bot): Boolean = size == 5 && b.i == 4
+
+    private fun owns(b: Bot, e: XarpusSolo.Exhumed): Boolean = size == 5 && b.i < 4 && room.quarter(e.tile) == b.i
+
+    /** 5s: the floater heads for the quarter of the newest exhumed whose owner is on it (-1: none, it spreads). */
+    private fun lastBusyQuarter(): Int =
+        crew.filter { it.i < 4 && it.cover?.let { e -> owns(it, e) } == true }.maxByOrNull { it.cover!!.born }?.i ?: -1
+
+    /**
+     * 5s: an owner whose exhumed has sunk walks to the one the floater holds in its quarter, and takes it over when it
+     * stands on it - then the floater is free to go to the next quarter.
+     */
+    private fun relieve() {
+        if (size != 5) return
+        val floater = crew[4]
+        val held = floater.cover ?: return
+        val owner = crew.firstOrNull { owns(it, held) } ?: return
+        if (owner.cover != null) return
+        if (owner.relief !== held) {
+            owner.relief = held
+            trace { "t$t ${owner.player.username} goes to relieve the floater" }
+        }
+        if (here(owner) == held.tile) {
+            owner.cover = held
+            owner.relief = null
+            floater.cover = null
+            trace { "t$t ${owner.player.username} takes over from the floater" }
+        }
+    }
 
     private var spreadKey: Any? = null
     private var spread: List<CoordGrid> = emptyList()
 
     /**
      * Where the free bots stand for the next exhumed (the owner: 5s a quarter each and a floater into the quarter whose
-     * player just took one, 4s a quarter each then spread, trios and duos spread, a solo back to the middle): the tiles
-     * (in each one's quarter, [quarterOf]) that leave the fewest heals if it comes up on any tile of the room, counting
-     * the bots whose exhumed sinks before it as free where they stand. From where they are, each moved to its best tile
-     * in turn until none improves.
+     * player just took one, 4s a quarter each then spread, trios and duos spread, a solo back to the middle): the
+     * safespot tiles ([SAFESPOTS]; any tile for a solo) in each one's quarter ([quarterOf]) that leave the fewest heals
+     * if it comes up on any tile of the room, counting the bots whose exhumed sinks before it as free where they stand.
+     * From where they are, each moved to its best tile in turn until none improves.
      */
     private fun cover(bots: List<Bot>, fixed: List<CoordGrid>, up: Set<CoordGrid>): List<CoordGrid> {
         val spawns = SPAWNS.filter { it !in up }
         fun total(pts: List<CoordGrid>): Int = spawns.sumOf { s -> cost(pts.minOf { cheb(it, s) }) }
-        val allowed = bots.map { b -> quarterOf(b).let { q -> if (q < 0) ARENA else ARENA.filter { room.quarter(it) == q } } }
+        val spots = if (size == 1) ARENA else SAFESPOTS.map { tile(it) }
+        val allowed = bots.map { b -> quarterOf(b).let { q -> if (q < 0) spots else spots.filter { room.quarter(it) == q } } }
         val cur = bots.mapIndexed { i, b -> here(b).let { h -> allowed[i].minBy { cheb(it, h) } } }.toMutableList()
         var best = total(fixed + cur)
         repeat(COVER_ROUNDS) {
@@ -230,42 +269,56 @@ class XarpusCrew(
         return cur
     }
 
+    /** Run ticks to a tile: two tiles a tick (ties in these go to the higher in the orb order: the crew's order). */
+    private fun runTicks(a: CoordGrid, b: CoordGrid): Int = (cheb(a, b) + 1) / 2
+
     /** A bot reaching a tile d away heals him on each tick from the exhumed's third it's not there: a run of 2 a tick. */
     private fun cost(d: Int): Int = HEAL_COST * max(0, (d + 1) / 2 - HEAL_FROM) + d
 
     /* ---- the acid */
 
     /**
-     * Blert's dance: each bot holds a home tile beside him and swings from it; on the tick he spits it stands on its
-     * dump tile, two straight out from home (a solo: the tile under him next to home, so he throws nothing), and is back
-     * home the tick after. The acid and its bounces land on the dump tiles; the tiles beside him stay clean. A swing
-     * due on the spit tick goes from home instead. In phase 3 home moves out of the quarter he's staring at. True when
-     * it walked this tick.
+     * The rag dance (the owner's): each bot rags one tile of its own - the middle of its side, its home - and swings
+     * from it, stepping in from a tile further out (clean: nothing lands there) on the tick it swings. On the tick he
+     * spits it steps back to its dump tile two out, so his acid and the bounces land on that band; with its swing due
+     * then or the tick after it takes the spit on home instead (ragging it again) - no swing waits on the walk in. In
+     * phase 3 home moves out of the quarter he's staring at. A solo's dump is the tile under him next to home. True
+     * when it walked.
      */
     private fun place(b: Bot): Boolean {
         val here = here(b)
         val home = home(b)
         val due = t + max(0, b.player.actionDelay - clock.cycle)
-        if (room.phase == 2 && room.nextSpit == t && due != t) {
-            walk(b, dump(b, home))
-            return true
-        }
-        if (here == home) return false
         val stared = room.phase == 3 && room.quarter(here) == room.gaze
         if (due == t && !stared) return false
-        walk(b, home)
+        val to =
+            when {
+                room.phase == 2 && room.nextSpit == t -> if (due == t + 1) home else dump(b, home)
+                else -> rest(home)
+            }
+        if (here == to) return false
+        walk(b, to)
         return true
     }
 
-    /** Its home tile, moved along the ring when acid lands on it (or, in phase 3, when he stares its way). */
+    /**
+     * Where a bot waits between swings: the tile a step out from home, or beside that one if a random bounce (duos,
+     * solos) has put acid on it - all a step from home, so the swing still goes from there.
+     */
+    private fun rest(home: CoordGrid): CoordGrid {
+        val n = outward(home)
+        val out = CoordGrid(home.x + n[0], home.z + n[1], home.level)
+        return REST_SHIFTS.map { l -> CoordGrid(out.x + l * n[1], out.z + l * n[0], out.level) }.firstOrNull { it !in room.pooled } ?: out
+    }
+
+    /** Its home tile: its own for phase 2 (it rags it); in phase 3 moved round the ring out of his stare. */
     private fun home(b: Bot): CoordGrid {
         val cur = b.home
-        val gazed = room.phase == 3 && room.quarter(cur) == room.gaze
-        if (cur !in room.pooled && !gazed) return cur
+        if (room.phase != 3 || room.quarter(cur) != room.gaze) return cur
         val homes = crew.filter { it !== b }.map { it.home }.toSet()
         // out of his stare first (a spit-back is worth far more than a tick of acid), then clean, then near
         val next = RING.map { tile(it) }
-            .filter { it !in homes && (room.phase != 3 || room.quarter(it) != room.gaze) }
+            .filter { it !in homes && room.quarter(it) != room.gaze }
             .minWithOrNull(compareBy<CoordGrid> { it in room.pooled }.thenBy { cheb(cur, it) }.thenBy { abs(it.x - cur.x) + abs(it.z - cur.z) })
             ?: return cur
         trace { "t$t ${b.player.username} home ${cur.x - X},${cur.z - Y} -> ${next.x - X},${next.z - Y}" }
@@ -474,6 +527,7 @@ class XarpusCrew(
 
         /** Sideways from straight out, in the order a dump tile is tried. */
         val DUMP_SHIFTS = listOf(0, 1, -1, 2, -2)
+        val REST_SHIFTS = listOf(0, 1, -1)
         const val ARCEUUS = 3
         const val GREATER_GHOST = "component.magic_spellbook:resurrect_greater_ghost"
         const val THRALL_LEAD = 6
@@ -494,7 +548,17 @@ class XarpusCrew(
 
         /** Under his pool on the middle of each side, and the tile beside it they step out to (Blert, from his SW). */
         val UNDER = arrayOf(intArrayOf(2, 1), intArrayOf(1, 2), intArrayOf(2, 3), intArrayOf(3, 2), intArrayOf(3, 1))
-        val SPOTS = arrayOf(intArrayOf(2, -1), intArrayOf(-1, 2), intArrayOf(2, 5), intArrayOf(5, 2), intArrayOf(4, -1))
+        val SPOTS = arrayOf(intArrayOf(2, -1), intArrayOf(-1, 2), intArrayOf(2, 5), intArrayOf(5, 2), intArrayOf(2, -1))
+
+        /**
+         * The P3 safespot tiles, two a quarter beside the middle of each side of his 5x5: where the free players of a
+         * duo, trio or 4s wait (the owner's chart: each square is the nearest one's within 3 ticks, ties by orb order).
+         */
+        val SAFESPOTS =
+            arrayOf(
+                intArrayOf(1, 5), intArrayOf(-1, 3), intArrayOf(3, 5), intArrayOf(5, 3),
+                intArrayOf(5, 1), intArrayOf(3, -1), intArrayOf(1, -1), intArrayOf(-1, 1),
+            )
 
         /** The room's floor, and the tiles an exhumed can come up on (any but under his 5x5). */
         val ARENA: List<CoordGrid> = (3163..3177).flatMap { x -> (4380..4394).map { z -> CoordGrid(x, z, 1) } }
