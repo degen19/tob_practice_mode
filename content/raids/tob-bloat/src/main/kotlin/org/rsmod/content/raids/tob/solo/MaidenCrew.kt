@@ -410,10 +410,12 @@ class MaidenCrew(
         // a step on the click or the swing costs the swing: one due waits while the blood is still ticks away
         if (p.actionDelay <= clock.cycle + 1 && (b.order != null || current(p) != null) && (room.bloodIn(here) ?: 0) >= BLOOD_SLACK) return false
         val beside = room.besideHer(here)
+        val dinh = quad && dinhNext(b, upcoming(b))
+        val spot = b.dinNext?.pos?.takeIf { dinh }
         val to =
             (-DODGE..DODGE).flatMap { dx -> (-DODGE..DODGE).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
-                .filter { it != here && room.inArena(it) && !room.under(it) && !room.bloody(it) && (!beside || room.besideHer(it)) }
-                .minWithOrNull(compareBy({ if (room.gapToHer(it) - 1 <= RUN) 0 else 1 }, { if (b.dps != null && !room.besideHer(it)) 1 else 0 }, { if (b.dps != null) fromPost(b, it) else 0 }, { maxOf(abs(it.x - here.x), abs(it.z - here.z)) })) ?: return false
+                .filter { it != here && room.inArena(it) && !room.under(it) && !room.bloody(it) && (!beside || room.besideHer(it)) && (!dinh || notSouth(it)) }
+                .minWithOrNull(compareBy({ c: CoordGrid -> spot?.let { maxOf(abs(it[0] - (c.x - ROOM_X)), abs(it[1] - (ROOM_Y - c.z))) } ?: 0 }, { if (room.gapToHer(it) - 1 <= RUN) 0 else 1 }, { if (b.dps != null && !room.besideHer(it)) 1 else 0 }, { if (b.dps != null) fromPost(b, it) else 0 }, { maxOf(abs(it.x - here.x), abs(it.z - here.z)) })) ?: return false
         trace { "t$t ${b.role} steps off blood to ${to.x - ROOM_X},${ROOM_Y - to.z}" }
         val o = b.order
         if (o != null) {
@@ -503,6 +505,9 @@ class MaidenCrew(
         return listOf(ax + dy to ay + dx, ax - dy to ay - dx).any { (x, y) -> x in MT_X..MX1 && y in MT_Y..MY1 }
     }
 
+    /** Whether the melee's next swing is its Dinh's (a four's S1 scythes skipped on the way when there's no stack). */
+    private fun dinhNext(b: Bot, next: String): Boolean = b.dps != null && !b.dinDone && (next in DINH_LINES || (quad && next == "qs1" && b.dinNext != null))
+
     /** Not on her south side: a Dinh's on her never goes from there (the owner). */
     private fun notSouth(c: CoordGrid): Boolean = ROOM_Y - c.z <= MY1
 
@@ -520,12 +525,12 @@ class MaidenCrew(
             return
         }
         if (atkOf(next).style != 'm') return
-        val beside = room.besideHer(here) && (next !in DINH_LINES || notSouth(here))
+        val beside = room.besideHer(here) && (!dinhNext(b, next) || notSouth(here))
         if (beside && fromPost(b, here) <= POST_NEAR) return
         val dist = { c: CoordGrid -> maxOf(abs(c.x - here.x), abs(c.z - here.z)) }
         val open =
             (-REACH..REACH).flatMap { dx -> (-REACH..REACH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
-                .filter { room.besideHer(it) && room.inArena(it) && !room.under(it) && !room.bloody(it) && (next !in DINH_LINES || notSouth(it)) }
+                .filter { room.besideHer(it) && room.inArena(it) && !room.under(it) && !room.bloody(it) && (!dinhNext(b, next) || notSouth(it)) }
         val nearest = open.minOfOrNull(dist) ?: return
         val spare = RUN * (b.next - t - 1)
         val dest = open.filter { fromPost(b, it) <= POST_NEAR && dist(it) <= maxOf(if (beside) 0 else nearest, spare) }.minByOrNull(dist) ?: if (beside) return else open.minByOrNull(dist) ?: return
@@ -600,7 +605,7 @@ class MaidenCrew(
      */
     private fun dinhSpot(b: Bot): IntArray? {
         val next = upcoming(b)
-        if (!b.dinDone && next in DINH_LINES) return b.dinNext?.pos
+        if (!b.dinDone && (next in DINH_LINES || (quad && next == "qs1"))) return b.dinNext?.pos
         val surge = if (!b.surged && "surge" in b.seq.drop(b.step)) SURGE_SPEC else 0
         val second = next == "tdin2" && b.dinDone && !b.din2Done && b.spec + surge >= DINH_COST
         if (!second) return null
@@ -625,7 +630,8 @@ class MaidenCrew(
         val here = room.real(b.player.coords)
         if (maxOf(abs(plan.pos[0] - (here.x - ROOM_X)), abs(plan.pos[1] - (ROOM_Y - here.z))) > params.dinhWalk) return null
         if (b.spec < DINH_COST) return null
-        if (plan.key == "maiden" || crabRef(plan.key)?.takeIf { it.hp > SAFE_HP && it.key !in inflightKeys(t + 1, false) && reachOf(it) > t + 2 } != null) return plan
+        val southOfN2 = crabRef(plan.key)?.takeIf { quad && it.id == "N2" }?.let { ROOM_Y - here.z >= it.y + 2 } ?: true
+        if (plan.key == "maiden" || (southOfN2 && crabRef(plan.key)?.takeIf { it.hp > SAFE_HP && it.key !in inflightKeys(t + 1, false) && reachOf(it) > t + 2 } != null)) return plan
         val keep = curT
         curT = t + 1
         val pk = dinPick(0, inflightKeys(curT, false), b)
@@ -1018,6 +1024,7 @@ class MaidenCrew(
         // a four's mage rapid-bows on through (its freezes go a tick after the melee freeze's)
         val stand = if (b.role.freezes && b.force == null && !(quad && b.role == NyloRole.Mage && room.phase != WAVES.size - 1)) standFor(b, tt) else null
         val a = onTime(b, stand ?: obligate(b, nextAct(b, tt), tt), tt)
+        planDinh(b, a, tt)
         b.walkedFor = null
         trace { "t$tt ${b.role}@${room.real(b.player.coords).let { "${it.x - ROOM_X},${ROOM_Y - it.z}" }} $a${if (a.startsWith("dinhs")) " from ${b.dinPos?.joinToString(",")}" else ""}" }
         // a freezer this near her doesn't tbow: a crossbow shot instead (no tick lost), walking back out on its cooldown
@@ -1389,6 +1396,28 @@ class MaidenCrew(
             }
             return fallback(b, a)
         }
+    }
+
+    /**
+     * A four's melee swinging its last stack scythe before its Dinh's lines the Dinh's up now, as the trio's does on its
+     * first swing after the 50s: it walks to the tile on this swing's cooldown, so the Dinh's goes on its tick from where
+     * the pick puts it.
+     */
+    private fun planDinh(b: Bot, a: String, tt: Int) {
+        if (!quad || b.dps == null || b.dinDone || a.startsWith("dinhs")) return
+        val rest = b.seq.drop(b.step)
+        val at = rest.indexOf("tdin")
+        if (at < 0 || rest.take(at).any { it != "qs1" }) return
+        val hit = a.substringAfter(':', "").substringBefore(':').takeIf { it.isNotEmpty() }
+        if (at > 0) {
+            val stack = stackCrab(S1S, tt + SWING)
+            if (stack != null && !(stack.key == hit && stack.hp <= SCYTHE_MEAN)) {
+                b.dinNext = null
+                return
+            }
+        }
+        b.dinNext = dinPick(5, inflightKeys(tt, false) + listOfNotNull(hit), b, PLAN_RUN)
+        trace { "t$tt ${b.role} lines up its Dinh's: ${b.dinNext?.key} from ${b.dinNext?.pos?.joinToString(",")}" }
     }
 
     /**
