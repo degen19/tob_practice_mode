@@ -1,0 +1,176 @@
+{
+ "name": "5s Blert-style",
+ "players": [
+  {
+   "name": "Mage",
+   "stall": true,
+   "necks": 6,
+   "hp": 115,
+   "first_swing": 14,
+   "walk_specs": [
+    {
+     "weapon": "BGS_SPEC",
+     "tick": 2
+    },
+    {
+     "weapon": "BGS_SPEC",
+     "tick": 8
+    }
+   ],
+   "down_specs": [],
+   "enter": 0,
+   "walk_swings": [
+    14,
+    19,
+    24,
+    29,
+    34,
+    39,
+    44,
+    49,
+    54,
+    59,
+    64,
+    69
+   ]
+  },
+  {
+   "name": "Melee 1",
+   "stall": true,
+   "necks": 6,
+   "hp": 115,
+   "first_swing": 9,
+   "walk_specs": [],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 10
+    },
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 14
+    }
+   ],
+   "enter": 3,
+   "walk_swings": [
+    9,
+    14,
+    19,
+    24,
+    29,
+    34,
+    39,
+    44,
+    49,
+    54,
+    59,
+    64,
+    69
+   ]
+  },
+  {
+   "name": "Melee 2",
+   "stall": true,
+   "necks": 6,
+   "hp": 115,
+   "first_swing": 5,
+   "walk_specs": [],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 10
+    },
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 14
+    }
+   ],
+   "enter": 0,
+   "walk_swings": [
+    5,
+    10,
+    19,
+    24,
+    29,
+    34,
+    39,
+    44,
+    49,
+    54,
+    59,
+    64,
+    69
+   ]
+  },
+  {
+   "name": "Melee 3",
+   "stall": true,
+   "necks": 6,
+   "hp": 115,
+   "first_swing": 19,
+   "walk_specs": [],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 10
+    },
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 14
+    }
+   ],
+   "enter": 0,
+   "walk_swings": [
+    19,
+    24,
+    29,
+    34,
+    39,
+    44,
+    49,
+    54,
+    59,
+    64,
+    69
+   ]
+  },
+  {
+   "name": "Ranger",
+   "stall": true,
+   "necks": 6,
+   "hp": 115,
+   "first_swing": 14,
+   "walk_specs": [],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 10
+    },
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 14
+    }
+   ],
+   "enter": 12,
+   "walk_swings": [
+    14,
+    19,
+    24,
+    29,
+    34,
+    39,
+    44,
+    49,
+    54,
+    59,
+    64,
+    69
+   ]
+  }
+ ],
+ "entry": {
+  "x": 19,
+  "heading": "east"
+ },
+ "damage_factor": 0.97
+}
