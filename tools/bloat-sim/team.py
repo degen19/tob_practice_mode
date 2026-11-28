@@ -18,7 +18,7 @@ from bloat import Room, in_tank, LOOP, CORNERS
 from combat import Weapons
 
 SPEC_COST = {"CLAW_SPEC": 50, "BGS_SPEC": 50, "CHALLY_SPEC": 30, "ZCB_SPEC": 75}
-SPEED = {"SCYTHE": 5, "CLAW_SPEC": 4, "BGS_SPEC": 6, "CHALLY_SPEC": 7, "ZCB_SPEC": 5}
+SPEED = {"ZCB_AUTO": 5, "TWISTED_BOW": 5, "SCYTHE": 5, "CLAW_SPEC": 4, "BGS_SPEC": 6, "CHALLY_SPEC": 7, "ZCB_SPEC": 5}
 RING = [(x, y) for x in range(12, 20) for y in range(12, 20) if not in_tank(x, y)]
 RING_SET = set(RING)
 STALL_LOCK = 3
@@ -282,7 +282,7 @@ def run(proc, seed, record=False, weapons=None):
             if down is None and t <= first_act and first_act - t <= 6:
                 target = plan_tile(p, room, t, hands_by, stallers, ready=first_act, side="any", still=True)
             elif nxt is not None and nxt < 10 ** 6 and not p.stall and t >= p.first and down is None:
-                target = sneak(p, room, t, nxt, hands_by, stallers)
+                target = sneak(p, room, t, nxt, hands_by, stallers, [q.pos for q in ps if q is not p and not q.dead and 8 <= q.pos[0] < 24])
             elif hiding:
                 danger = set().union(*[v for when, v in hands_by.items() if t < when <= t + 3]) if hands_by else set()
                 target = hide_tile(p, room, danger, 5 if nxt is None else min(nxt - t, 8))
@@ -444,9 +444,38 @@ def plan_tile(p, room, t, hands_by, stallers, ready=None, side="front", still=Fa
     return best or goal_tile(p, nbx, nby, hand_at, stallers)
 
 
-def sneak(p, room, t, swing_at, hands_by, stallers):
-    """A long gap between swings: route to the next swing's tile out of his sight (round the tank if need be), and wait
-    on the last tile of that route he can't see until it's time to step out and swing."""
+def sneak(p, room, t, swing_at, hands_by, stallers, others=()):
+    """Between swings: this tick's tile, within a run of here, that still makes the next swing's tile on time - out of
+    his sight, then out of sight of any teammate he sees (so his flies can't bounce over), then closest to the swing.
+    So a non-staller backs round the tank between hits and steps out to swing without losing a tick."""
+    bx, by = room.sw
+    k = p.walk_swings.index(swing_at) if swing_at in p.walk_swings else -1
+    side = p.walk_sides[k] if 0 <= k < len(p.walk_sides) else "front"
+    goal = plan_tile(p, room, t, hands_by, stallers, ready=swing_at, side=side)
+    if swing_at <= t:
+        return goal
+    nx, ny = future_sw(room, 1)
+    exposed = [q for q in others if ray_clear(bx + 2, by + 2, *q) or ray_clear(nx + 2, ny + 2, *q)]
+    landing_next = hands_by.get(t + 1, set())
+    budget = 2 * (swing_at - t)
+    seen_set = {c for c in OUTER if ray_clear(bx + 2, by + 2, *c)}
+    best, best_cost = None, None
+    for c in OUTER:
+        if max(abs(c[0] - p.pos[0]), abs(c[1] - p.pos[1])) > 2 or steps_to(p.pos, c, bx, by) > 2:
+            continue
+        hidden = len(route(c, goal, bx, by, seen_set)) - 1
+        to_goal = hidden if hidden <= budget else steps_to(c, goal, bx, by)
+        if to_goal > budget:
+            continue
+        seen = ray_clear(nx + 2, ny + 2, *c) or ray_clear(bx + 2, by + 2, *c)
+        bounce = any(ray_clear(*q, *c) for q in exposed)
+        cost = (c in landing_next, seen, bounce, hidden > budget, to_goal, max(abs(c[0] - p.pos[0]), abs(c[1] - p.pos[1])))
+        if best_cost is None or cost < best_cost:
+            best, best_cost = c, cost
+    return best or goal
+
+
+def _old_sneak(p, room, t, swing_at, hands_by, stallers):
     bx, by = room.sw
     k = p.walk_swings.index(swing_at) if swing_at in p.walk_swings else -1
     side = p.walk_sides[k] if 0 <= k < len(p.walk_sides) else "front"

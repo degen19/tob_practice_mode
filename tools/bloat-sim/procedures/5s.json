@@ -1,12 +1,119 @@
 {
- "name": "5s Blert-style",
+ "name": "5s from Blert 620ff45c",
+ "source": "620ff45c-a4a6-4fa1-8a31-781514e91428",
+ "entry": {
+  "x": 15,
+  "heading": "east"
+ },
+ "damage_factor": 0.97,
  "players": [
   {
-   "name": "Mage",
-   "stall": true,
-   "necks": 6,
+   "name": "MaxKhalifa",
+   "gate": "west",
+   "enter": 0,
+   "stall": false,
+   "necks": 8,
    "hp": 115,
-   "first_swing": 14,
+   "first_swing": 9,
+   "walk_swings": [
+    9,
+    14,
+    19,
+    24,
+    29,
+    34
+   ],
+   "walk_sides": [
+    "front",
+    "any",
+    "front",
+    "back",
+    "any",
+    "front"
+   ],
+   "walk_specs": [],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 10,
+     "down": 1
+    },
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 14,
+     "down": 1
+    }
+   ],
+   "down_start": [
+    0
+   ],
+   "rewalk_attack": false
+  },
+  {
+   "name": "xDuane",
+   "gate": "west",
+   "enter": 0,
+   "stall": false,
+   "necks": 8,
+   "hp": 115,
+   "first_swing": 8,
+   "walk_swings": [
+    19,
+    24,
+    29,
+    34
+   ],
+   "walk_sides": [
+    "front",
+    "any",
+    "any",
+    "front"
+   ],
+   "walk_specs": [
+    {
+     "weapon": "ZCB_AUTO",
+     "tick": 8
+    }
+   ],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 10,
+     "down": 1
+    },
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 14,
+     "down": 1
+    }
+   ],
+   "down_start": [
+    0
+   ],
+   "rewalk_attack": false
+  },
+  {
+   "name": "Horselord",
+   "gate": "east",
+   "enter": 0,
+   "stall": false,
+   "necks": 8,
+   "hp": 115,
+   "first_swing": 2,
+   "walk_swings": [
+    14,
+    19,
+    24,
+    29,
+    34
+   ],
+   "walk_sides": [
+    "back",
+    "any",
+    "back",
+    "any",
+    "front"
+   ],
    "walk_specs": [
     {
      "weapon": "BGS_SPEC",
@@ -18,159 +125,88 @@
     }
    ],
    "down_specs": [],
-   "enter": 0,
-   "walk_swings": [
-    14,
-    19,
-    24,
-    29,
-    34,
-    39,
-    44,
-    49,
-    54,
-    59,
-    64,
-    69
-   ]
-  },
-  {
-   "name": "Melee 1",
-   "stall": true,
-   "necks": 6,
-   "hp": 115,
-   "first_swing": 9,
-   "walk_specs": [],
-   "down_specs": [
-    {
-     "weapon": "CLAW_SPEC",
-     "at": 10
-    },
-    {
-     "weapon": "CLAW_SPEC",
-     "at": 14
-    }
+   "down_start": [
+    0
    ],
-   "enter": 3,
-   "walk_swings": [
-    9,
-    14,
-    19,
-    24,
-    29,
-    34,
-    39,
-    44,
-    49,
-    54,
-    59,
-    64,
-    69
-   ]
+   "rewalk_attack": false
   },
   {
-   "name": "Melee 2",
-   "stall": true,
-   "necks": 6,
+   "name": "Pointwise",
+   "gate": "east",
+   "enter": 3,
+   "stall": false,
+   "necks": 8,
    "hp": 115,
    "first_swing": 5,
-   "walk_specs": [],
-   "down_specs": [
-    {
-     "weapon": "CLAW_SPEC",
-     "at": 10
-    },
-    {
-     "weapon": "CLAW_SPEC",
-     "at": 14
-    }
-   ],
-   "enter": 0,
    "walk_swings": [
     5,
     10,
     19,
     24,
     29,
-    34,
-    39,
-    44,
-    49,
-    54,
-    59,
-    64,
-    69
-   ]
-  },
-  {
-   "name": "Melee 3",
-   "stall": true,
-   "necks": 6,
-   "hp": 115,
-   "first_swing": 19,
+    34
+   ],
+   "walk_sides": [
+    "front",
+    "back",
+    "front",
+    "back",
+    "any",
+    "front"
+   ],
    "walk_specs": [],
    "down_specs": [
     {
      "weapon": "CLAW_SPEC",
-     "at": 10
-    },
-    {
-     "weapon": "CLAW_SPEC",
-     "at": 14
+     "at": 15,
+     "down": 1
     }
    ],
-   "enter": 0,
-   "walk_swings": [
-    19,
-    24,
-    29,
-    34,
-    39,
-    44,
-    49,
-    54,
-    59,
-    64,
-    69
-   ]
+   "down_start": [
+    0
+   ],
+   "rewalk_attack": false
   },
   {
-   "name": "Ranger",
-   "stall": true,
-   "necks": 6,
+   "name": "duckwax",
+   "gate": "east",
+   "enter": 12,
+   "stall": false,
+   "necks": 8,
    "hp": 115,
    "first_swing": 14,
-   "walk_specs": [],
+   "walk_swings": [
+    14,
+    29,
+    34
+   ],
+   "walk_sides": [
+    "back",
+    "front",
+    "back"
+   ],
+   "walk_specs": [
+    {
+     "weapon": "ZCB_AUTO",
+     "tick": 19
+    }
+   ],
    "down_specs": [
     {
      "weapon": "CLAW_SPEC",
-     "at": 10
+     "at": 13,
+     "down": 1
     },
     {
      "weapon": "CLAW_SPEC",
-     "at": 14
+     "at": 17,
+     "down": 1
     }
    ],
-   "enter": 12,
-   "walk_swings": [
-    14,
-    19,
-    24,
-    29,
-    34,
-    39,
-    44,
-    49,
-    54,
-    59,
-    64,
-    69
-   ]
+   "down_start": [
+    3
+   ],
+   "rewalk_attack": false
   }
- ],
- "entry": {
-  "x": 19,
-  "heading": "east"
- },
- "damage_factor": 0.97
+ ]
 }

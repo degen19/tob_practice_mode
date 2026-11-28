@@ -1,12 +1,34 @@
 {
- "name": "4s Blert-style",
+ "name": "4s from Blert f2d903a7",
+ "source": "f2d903a7-241d-4822-83c4-74f4c5df6fb3",
+ "entry": {
+  "x": 15,
+  "heading": "east"
+ },
+ "damage_factor": 1.0,
  "players": [
   {
-   "name": "Mage",
-   "stall": true,
-   "necks": 6,
+   "name": "duckwax",
+   "gate": "east",
+   "enter": 0,
+   "stall": false,
+   "necks": 8,
    "hp": 115,
-   "first_swing": 8,
+   "first_swing": 2,
+   "walk_swings": [
+    8,
+    19,
+    24,
+    29,
+    34
+   ],
+   "walk_sides": [
+    "any",
+    "front",
+    "back",
+    "any",
+    "back"
+   ],
    "walk_specs": [
     {
      "weapon": "BGS_SPEC",
@@ -16,31 +38,85 @@
    "down_specs": [
     {
      "weapon": "CLAW_SPEC",
-     "at": 10
+     "at": 10,
+     "down": 1
+    },
+    {
+     "weapon": "CHALLY_SPEC",
+     "at": 19,
+     "down": 1
     }
    ],
+   "down_start": [
+    0
+   ],
+   "rewalk_attack": false
+  },
+  {
+   "name": "Boris King7",
+   "gate": "west",
    "enter": 0,
+   "stall": false,
+   "necks": 8,
+   "hp": 115,
+   "first_swing": 8,
    "walk_swings": [
-    8,
     19,
     24,
     29,
-    34,
-    39,
-    44,
-    49,
-    54,
-    59,
-    64,
-    69
-   ]
+    34
+   ],
+   "walk_sides": [
+    "front",
+    "any",
+    "front",
+    "any"
+   ],
+   "walk_specs": [
+    {
+     "weapon": "ZCB_AUTO",
+     "tick": 8
+    }
+   ],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 10,
+     "down": 1
+    },
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 14,
+     "down": 1
+    }
+   ],
+   "down_start": [
+    0
+   ],
+   "rewalk_attack": false
   },
   {
-   "name": "Melee 1",
-   "stall": true,
-   "necks": 6,
+   "name": "xDuane",
+   "gate": "east",
+   "enter": 3,
+   "stall": false,
+   "necks": 8,
    "hp": 115,
    "first_swing": 5,
+   "walk_swings": [
+    5,
+    19,
+    24,
+    29,
+    34
+   ],
+   "walk_sides": [
+    "front",
+    "front",
+    "back",
+    "any",
+    "back"
+   ],
    "walk_specs": [
     {
      "weapon": "BGS_SPEC",
@@ -50,94 +126,53 @@
    "down_specs": [
     {
      "weapon": "CLAW_SPEC",
-     "at": 10
+     "at": 10,
+     "down": 1
     }
    ],
-   "enter": 3,
-   "walk_swings": [
-    5,
-    19,
-    24,
-    29,
-    34,
-    39,
-    44,
-    49,
-    54,
-    59,
-    64,
-    69
-   ]
+   "down_start": [
+    0
+   ],
+   "rewalk_attack": false
   },
   {
-   "name": "Melee 2",
-   "stall": true,
-   "necks": 6,
-   "hp": 115,
-   "first_swing": 19,
-   "walk_specs": [],
-   "down_specs": [
-    {
-     "weapon": "CLAW_SPEC",
-     "at": 10
-    },
-    {
-     "weapon": "CLAW_SPEC",
-     "at": 14
-    }
-   ],
+   "name": "Skidipip",
+   "gate": "east",
    "enter": 12,
-   "walk_swings": [
-    19,
-    24,
-    29,
-    34,
-    39,
-    44,
-    49,
-    54,
-    59,
-    64,
-    69
-   ]
-  },
-  {
-   "name": "Ranger",
-   "stall": true,
-   "necks": 6,
+   "stall": false,
+   "necks": 8,
    "hp": 115,
    "first_swing": 14,
-   "walk_specs": [],
+   "walk_swings": [
+    14,
+    19
+   ],
+   "walk_sides": [
+    "back",
+    "any"
+   ],
+   "walk_specs": [
+    {
+     "weapon": "ZCB_AUTO",
+     "tick": 30
+    }
+   ],
    "down_specs": [
     {
-     "weapon": "CLAW_SPEC",
-     "at": 10
+     "weapon": "ZCB_SPEC",
+     "at": 3,
+     "down": 1
     },
     {
      "weapon": "CLAW_SPEC",
-     "at": 14
+     "at": 13,
+     "down": 1
     }
    ],
-   "enter": 0,
-   "walk_swings": [
-    14,
-    19,
-    24,
-    29,
-    34,
-    39,
-    44,
-    49,
-    54,
-    59,
-    64,
-    69
-   ]
+   "down_start": [
+    3
+   ],
+   "rewalk_attack": false
   }
- ],
- "entry": {
-  "x": 15,
-  "heading": "east"
- },
- "damage_factor": 1.0
+ ]
 }

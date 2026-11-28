@@ -52,6 +52,8 @@ class Weapons:
         if weapon == "CHALLY_SPEC":
             c = chance(int(p["chally_att"] * 1.75), self.def_roll(defence, SLASH_DEF))
             return [(1, rng.randint(0, p["chally_max"]) if rng.random() < c else 0) for _ in range(2)]
+        if weapon in ("ZCB_AUTO", "TWISTED_BOW"):
+            return [(3, rng.randint(0, 64) if rng.random() < 0.5 else 0)]
         if weapon == "ZCB_SPEC":
             return [(3, p["zcb_spec"])]
         return []
