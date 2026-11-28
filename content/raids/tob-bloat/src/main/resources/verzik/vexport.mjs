@@ -20,7 +20,22 @@ for (let k = 1; k <= n; k++) {
     else if (e.boss) { const m = /-> (P\d)/.exec(e.tip || ''); boss.push([e.t, e.boss, m ? Number(m[1].slice(1)) - 1 : -1]); }
     else if (e.hp != null && e.phase) { if (e.hp !== lastHp) { hp.push([e.t, e.hp, e.phase]); lastHp = e.hp; } }
   }
-  raids.push({ seed, end: r.end ?? null, marks, atk, boss, hp });
+  // the players' side from the sim's log: hitpoints after each hit or heal, and what they drink, eat and transfer
+  const names = cfgs.map((c, i) => c.name || `P${i + 1}`), ev = [];
+  for (const line of r.log.map(String)) {
+    const m = /^t\s*(\d+) (\S+?): (.*)$/.exec(line);
+    if (!m) continue;
+    const t = Number(m[1]), i = names.indexOf(m[2]), what = m[3];
+    if (i < 0) continue;
+    let x;
+    if ((x = /^takes (\d+)(?: from \S+)? -> (-?\d+) HP/.exec(what))) ev.push([t, i, 'hit', Number(x[2])]);
+    else if ((x = /^brew (\d+) -> (\d+) HP/.exec(what))) ev.push([t, i, 'brew', Number(x[2])]);
+    else if ((x = /^(?:eats? )?shark (\d+) -> (\d+)/.exec(what))) ev.push([t, i, 'shark', Number(x[2])]);
+    else if (/^super restore/.test(what)) ev.push([t, i, 'restore', -1]);
+    else if (/^surge /.test(what)) ev.push([t, i, 'surge', -1]);
+    else if ((x = /^spec transfer -> (\S+)/.exec(what))) ev.push([t, i, 'transfer', names.indexOf(x[1])]);
+  }
+  raids.push({ seed, end: r.end ?? null, marks, atk, boss, hp, ev });
 }
 const out = process.argv[4] || `verzik${TEAM}.json.gz`;
 writeFileSync(out, gzipSync(JSON.stringify(raids)));

@@ -22,6 +22,8 @@ import org.rsmod.api.script.onEvent
 import org.rsmod.content.raids.tob.bloat.verzik.VerzikReplayRoom
 import org.rsmod.content.raids.tob.bloat.verzik.VerzikReplays
 import org.rsmod.content.raids.tob.bloat.verzik.VerzikRules
+import org.rsmod.content.raids.tob.solo.TobHud
+import org.rsmod.events.EventBus
 import org.rsmod.game.MapClock
 import org.rsmod.game.cheat.Cheat
 import org.rsmod.game.entity.Player
@@ -50,6 +52,7 @@ constructor(
     private val random: GameRandom,
     private val protectedAccess: ProtectedAccessLauncher,
     private val bots: RaidBots,
+    private val eventBus: EventBus,
 ) : PluginScript() {
     private val logger = InlineLogger()
     private val rooms = HashMap<String, VerzikReplayRoom>()
@@ -132,6 +135,7 @@ constructor(
         if (player != null) {
             room.watchers += player
             room.throne(false)
+            TobHud.open(player, eventBus)
             protectedAccess.launch(player) { telejump(at(VerzikRules.WATCH_X, VerzikRules.WATCH_Y), TeleportType.Exempt) }
             player.npcViewDistance = 32
         }
@@ -146,6 +150,7 @@ constructor(
             } catch (e: Exception) {
                 logger.error(e) { "vverzik: room tick failed" }
             }
+            for (w in room.watchers) if (w.isSlotAssigned) TobHud.update(w, room.progress(), room.bots)
             if (key == SELF_TEST && room.finished) {
                 val r = room.raid
                 logger.info { "vverzik selftest: ${r.uuid} ${r.scale}s #${r.rank} ${if (r.failed) "failed" else r.time}: ${room.checked} ticks, bot drift ${room.botDrift}, npc drift ${room.npcDrift}, hp drift ${room.hpDrift}" }
@@ -161,6 +166,8 @@ constructor(
             bots.remove(b)
         }
         room.bots.clear()
+        for (w in room.watchers) if (w.isSlotAssigned) TobHud.close(w, eventBus)
+        room.watchers.clear()
         room.remove()
         instances.end(room.session)
     }

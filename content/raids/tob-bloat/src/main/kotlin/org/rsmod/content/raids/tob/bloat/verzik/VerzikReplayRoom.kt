@@ -27,6 +27,7 @@ import org.rsmod.api.repo.obj.ObjRepository
 import org.rsmod.api.repo.world.WorldRepository
 import org.rsmod.content.raids.tob.bloat.BlertLooks
 import org.rsmod.content.raids.tob.solo.NyloLooks
+import org.rsmod.content.raids.tob.solo.TobHud
 import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
 import org.rsmod.game.entity.util.PathingEntityCommon
@@ -73,7 +74,6 @@ class VerzikReplayRoom(
     private var websUntil = -1
     private val blocked = ArrayList<CoordGrid>()
     private var dawnOnFloor: Obj? = null
-    private var shieldUntil = -1
     private val dropsAt = raid.drops.groupBy { it.t }
     private val dawnDamage = raid.dawns.associate { (it.t to it.player) to it.damage }
     private val random = java.util.Random(raid.uuid.hashCode().toLong())
@@ -86,6 +86,8 @@ class VerzikReplayRoom(
     private val deathsAt = raid.npcs.indices.filter { raid.npcs[it].death != null }.groupBy { raid.npcs[it].death!! }
     private val attacksAt = raid.attacks.groupBy { it.t }
     private val spellsAt = raid.spells.groupBy { it.t }
+    private val last = maxOf(raid.end, raid.npcs.maxOf { it.steps.last().t })
+    private val usesAt = raid.uses.groupBy { it.t }
     private val herAt = raid.her.groupBy { it.t }
     private val gearAt = raid.gear.map { g -> g.groupBy { it.first } }
     private val overheadAt = raid.overheads.map { o -> o.associate { it.first to it.second } }
@@ -125,7 +127,7 @@ class VerzikReplayRoom(
         private set
 
     val finished: Boolean
-        get() = clock > raid.end + END_HOLD
+        get() = clock > last + END_HOLD
 
     fun spot(i: Int): CoordGrid = at(raid.x(i, 0), raid.y(i, 0))
 
@@ -160,8 +162,8 @@ class VerzikReplayRoom(
         val due = pending.filter { it.first <= t }
         pending.removeAll { it.first <= t }
         due.forEach { it.second() }
-        if (t > raid.end) {
-            if (t == raid.end + END_HOLD) remove()
+        if (t > last) {
+            if (t == last + END_HOLD) remove()
             return
         }
         if (t > 0) {
@@ -187,7 +189,6 @@ class VerzikReplayRoom(
         deathsAt[t]?.forEach { die(it) }
         herAt[t]?.forEach { herAttack(it) }
         dropsAt[t]?.forEach { dawnbringer(it) }
-        if (t <= shieldUntil) her?.let { npcs[it] }?.let { looks.shield(it) }
         websTick(t)
         bots.forEachIndexed { i, b ->
             if (t > 0) {
@@ -200,6 +201,13 @@ class VerzikReplayRoom(
         }
         attacksAt[t]?.forEach { attack(it) }
         spellsAt[t]?.forEach { spell(it) }
+        usesAt[t]?.forEach { use(it) }
+    }
+
+    /** Her bar on the Theatre's HUD: her hitpoints in the form she's in. */
+    fun progress(): TobHud.Bar? {
+        val v = her?.let { npcs[it] }?.takeIf { it.isSlotAssigned && it.baseHitpointsLvl > 0 } ?: return null
+        return TobHud.bar(TobHud.FIGHT, v.hitpoints, v.baseHitpointsLvl)
     }
 
     private fun check(t: Int) {
@@ -381,10 +389,7 @@ class VerzikReplayRoom(
     private fun arrivals(list: List<Int>) {
         val v = her?.let { npcs[it] }
         val red = VerzikRules.RED.asRSCM(RSCMType.NPC)
-        if (v != null && list.any { raid.npcs[it].type0 == red }) {
-            looks.summonReds(v)
-            shieldUntil = clock + SHIELD_TICKS
-        }
+        if (v != null && list.any { raid.npcs[it].type0 == red }) looks.summonReds(v)
         for (i in list) {
             val s = raid.npcs[i].steps.first()
             val n = npcs[i] ?: continue
@@ -448,10 +453,7 @@ class VerzikReplayRoom(
         if (npc.isSlotAssigned) npcRepo.del(npc, Int.MAX_VALUE)
         val next = newNpc(i, s) ?: return
         if (s.type == P1_TO_P2.asRSCM(RSCMType.NPC)) throne(true)
-        when (s.type) {
-            P2.asRSCM(RSCMType.NPC) -> looks.p2Arrives(next)
-            P2_TO_P3.asRSCM(RSCMType.NPC) -> looks.p3Rises(next)
-        }
+        if (s.type == P2_TO_P3.asRSCM(RSCMType.NPC)) looks.p3Rises(next)
     }
 
     private fun hitpoints(npc: Npc, s: VerzikReplays.Step): Pair<Int, Int> {
@@ -602,6 +604,13 @@ class VerzikReplayRoom(
         if (s.gfx >= 0) RSCM.getReverseMapping(RSCMType.SPOTANIM, s.gfx)?.let { (bots.getOrNull(s.target) ?: bot).spotanim(it) }
     }
 
+    /** A drink or a bite (the sim's brews, restores, surges, sharks): no attack that tick, so it never cuts one off. */
+    private fun use(u: VerzikReplays.Use) {
+        val bot = bots.getOrNull(u.player) ?: return
+        if (attacksAt[u.t]?.any { it.player == u.player } != true) bot.anim(EAT_ANIM)
+        worldRepo.soundArea(bot.coords, if (u.kind == "shark") EAT_SOUND else DRINK_SOUND, radius = USE_SOUND_RADIUS)
+    }
+
     private fun herAttack(h: VerzikReplays.Her) {
         val v = npcs[h.npc]?.takeIf { it.isSlotAssigned } ?: return
         val vs = shown[h.npc] ?: return
@@ -679,7 +688,6 @@ class VerzikReplayRoom(
     }
 
     companion object {
-        const val SHIELD_TICKS = 10
         const val WEB_TICKS = 44
         const val WEB_AFTER = 14
         const val WEB_LIFE = 30
@@ -713,6 +721,10 @@ class VerzikReplayRoom(
         const val BOUNCE_WINDOW = 2
         const val PURPLE_LOOKAHEAD = 10
         const val ATTACK_PRIORITY = 6
+        const val EAT_ANIM = "seq.human_eat"
+        const val EAT_SOUND = "synth.eat"
+        const val DRINK_SOUND = "synth.liquid"
+        const val USE_SOUND_RADIUS = 5
         const val PILLAR_COLLAPSE_TICKS = 4
         const val PILLAR_FADE = 10
         const val PILLAR_FADE_TICKS = 2

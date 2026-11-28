@@ -22,6 +22,8 @@ object VerzikReplays {
 
     class Dawn(val t: Int, val player: Int, val damage: Int)
 
+    class Use(val t: Int, val player: Int, val kind: String)
+
     class Step(val t: Int, val type: Int, val x: Int, val y: Int, val hp: Int, val base: Int)
 
     class Track(val spawn: Int, val death: Int?, val steps: List<Step>) {
@@ -46,6 +48,7 @@ object VerzikReplays {
         val drops: List<Drop>,
         val dawns: List<Dawn>,
         val yellows: List<Pair<Int, List<Pair<Int, Int>>>>,
+        val uses: List<Use>,
     ) {
         val players get() = tiles.size
         val time get() = MaidenIndex.fmt(end)
@@ -95,6 +98,7 @@ object VerzikReplays {
             r["drops"].map { Drop(it[0].asInt(), it[1].asInt(), it[2].asInt(), it[3].asInt() == 1) },
             r["dawns"].map { Dawn(it[0].asInt(), it[1].asInt(), it[2].asInt()) },
             r["yellows"].map { y -> y[0].asInt() to y[1].map { it[0].asInt() to it[1].asInt() } },
+            r["uses"]?.map { Use(it[0].asInt(), it[1].asInt(), it[2].asText()) }.orEmpty(),
         )
 
     fun pick(scale: Int, rank: Int?, pick: Int): Raid? {

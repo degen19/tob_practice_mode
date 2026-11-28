@@ -78,12 +78,41 @@ chart, thresholds), fails that carry on to the kill.
 6. Hitsplats on players: from the recorded hitpoints (Blert has them for the players who recorded).
 7. Reds' spawn: `elemental_spawn` on their first tick (was a tick late); the purple climbs out (`tob_spider_tank_spawn`).
 8. Nylocas deaths: turn for 2 ticks (detonate animation), then pop on Blert's tick; killed ones pivot, then pop.
-9. P2 shield: the real raid shows a translucent dome round her for the shield's ticks; the cache's
-   `verzik_phase2_poisonaura` (a druid's shield, widened) is that dome. Shown each tick of the 10-tick shield. Needs
-   eyes to confirm it's the right one.
+9. P2 shield: `verzik_phase2_poisonaura` was the wrong graphic (the owner: no green blob). Taken off; the real raid's
+   pale swirl at reds comes with her heal animation (`verzik_phase2_heal`, 10 ticks), which plays.
 10. Webs: the solo room's volleys while she spins (Blert doesn't record webs), web NPC and loc for 30 ticks.
 11. Under her during webs: her tiles block players for the spin. Checked: 49 tiles flagged.
 - The owner has a few more to send.
+
+**Bugs from the owner's look at `::verzik 4 median` (sim raids), and their state:**
+1. P2 attack animations at the start: the replay played `verzik_phase2_spawn` (14 ticks) on her P2 form, over her
+   first attacks. That rise belongs to her climb-down form (`verzik_phase1_to2_transition` has it as its stand and
+   walk animation; Blert: that form 13 ticks, P2 comes in ready). Taken off the P2 form (the solo room has the same).
+2. Non-purple nylos (reds) not showing their spawn: they died in the sim export 40 ticks after reds, before P2
+   ended. Blert: reds live till she goes into her P2-to-P3 form (443 of 444 within 3 ticks). They now do.
+3. Green blob in the shield: see 9 above.
+4. P2 ranged attacks landing late: the urn flew for 6 ticks. The 4s WR clip, frame by frame: it leaves her ~0.5
+   tick into her cast and splashes on its tile ~1.7 ticks after; it now leaves at 15 client cycles and lands at 60
+   (2 ticks). (Blert's player hitpoints mostly drop 6 ticks after her attack - 356 of 829 - so its damage tick is
+   not the splash; the sim doesn't model the urn's damage.) Also in the clip, at every P2 attack: a pale dome at her
+   feet; not identified in the cache yet.
+5. P3 animations at the start / P3 death: the sim raid ended its playback on the kill tick, so the death bat (2 ticks
+   later) never came and she held her death animation. Playback now runs to her last form.
+6. No player hitpoints, splats or orbs: the sim export carried no player hitpoints. It now takes them from the
+   sim's log (every hit, brew and shark) - splats and hitpoint bars follow - and the Theatre's HUD opens for whoever
+   watches: the party's orbs top left and her bar top centre.
+7. Start of P2 / scythes from a distance / afk: players stood where a Blert team stood at that moment, not where the
+   sim's attacks need them. Now: in P2 each player has a rest tile a step out from her swing tile (the template's
+   tiles), steps in on the tick they swing and straight back out; at reds they stand beside the crab or her they hit
+   next; in P3 they keep their place round her and step beside her to swing. Every melee swing is from a tile beside
+   what it hits (not diagonal; a halberd two tiles): out of reach 11,390 -> 62 of 189,107 swings across the four
+   scales' 300 raids each.
+8. Dawnbringer: it now goes down on the floor where the holder stands (2 ticks after their last spec, or just before
+   the next holder's first), the next holder already standing on that tile picks it up a tick later, and nobody leaves
+   the tile until they're done with it. The last holder's goes when P1 dies. Every pick-up is on its holder's tile.
+9. Eating and drinking: the sim's brews, restores, surges and sharks per player (the sim's supplies, the same for
+   every player) play `human_eat` with the drink or eat sound, on ticks they don't attack. Spec transfers play the
+   Lunar cast (4411) with Energy Transfer's graphic (734) on the target.
 - Found in the solo room, not yet fixed there: the death bat comes up 2 tiles off (it's transmogged from her 7x7 P3;
   it's 3x3, centred) and the empty throne shows while she sits on it.
 

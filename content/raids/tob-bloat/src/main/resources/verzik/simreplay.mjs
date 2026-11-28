@@ -1,7 +1,10 @@
 // verzikSim's raids as replays the server plays like Blert's (VerzikReplayRoom): what the sim decides - every attack
-// (who, what, when, its damage, its target), her attacks, her hitpoints, the phase ticks, the crabs it models - with
-// where everyone stands taken from a Blert raid of the same scale, time-warped phase by phase onto the sim's phases
-// (players' tiles and overheads, her P3 walk, the pillars, nylocas and tornadoes the sim doesn't model).
+// (who, what, when, its damage, its target), her attacks, her hitpoints, the phase ticks, the crabs it models, the
+// players' hitpoints, what they drink and eat, their spec transfers - played out where Blert's teams stand. A Blert raid
+// of the same scale, time-warped phase by phase onto the sim's, gives each player's spots (P1 tile, P2 swing and rest
+// tiles, their place round her in P3), her P3 walk, the pillars, nylocas and tornadoes the sim doesn't model; the moves
+// follow the sim's attacks: in P2 a player steps in to swing and straight back out (her bounce), at reds to their crab,
+// in P3 beside her to swing. The Dawnbringer goes down where its holder stands, the next holder already on that tile.
 // node simreplay.mjs <blert.json.gz> <defs dir> <out.json.gz> <scale>=<verzikN.json.gz> ...
 import { readFileSync, writeFileSync } from 'node:fs';
 import { gunzipSync, gzipSync } from 'node:zlib';
@@ -13,7 +16,7 @@ const defs = Object.fromEntries(JSON.parse(readFileSync(`${defsDir}/attack_defin
 const P1 = 8370, T12 = 8371, P2 = 8372, T23 = 8373, P3 = 8374, BAT = 8375, RED = 8385, PURPLE = 8384, PILLAR = 8379;
 const P1_HP = { 2: 1500, 3: 1500, 4: 1750, 5: 2000 };
 const P2_HP = { 2: 2625, 3: 2625, 4: 3062, 5: 3500 };
-const PURPLE_HP = 180, PURPLE_FLIGHT = 6, RED_POP = 40, P1_DEATH_GAP = 4, P2_DEATH_GAP = 2, BAT_GAP = 2;
+const PURPLE_HP = 180, PURPLE_FLIGHT = 6, P1_DEATH_GAP = 4, P2_DEATH_GAP = 2, BAT_GAP = 2;
 // sim code -> Blert attack name and weapon
 const CODES = {
   S: ['SCYTHE', null], '3t': ['EYE_OF_AYAK_AUTO', 31113], D: ['DAWN_SPEC', 22516], Daw: ['DAWN_AUTO', 22516], A: ['DAWN_AUTO', 22516],
@@ -27,6 +30,36 @@ const HER = {
   P3: { Ranged: 'P3_RANGE', Magic: 'P3_MAGE', Melee: 'P3_MELEE', 'Green ball': 'P3_BALL' },
 };
 const SCYTHES = new Set([22325, 25736, 25739]);
+
+const MELEE = new Set(['SCYTHE', 'CLAW_SCRATCH', 'CLAW_SPEC', 'CHALLY_SPEC', 'ELDER_MAUL', 'SULPHUR_BLADES']);
+const DAWN_DROP_AFTER = 2, DAWN_PICK_AFTER = 1, TRANSFER_ANIM = 4411, TRANSFER_GFX = 734;
+
+/** The tile beside a footprint (not diagonal) nearest [from]. */
+function beside(from, f) {
+  let best = null, bd = Infinity;
+  for (let k = 0; k < f.size; k++) {
+    for (const [x, y] of [[f.x + k, f.y - 1], [f.x + k, f.y + f.size], [f.x - 1, f.y + k], [f.x + f.size, f.y + k]]) {
+      const d = Math.max(Math.abs(x - from[0]), Math.abs(y - from[1]));
+      if (d < bd) { bd = d; best = [x, y]; }
+    }
+  }
+  return best;
+}
+
+/** Whether a melee swing from [tile] reaches a footprint: beside it, not diagonal (a halberd: two tiles). */
+function reaches(tile, f, halberd) {
+  const dx = tile[0] < f.x ? f.x - tile[0] : tile[0] >= f.x + f.size ? tile[0] - (f.x + f.size - 1) : 0;
+  const dy = tile[1] < f.y ? f.y - tile[1] : tile[1] >= f.y + f.size ? tile[1] - (f.y + f.size - 1) : 0;
+  return halberd ? dx + dy > 0 && Math.max(dx, dy) <= 2 : dx + dy === 1;
+}
+
+/** One tile further out from a footprint than [tile] (out of her reach). */
+function away(tile, f) {
+  const cx = f.x + (f.size - 1) / 2, cy = f.y + (f.size - 1) / 2;
+  const dx = Math.abs(tile[0] - cx) >= Math.abs(tile[1] - cy) ? Math.sign(tile[0] - cx) : 0;
+  const dy = dx === 0 ? Math.sign(tile[1] - cy) : 0;
+  return [tile[0] + dx, tile[1] + dy];
+}
 
 const firstOf = (track, type) => track.find((s) => s[1] === type)?.[0];
 const at = (x, k) => x.marks.find((m) => m[1] === k)?.[0];
@@ -57,9 +90,8 @@ function convert(sim, tpl, scale) {
   const bp = blertPhases(tpl);
   const w = warp(sp, bp, end);
   const n = tpl.players;
-  const tiles = Array.from({ length: n }, (_, p) => { const row = []; for (let t = 0; t <= end; t++) { const k = Math.min(w(t), tpl.end); row.push(tpl.tiles[p][2 * k], tpl.tiles[p][2 * k + 1]); } return row; });
+  const warped = Array.from({ length: n }, (_, p) => Array.from({ length: end + 1 }, (_, t) => { const k = Math.min(w(t), tpl.end); return [tpl.tiles[p][2 * k], tpl.tiles[p][2 * k + 1]]; }));
   const prayers = tpl.prayers.map((list) => { const out = []; for (let t = 0; t <= end; t++) { const k = w(t); const h = list.filter((e) => e[0] <= k).at(-1)?.[1] ?? ''; if (!out.length || out.at(-1)[1] !== h) out.push([t, h]); } return out; });
-
   // her: one NPC through her forms, on the template's tiles, with the sim's hitpoints
   const vt = tpl.npcs.find((x) => x.track.some((s) => s[1] === P2)).track;
   const herTile = (t) => { const k = w(t); let s = vt[0]; for (const r of vt) { if (r[0] > k) break; s = r; } return [s[2], s[3]]; };
@@ -110,8 +142,9 @@ function convert(sim, tpl, scale) {
     const crabHp = Math.floor(200 * P2_HP[scale] / 3500);
     const west = tplRed.find((x) => x.track[0][2] < hx) ?? { track: [[0, RED, hx - 4, 4314]] };
     const east = tplRed.find((x) => x.track[0][2] >= hx) ?? { track: [[0, RED, hx + 4, 4314]] };
-    if (sim.atk.some((a) => a[5] === 'W') || scale >= 3) crab('W', RED, sp.reds, west.track[0].slice(2, 4), crabHp, sp.reds + RED_POP);
-    if (sim.atk.some((a) => a[5] === 'E') || scale >= 3) crab('E', RED, sp.reds, east.track[0].slice(2, 4), crabHp, sp.reds + RED_POP);
+    const popAt = sp.p2dies != null ? sp.p2dies + P2_DEATH_GAP : end;
+    if (sim.atk.some((a) => a[5] === 'W') || scale >= 3) crab('W', RED, sp.reds, west.track[0].slice(2, 4), crabHp, popAt);
+    if (sim.atk.some((a) => a[5] === 'E') || scale >= 3) crab('E', RED, sp.reds, east.track[0].slice(2, 4), crabHp, popAt);
   }
   const throw_ = sim.boss.find((b) => b[1] === 'Purple crab');
   if (throw_) {
@@ -121,18 +154,140 @@ function convert(sim, tpl, scale) {
 
   // their attacks and gear: the sim's attacks, each in the weapon it's made with
   const scythe = tpl.gear.map((g) => g.find((e) => e[1] === 4 && SCYTHES.has(e[2]))?.[2] ?? 22325);
-  const gear = tpl.gear.map((g) => g.filter((e) => e[0] === 0));
-  const wielding = gear.map((g) => g.find((e) => e[1] === 4)?.[2] ?? -1);
+  const gear = tpl.gear.map((g) => g.filter((e) => e[0] === 0 && e[1] !== 4));
+  const wielding = Array(n).fill(-1);
+  const wield = (t, i, weapon) => { if (wielding[i] === weapon) return; gear[i].push([t, 4, weapon]); gear[i].push([t, 6, -1]); wielding[i] = weapon; };
   const attacks = [], dawns = [];
-  for (const [t, i, code, , dmg, key] of [...sim.atk].sort((a, b) => a[0] - b[0])) {
+  const acts = [...sim.atk].filter((a) => a[1] < n).sort((a, b) => a[0] - b[0]).map(([t, i, code, , dmg, key]) => {
     const c = code === 'C' && t < sp.p2 ? CODES.Cs : CODES[code];
-    if (!c || i >= n) continue;
-    const [name, weapon0] = c;
-    const weapon = weapon0 ?? scythe[i];
-    if (wielding[i] !== weapon) { gear[i].push([t, 4, weapon]); gear[i].push([t, 6, -1]); wielding[i] = weapon; }
-    attacks.push([t, i, name, defs[name]?.animationIds?.[0] ?? -1, weapon, index[key] ?? 0]);
-    if (name === 'DAWN_SPEC') dawns.push([t, i, dmg]);
+    return c ? { t, i, name: c[0], weapon: c[1] ?? scythe[i], dmg, key } : null;
+  }).filter(Boolean);
+
+  // the Dawnbringer: each holder's run of specs, handed over on the floor where the first holder stands
+  const dawnRuns = [];
+  for (const a of acts) if (a.t < sp.p1dies && (a.name === 'DAWN_SPEC' || a.name === 'DAWN_AUTO')) {
+    const run = dawnRuns.at(-1);
+    if (run && run.i === a.i) run.last = a.t; else dawnRuns.push({ i: a.i, first: a.t, last: a.t });
   }
+  const drops = [];
+  dawnRuns.forEach((run, k) => {
+    const next = dawnRuns[k + 1];
+    run.from = k === 0 ? 0 : run.pick;
+    if (next) {
+      run.drop = Math.min(run.last + DAWN_DROP_AFTER, next.first - 2);
+      next.pick = Math.max(run.drop + 1, Math.min(next.first - 1, run.drop + DAWN_PICK_AFTER));
+    } else run.drop = sp.p1dies;
+  });
+
+  // where each player stands: their spots from the template, and the moves the sim's attacks call for
+  const mode = (p, from, to, pick = () => true) => {
+    const c = new Map();
+    for (let k = Math.max(0, from); k < Math.min(to, tpl.end); k++) if (pick(k)) { const key = `${tpl.tiles[p][2 * k]},${tpl.tiles[p][2 * k + 1]}`; c.set(key, (c.get(key) || 0) + 1); }
+    const best = [...c.entries()].sort((a, b) => b[1] - a[1])[0];
+    return best ? best[0].split(',').map(Number) : null;
+  };
+  const tplSwings = (p) => new Set(tpl.attacks.filter((a) => a[1] === p).map((a) => a[0]));
+  const desired = Array.from({ length: n }, (_, p) => warped[p].map((xy) => [...xy]));
+  const melee = (name) => MELEE.has(name);
+  const footprint = (t) => { const [x, y] = herTile(t); const form = formAt(t); return { x, y, size: form === P1 || form === T12 ? 5 : form === P2 || form === BAT ? 3 : 7 }; };
+  const crabFoot = (key, t) => { const c = npcs[index[key]]; if (!c) return null; const s0 = c.track[0]; return { x: s0[2], y: s0[3], size: s0[1] === PURPLE ? 3 : 2 }; };
+  for (let p = 0; p < n; p++) {
+    const swings = tplSwings(p);
+    const mine = acts.filter((a) => a.i === p);
+    // P1: their tile; the next Dawn holder on the first holder's tile from before they pick it up till they're done with it
+    const f1 = footprint(0);
+    let base1 = mode(p, 1, bp.p1dies) ?? warped[p][0];
+    if (mine.some((a) => a.t < sp.p1dies && melee(a.name)) && !reaches(base1, f1, false)) base1 = beside(base1, f1);
+    for (let t = 0; t < Math.min(sp.p1dies, end + 1); t++) desired[p][t] = [...base1];
+    // P2 before reds: a rest tile a step out, a swing tile beside her
+    const f2 = { x: vt.find((r) => r[1] === P2)[2], y: vt.find((r) => r[1] === P2)[3], size: 3 };
+    const near2 = mode(p, bp.p2, bp.reds ?? bp.p2dies, (k) => swings.has(k)) ?? mode(p, bp.p2, bp.reds ?? bp.p2dies) ?? [f2.x + 1, f2.y - 2];
+    const swing2 = beside(near2, f2), rest2 = away(swing2, f2);
+    const p2end = sp.reds ?? sp.p2dies ?? end + 1;
+    for (let t = sp.p2; t < Math.min(p2end, end + 1); t++) desired[p][t] = [...rest2];
+    for (const a of mine) if (a.t >= sp.p2 && a.t < p2end && melee(a.name) && a.key === '') desired[p][a.t] = [...swing2];
+    // reds: beside what they swing at next
+    if (sp.reds != null) {
+      const redsEnd = sp.p2dies ?? end + 1;
+      let at = [...rest2];
+      const swingsIn = mine.filter((a) => a.t >= sp.reds && a.t < redsEnd);
+      for (let t = sp.reds; t < Math.min(redsEnd, end + 1); t++) {
+        const a = swingsIn.find((x) => x.t >= t);
+        if (a && melee(a.name)) at = beside(at, a.key ? crabFoot(a.key, a.t) ?? f2 : f2);
+        desired[p][t] = [...at];
+      }
+    }
+    // P3: their place round her (as the template stood relative to her), beside her on a melee swing
+    if (sp.p3 != null) {
+      for (let t = sp.p2dies ?? sp.p3; t <= end; t++) {
+        const k = Math.min(w(t), tpl.end), [hx3, hy3] = herTile(t);
+        let vk = vt[0]; for (const r of vt) { if (r[0] > k) break; vk = r; }
+        desired[p][t] = [hx3 + tpl.tiles[p][2 * k] - vk[2], hy3 + tpl.tiles[p][2 * k + 1] - vk[3]];
+      }
+      for (const a of mine) if (a.t >= sp.p3 && a.t <= end && melee(a.name)) desired[p][a.t] = beside(desired[p][a.t], footprint(a.t));
+    }
+  }
+  // every melee swing from a tile that reaches what it hits
+  for (const a of acts) {
+    if (a.t > end || !melee(a.name)) continue;
+    const f = a.key ? crabFoot(a.key, a.t) ?? footprint(a.t) : footprint(a.t);
+    if (!reaches(desired[a.i][a.t], f, a.name === 'CHALLY_SPEC')) desired[a.i][a.t] = beside(desired[a.i][a.t], f);
+  }
+  // the Dawnbringer's holders stand on its tile while they have it
+  const dawnTile = dawnRuns.length ? [...desired[dawnRuns[0].i][0]] : null;
+  for (const run of dawnRuns) for (let t = Math.max(0, (run.pick ?? 0) - 1); t <= Math.min(run.drop, sp.p1dies - 1); t++) desired[run.i][t] = [...dawnTile];
+  // moves: two tiles a tick at most (running); a tile they must be on (a swing, the Dawnbringer) is set off for early
+  // enough to reach it
+  const must = desired.map(() => Array(end + 1).fill(false));
+  for (const a of acts) if (a.i < n && a.t <= end) must[a.i][a.t] = true;
+  for (const run of dawnRuns) for (let t = Math.max(0, (run.pick ?? 0) - 1); t <= Math.min(run.drop, sp.p1dies - 1, end); t++) must[run.i][t] = true;
+  desired.forEach((row, p) => {
+    for (let t = end; t >= 1; t--) {
+      if (!must[p][t]) continue;
+      const [x1, y1] = row[t], [x0, y0] = row[t - 1];
+      if (Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) <= 2) continue;
+      row[t - 1] = [x1 + Math.max(-2, Math.min(2, x0 - x1)), y1 + Math.max(-2, Math.min(2, y0 - y1))];
+      must[p][t - 1] = true;
+    }
+  });
+  const tiles = desired.map((row) => {
+    const out = [row[0]];
+    for (let t = 1; t <= end; t++) {
+      const [x0, y0] = out[t - 1], [x1, y1] = row[t];
+      const dx = Math.max(-2, Math.min(2, x1 - x0)), dy = Math.max(-2, Math.min(2, y1 - y0));
+      out.push([x0 + dx, y0 + dy]);
+    }
+    return out.flat();
+  });
+
+  // gear: the Dawnbringer from its pick-up to its drop (gone when P1 dies), each attack's weapon
+  for (const run of dawnRuns) {
+    wield(run.pick ?? 0, run.i, 22516);
+    if (run.pick != null) drops.push([run.pick, dawnTile[0], dawnTile[1], 0]);
+    const end1 = Math.min(run.drop, sp.p1dies);
+    drops.push(...(run.drop < sp.p1dies ? [[run.drop, dawnTile[0], dawnTile[1], 1]] : []));
+    gear[run.i].push([end1, 4, scythe[run.i]]);
+    wielding[run.i] = scythe[run.i];
+  }
+  for (const a of acts) {
+    if (a.weapon === 22516 && a.t < sp.p1dies) { attacks.push([a.t, a.i, a.name, defs[a.name]?.animationIds?.[0] ?? -1, a.weapon, index[a.key] ?? 0]); if (a.name === 'DAWN_SPEC') dawns.push([a.t, a.i, a.dmg]); continue; }
+    wield(a.t, a.i, a.weapon);
+    attacks.push([a.t, a.i, a.name, defs[a.name]?.animationIds?.[0] ?? -1, a.weapon, index[a.key] ?? 0]);
+  }
+  gear.forEach((g) => g.sort((a, b) => a[0] - b[0]));
+
+  // their hitpoints, drinks and food, spec transfers (the sim's log)
+  const hp = Array.from({ length: n }, () => Array(end + 1).fill(-1));
+  const uses = [], spells = [];
+  const last = Array(n).fill(99);
+  const byTick = Array.from({ length: n }, () => new Map());
+  for (const [t, i, kind, v] of sim.ev ?? []) {
+    if (i >= n || t > end) continue;
+    if (kind === 'hit' || kind === 'brew' || kind === 'shark') byTick[i].set(t, Math.max(0, v));
+    if (kind === 'brew' || kind === 'restore' || kind === 'surge' || kind === 'shark') uses.push([t, i, kind]);
+    if (kind === 'transfer' && v >= 0) spells.push([t, i, 'SPEC_TRANSFER', TRANSFER_ANIM, TRANSFER_GFX, v]);
+  }
+  for (let i = 0; i < n; i++) for (let t = 0; t <= end; t++) { if (byTick[i].has(t)) last[i] = byTick[i].get(t); hp[i][t] = last[i]; }
   const herAttacks = [];
   for (const [t, kind, target] of sim.boss) {
     const phase = t < sp.p2 ? 'P1' : sp.p3 != null && t >= sp.p3 ? 'P3' : 'P2';
@@ -145,8 +300,8 @@ function convert(sim, tpl, scale) {
   const marks = [[sp.p2, 'P2']];
   if (sp.p3 != null) marks.push([sp.p3, 'P3']);
   return {
-    uuid: `sim-${sim.seed}`, scale, end, players: n, tiles, hp: Array.from({ length: n }, () => Array(end + 1).fill(-1)), gear, prayers,
-    drops: [], dawns, yellows: [], npcs, attacks, spells: [], her: herAttacks, marks, failed: sim.end == null,
+    uuid: `sim-${sim.seed}`, scale, end, players: n, tiles, hp, gear, prayers,
+    drops: drops.sort((a, b) => a[0] - b[0]), dawns, yellows: [], npcs, attacks, spells, uses, her: herAttacks, marks, failed: sim.end == null,
   };
 }
 
