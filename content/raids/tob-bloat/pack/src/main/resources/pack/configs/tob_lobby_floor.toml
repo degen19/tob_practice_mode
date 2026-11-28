@@ -1,0 +1,1583 @@
+# The lobby's floor, rim, centre symbol and pedestals: written by tools/lobby-models/gen.py.
+
+[[object]]
+id = "loc.tob_lobby_floor_0"
+objectModels = ["models.tob_lobby_floor_0"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_floor_1"
+objectModels = ["models.tob_lobby_floor_1"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_floor_2"
+objectModels = ["models.tob_lobby_floor_2"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_floor_3"
+objectModels = ["models.tob_lobby_floor_3"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_floor_4"
+objectModels = ["models.tob_lobby_floor_4"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_floor_5"
+objectModels = ["models.tob_lobby_floor_5"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_void"
+objectModels = ["models.tob_lobby_void"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_3_18"
+objectModels = ["models.tob_lobby_edge_3_18"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_3_19"
+objectModels = ["models.tob_lobby_edge_3_19"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_3_20"
+objectModels = ["models.tob_lobby_edge_3_20"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_3_21"
+objectModels = ["models.tob_lobby_edge_3_21"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_3_22"
+objectModels = ["models.tob_lobby_edge_3_22"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_4_14"
+objectModels = ["models.tob_lobby_edge_4_14"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_4_15"
+objectModels = ["models.tob_lobby_edge_4_15"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_4_16"
+objectModels = ["models.tob_lobby_edge_4_16"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_4_17"
+objectModels = ["models.tob_lobby_edge_4_17"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_4_18"
+objectModels = ["models.tob_lobby_edge_4_18"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_4_19"
+objectModels = ["models.tob_lobby_edge_4_19"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_4_20"
+objectModels = ["models.tob_lobby_edge_4_20"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_4_21"
+objectModels = ["models.tob_lobby_edge_4_21"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_4_22"
+objectModels = ["models.tob_lobby_edge_4_22"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_4_23"
+objectModels = ["models.tob_lobby_edge_4_23"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_4_24"
+objectModels = ["models.tob_lobby_edge_4_24"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_4_25"
+objectModels = ["models.tob_lobby_edge_4_25"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_4_26"
+objectModels = ["models.tob_lobby_edge_4_26"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_5_12"
+objectModels = ["models.tob_lobby_edge_5_12"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_5_13"
+objectModels = ["models.tob_lobby_edge_5_13"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_5_14"
+objectModels = ["models.tob_lobby_edge_5_14"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_5_15"
+objectModels = ["models.tob_lobby_edge_5_15"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_5_25"
+objectModels = ["models.tob_lobby_edge_5_25"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_5_26"
+objectModels = ["models.tob_lobby_edge_5_26"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_5_27"
+objectModels = ["models.tob_lobby_edge_5_27"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_5_28"
+objectModels = ["models.tob_lobby_edge_5_28"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_6_10"
+objectModels = ["models.tob_lobby_edge_6_10"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_6_11"
+objectModels = ["models.tob_lobby_edge_6_11"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_6_12"
+objectModels = ["models.tob_lobby_edge_6_12"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_6_28"
+objectModels = ["models.tob_lobby_edge_6_28"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_6_29"
+objectModels = ["models.tob_lobby_edge_6_29"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_6_30"
+objectModels = ["models.tob_lobby_edge_6_30"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_7_9"
+objectModels = ["models.tob_lobby_edge_7_9"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_7_10"
+objectModels = ["models.tob_lobby_edge_7_10"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_7_11"
+objectModels = ["models.tob_lobby_edge_7_11"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_7_29"
+objectModels = ["models.tob_lobby_edge_7_29"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_7_30"
+objectModels = ["models.tob_lobby_edge_7_30"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_7_31"
+objectModels = ["models.tob_lobby_edge_7_31"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_8_8"
+objectModels = ["models.tob_lobby_edge_8_8"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_8_9"
+objectModels = ["models.tob_lobby_edge_8_9"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_8_31"
+objectModels = ["models.tob_lobby_edge_8_31"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_8_32"
+objectModels = ["models.tob_lobby_edge_8_32"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_9_7"
+objectModels = ["models.tob_lobby_edge_9_7"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_9_8"
+objectModels = ["models.tob_lobby_edge_9_8"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_9_32"
+objectModels = ["models.tob_lobby_edge_9_32"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_9_33"
+objectModels = ["models.tob_lobby_edge_9_33"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_10_6"
+objectModels = ["models.tob_lobby_edge_10_6"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_10_7"
+objectModels = ["models.tob_lobby_edge_10_7"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_10_33"
+objectModels = ["models.tob_lobby_edge_10_33"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_10_34"
+objectModels = ["models.tob_lobby_edge_10_34"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_11_6"
+objectModels = ["models.tob_lobby_edge_11_6"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_11_7"
+objectModels = ["models.tob_lobby_edge_11_7"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_11_33"
+objectModels = ["models.tob_lobby_edge_11_33"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_11_34"
+objectModels = ["models.tob_lobby_edge_11_34"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_12_5"
+objectModels = ["models.tob_lobby_edge_12_5"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_12_6"
+objectModels = ["models.tob_lobby_edge_12_6"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_12_34"
+objectModels = ["models.tob_lobby_edge_12_34"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_12_35"
+objectModels = ["models.tob_lobby_edge_12_35"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_13_5"
+objectModels = ["models.tob_lobby_edge_13_5"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_13_35"
+objectModels = ["models.tob_lobby_edge_13_35"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_14_4"
+objectModels = ["models.tob_lobby_edge_14_4"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_14_5"
+objectModels = ["models.tob_lobby_edge_14_5"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_14_35"
+objectModels = ["models.tob_lobby_edge_14_35"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_14_36"
+objectModels = ["models.tob_lobby_edge_14_36"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_15_4"
+objectModels = ["models.tob_lobby_edge_15_4"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_15_5"
+objectModels = ["models.tob_lobby_edge_15_5"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_15_35"
+objectModels = ["models.tob_lobby_edge_15_35"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_15_36"
+objectModels = ["models.tob_lobby_edge_15_36"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_16_4"
+objectModels = ["models.tob_lobby_edge_16_4"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_16_36"
+objectModels = ["models.tob_lobby_edge_16_36"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_17_4"
+objectModels = ["models.tob_lobby_edge_17_4"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_17_36"
+objectModels = ["models.tob_lobby_edge_17_36"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_18_3"
+objectModels = ["models.tob_lobby_edge_18_3"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_18_4"
+objectModels = ["models.tob_lobby_edge_18_4"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_18_36"
+objectModels = ["models.tob_lobby_edge_18_36"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_18_37"
+objectModels = ["models.tob_lobby_edge_18_37"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_19_3"
+objectModels = ["models.tob_lobby_edge_19_3"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_19_4"
+objectModels = ["models.tob_lobby_edge_19_4"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_19_36"
+objectModels = ["models.tob_lobby_edge_19_36"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_19_37"
+objectModels = ["models.tob_lobby_edge_19_37"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_20_3"
+objectModels = ["models.tob_lobby_edge_20_3"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_20_4"
+objectModels = ["models.tob_lobby_edge_20_4"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_20_36"
+objectModels = ["models.tob_lobby_edge_20_36"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_20_37"
+objectModels = ["models.tob_lobby_edge_20_37"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_21_3"
+objectModels = ["models.tob_lobby_edge_21_3"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_21_4"
+objectModels = ["models.tob_lobby_edge_21_4"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_21_36"
+objectModels = ["models.tob_lobby_edge_21_36"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_21_37"
+objectModels = ["models.tob_lobby_edge_21_37"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_22_3"
+objectModels = ["models.tob_lobby_edge_22_3"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_22_4"
+objectModels = ["models.tob_lobby_edge_22_4"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_22_36"
+objectModels = ["models.tob_lobby_edge_22_36"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_22_37"
+objectModels = ["models.tob_lobby_edge_22_37"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_23_4"
+objectModels = ["models.tob_lobby_edge_23_4"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_23_36"
+objectModels = ["models.tob_lobby_edge_23_36"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_24_4"
+objectModels = ["models.tob_lobby_edge_24_4"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_24_36"
+objectModels = ["models.tob_lobby_edge_24_36"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_25_4"
+objectModels = ["models.tob_lobby_edge_25_4"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_25_5"
+objectModels = ["models.tob_lobby_edge_25_5"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_25_35"
+objectModels = ["models.tob_lobby_edge_25_35"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_25_36"
+objectModels = ["models.tob_lobby_edge_25_36"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_26_4"
+objectModels = ["models.tob_lobby_edge_26_4"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_26_5"
+objectModels = ["models.tob_lobby_edge_26_5"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_26_35"
+objectModels = ["models.tob_lobby_edge_26_35"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_26_36"
+objectModels = ["models.tob_lobby_edge_26_36"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_27_5"
+objectModels = ["models.tob_lobby_edge_27_5"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_27_35"
+objectModels = ["models.tob_lobby_edge_27_35"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_28_5"
+objectModels = ["models.tob_lobby_edge_28_5"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_28_6"
+objectModels = ["models.tob_lobby_edge_28_6"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_28_34"
+objectModels = ["models.tob_lobby_edge_28_34"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_28_35"
+objectModels = ["models.tob_lobby_edge_28_35"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_29_6"
+objectModels = ["models.tob_lobby_edge_29_6"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_29_7"
+objectModels = ["models.tob_lobby_edge_29_7"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_29_33"
+objectModels = ["models.tob_lobby_edge_29_33"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_29_34"
+objectModels = ["models.tob_lobby_edge_29_34"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_30_6"
+objectModels = ["models.tob_lobby_edge_30_6"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_30_7"
+objectModels = ["models.tob_lobby_edge_30_7"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_30_33"
+objectModels = ["models.tob_lobby_edge_30_33"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_30_34"
+objectModels = ["models.tob_lobby_edge_30_34"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_31_7"
+objectModels = ["models.tob_lobby_edge_31_7"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_31_8"
+objectModels = ["models.tob_lobby_edge_31_8"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_31_32"
+objectModels = ["models.tob_lobby_edge_31_32"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_31_33"
+objectModels = ["models.tob_lobby_edge_31_33"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_32_8"
+objectModels = ["models.tob_lobby_edge_32_8"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_32_9"
+objectModels = ["models.tob_lobby_edge_32_9"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_32_31"
+objectModels = ["models.tob_lobby_edge_32_31"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_32_32"
+objectModels = ["models.tob_lobby_edge_32_32"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_33_9"
+objectModels = ["models.tob_lobby_edge_33_9"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_33_10"
+objectModels = ["models.tob_lobby_edge_33_10"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_33_11"
+objectModels = ["models.tob_lobby_edge_33_11"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_33_29"
+objectModels = ["models.tob_lobby_edge_33_29"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_33_30"
+objectModels = ["models.tob_lobby_edge_33_30"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_33_31"
+objectModels = ["models.tob_lobby_edge_33_31"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_34_10"
+objectModels = ["models.tob_lobby_edge_34_10"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_34_11"
+objectModels = ["models.tob_lobby_edge_34_11"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_34_12"
+objectModels = ["models.tob_lobby_edge_34_12"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_34_28"
+objectModels = ["models.tob_lobby_edge_34_28"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_34_29"
+objectModels = ["models.tob_lobby_edge_34_29"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_34_30"
+objectModels = ["models.tob_lobby_edge_34_30"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_35_12"
+objectModels = ["models.tob_lobby_edge_35_12"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_35_13"
+objectModels = ["models.tob_lobby_edge_35_13"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_35_14"
+objectModels = ["models.tob_lobby_edge_35_14"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_35_15"
+objectModels = ["models.tob_lobby_edge_35_15"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_35_25"
+objectModels = ["models.tob_lobby_edge_35_25"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_35_26"
+objectModels = ["models.tob_lobby_edge_35_26"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_35_27"
+objectModels = ["models.tob_lobby_edge_35_27"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_35_28"
+objectModels = ["models.tob_lobby_edge_35_28"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_36_14"
+objectModels = ["models.tob_lobby_edge_36_14"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_36_15"
+objectModels = ["models.tob_lobby_edge_36_15"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_36_16"
+objectModels = ["models.tob_lobby_edge_36_16"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_36_17"
+objectModels = ["models.tob_lobby_edge_36_17"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_36_18"
+objectModels = ["models.tob_lobby_edge_36_18"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_36_19"
+objectModels = ["models.tob_lobby_edge_36_19"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_36_20"
+objectModels = ["models.tob_lobby_edge_36_20"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_36_21"
+objectModels = ["models.tob_lobby_edge_36_21"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_36_22"
+objectModels = ["models.tob_lobby_edge_36_22"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_36_23"
+objectModels = ["models.tob_lobby_edge_36_23"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_36_24"
+objectModels = ["models.tob_lobby_edge_36_24"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_36_25"
+objectModels = ["models.tob_lobby_edge_36_25"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_36_26"
+objectModels = ["models.tob_lobby_edge_36_26"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_37_18"
+objectModels = ["models.tob_lobby_edge_37_18"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_37_19"
+objectModels = ["models.tob_lobby_edge_37_19"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_37_20"
+objectModels = ["models.tob_lobby_edge_37_20"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_37_21"
+objectModels = ["models.tob_lobby_edge_37_21"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_edge_37_22"
+objectModels = ["models.tob_lobby_edge_37_22"]
+objectTypes = [22]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_symbol"
+objectModels = ["models.tob_lobby_symbol"]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_pedestal_3"
+objectModels = ["models.tob_lobby_pedestal_3"]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_pedestal_4"
+objectModels = ["models.tob_lobby_pedestal_4"]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_pedestal_5"
+objectModels = ["models.tob_lobby_pedestal_5"]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_pedestal_6"
+objectModels = ["models.tob_lobby_pedestal_6"]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[object]]
+id = "loc.tob_lobby_pedestal_7"
+objectModels = ["models.tob_lobby_pedestal_7"]
+interactive = 0
+blockWalk = 0
+blockRange = false
+
+[[enum]]
+isServerOnly = true
+id = "enum.tob_lobby_edges"
+keyType = "INT"
+valueType = "LOC"
+
+[enum.values]
+210 = "loc.tob_lobby_edge_3_18"
+211 = "loc.tob_lobby_edge_3_19"
+212 = "loc.tob_lobby_edge_3_20"
+213 = "loc.tob_lobby_edge_3_21"
+214 = "loc.tob_lobby_edge_3_22"
+270 = "loc.tob_lobby_edge_4_14"
+271 = "loc.tob_lobby_edge_4_15"
+272 = "loc.tob_lobby_edge_4_16"
+273 = "loc.tob_lobby_edge_4_17"
+274 = "loc.tob_lobby_edge_4_18"
+275 = "loc.tob_lobby_edge_4_19"
+276 = "loc.tob_lobby_edge_4_20"
+277 = "loc.tob_lobby_edge_4_21"
+278 = "loc.tob_lobby_edge_4_22"
+279 = "loc.tob_lobby_edge_4_23"
+280 = "loc.tob_lobby_edge_4_24"
+281 = "loc.tob_lobby_edge_4_25"
+282 = "loc.tob_lobby_edge_4_26"
+332 = "loc.tob_lobby_edge_5_12"
+333 = "loc.tob_lobby_edge_5_13"
+334 = "loc.tob_lobby_edge_5_14"
+335 = "loc.tob_lobby_edge_5_15"
+345 = "loc.tob_lobby_edge_5_25"
+346 = "loc.tob_lobby_edge_5_26"
+347 = "loc.tob_lobby_edge_5_27"
+348 = "loc.tob_lobby_edge_5_28"
+394 = "loc.tob_lobby_edge_6_10"
+395 = "loc.tob_lobby_edge_6_11"
+396 = "loc.tob_lobby_edge_6_12"
+412 = "loc.tob_lobby_edge_6_28"
+413 = "loc.tob_lobby_edge_6_29"
+414 = "loc.tob_lobby_edge_6_30"
+457 = "loc.tob_lobby_edge_7_9"
+458 = "loc.tob_lobby_edge_7_10"
+459 = "loc.tob_lobby_edge_7_11"
+477 = "loc.tob_lobby_edge_7_29"
+478 = "loc.tob_lobby_edge_7_30"
+479 = "loc.tob_lobby_edge_7_31"
+520 = "loc.tob_lobby_edge_8_8"
+521 = "loc.tob_lobby_edge_8_9"
+543 = "loc.tob_lobby_edge_8_31"
+544 = "loc.tob_lobby_edge_8_32"
+583 = "loc.tob_lobby_edge_9_7"
+584 = "loc.tob_lobby_edge_9_8"
+608 = "loc.tob_lobby_edge_9_32"
+609 = "loc.tob_lobby_edge_9_33"
+646 = "loc.tob_lobby_edge_10_6"
+647 = "loc.tob_lobby_edge_10_7"
+673 = "loc.tob_lobby_edge_10_33"
+674 = "loc.tob_lobby_edge_10_34"
+710 = "loc.tob_lobby_edge_11_6"
+711 = "loc.tob_lobby_edge_11_7"
+737 = "loc.tob_lobby_edge_11_33"
+738 = "loc.tob_lobby_edge_11_34"
+773 = "loc.tob_lobby_edge_12_5"
+774 = "loc.tob_lobby_edge_12_6"
+802 = "loc.tob_lobby_edge_12_34"
+803 = "loc.tob_lobby_edge_12_35"
+837 = "loc.tob_lobby_edge_13_5"
+867 = "loc.tob_lobby_edge_13_35"
+900 = "loc.tob_lobby_edge_14_4"
+901 = "loc.tob_lobby_edge_14_5"
+931 = "loc.tob_lobby_edge_14_35"
+932 = "loc.tob_lobby_edge_14_36"
+964 = "loc.tob_lobby_edge_15_4"
+965 = "loc.tob_lobby_edge_15_5"
+995 = "loc.tob_lobby_edge_15_35"
+996 = "loc.tob_lobby_edge_15_36"
+1028 = "loc.tob_lobby_edge_16_4"
+1060 = "loc.tob_lobby_edge_16_36"
+1092 = "loc.tob_lobby_edge_17_4"
+1124 = "loc.tob_lobby_edge_17_36"
+1155 = "loc.tob_lobby_edge_18_3"
+1156 = "loc.tob_lobby_edge_18_4"
+1188 = "loc.tob_lobby_edge_18_36"
+1189 = "loc.tob_lobby_edge_18_37"
+1219 = "loc.tob_lobby_edge_19_3"
+1220 = "loc.tob_lobby_edge_19_4"
+1252 = "loc.tob_lobby_edge_19_36"
+1253 = "loc.tob_lobby_edge_19_37"
+1283 = "loc.tob_lobby_edge_20_3"
+1284 = "loc.tob_lobby_edge_20_4"
+1316 = "loc.tob_lobby_edge_20_36"
+1317 = "loc.tob_lobby_edge_20_37"
+1347 = "loc.tob_lobby_edge_21_3"
+1348 = "loc.tob_lobby_edge_21_4"
+1380 = "loc.tob_lobby_edge_21_36"
+1381 = "loc.tob_lobby_edge_21_37"
+1411 = "loc.tob_lobby_edge_22_3"
+1412 = "loc.tob_lobby_edge_22_4"
+1444 = "loc.tob_lobby_edge_22_36"
+1445 = "loc.tob_lobby_edge_22_37"
+1476 = "loc.tob_lobby_edge_23_4"
+1508 = "loc.tob_lobby_edge_23_36"
+1540 = "loc.tob_lobby_edge_24_4"
+1572 = "loc.tob_lobby_edge_24_36"
+1604 = "loc.tob_lobby_edge_25_4"
+1605 = "loc.tob_lobby_edge_25_5"
+1635 = "loc.tob_lobby_edge_25_35"
+1636 = "loc.tob_lobby_edge_25_36"
+1668 = "loc.tob_lobby_edge_26_4"
+1669 = "loc.tob_lobby_edge_26_5"
+1699 = "loc.tob_lobby_edge_26_35"
+1700 = "loc.tob_lobby_edge_26_36"
+1733 = "loc.tob_lobby_edge_27_5"
+1763 = "loc.tob_lobby_edge_27_35"
+1797 = "loc.tob_lobby_edge_28_5"
+1798 = "loc.tob_lobby_edge_28_6"
+1826 = "loc.tob_lobby_edge_28_34"
+1827 = "loc.tob_lobby_edge_28_35"
+1862 = "loc.tob_lobby_edge_29_6"
+1863 = "loc.tob_lobby_edge_29_7"
+1889 = "loc.tob_lobby_edge_29_33"
+1890 = "loc.tob_lobby_edge_29_34"
+1926 = "loc.tob_lobby_edge_30_6"
+1927 = "loc.tob_lobby_edge_30_7"
+1953 = "loc.tob_lobby_edge_30_33"
+1954 = "loc.tob_lobby_edge_30_34"
+1991 = "loc.tob_lobby_edge_31_7"
+1992 = "loc.tob_lobby_edge_31_8"
+2016 = "loc.tob_lobby_edge_31_32"
+2017 = "loc.tob_lobby_edge_31_33"
+2056 = "loc.tob_lobby_edge_32_8"
+2057 = "loc.tob_lobby_edge_32_9"
+2079 = "loc.tob_lobby_edge_32_31"
+2080 = "loc.tob_lobby_edge_32_32"
+2121 = "loc.tob_lobby_edge_33_9"
+2122 = "loc.tob_lobby_edge_33_10"
+2123 = "loc.tob_lobby_edge_33_11"
+2141 = "loc.tob_lobby_edge_33_29"
+2142 = "loc.tob_lobby_edge_33_30"
+2143 = "loc.tob_lobby_edge_33_31"
+2186 = "loc.tob_lobby_edge_34_10"
+2187 = "loc.tob_lobby_edge_34_11"
+2188 = "loc.tob_lobby_edge_34_12"
+2204 = "loc.tob_lobby_edge_34_28"
+2205 = "loc.tob_lobby_edge_34_29"
+2206 = "loc.tob_lobby_edge_34_30"
+2252 = "loc.tob_lobby_edge_35_12"
+2253 = "loc.tob_lobby_edge_35_13"
+2254 = "loc.tob_lobby_edge_35_14"
+2255 = "loc.tob_lobby_edge_35_15"
+2265 = "loc.tob_lobby_edge_35_25"
+2266 = "loc.tob_lobby_edge_35_26"
+2267 = "loc.tob_lobby_edge_35_27"
+2268 = "loc.tob_lobby_edge_35_28"
+2318 = "loc.tob_lobby_edge_36_14"
+2319 = "loc.tob_lobby_edge_36_15"
+2320 = "loc.tob_lobby_edge_36_16"
+2321 = "loc.tob_lobby_edge_36_17"
+2322 = "loc.tob_lobby_edge_36_18"
+2323 = "loc.tob_lobby_edge_36_19"
+2324 = "loc.tob_lobby_edge_36_20"
+2325 = "loc.tob_lobby_edge_36_21"
+2326 = "loc.tob_lobby_edge_36_22"
+2327 = "loc.tob_lobby_edge_36_23"
+2328 = "loc.tob_lobby_edge_36_24"
+2329 = "loc.tob_lobby_edge_36_25"
+2330 = "loc.tob_lobby_edge_36_26"
+2386 = "loc.tob_lobby_edge_37_18"
+2387 = "loc.tob_lobby_edge_37_19"
+2388 = "loc.tob_lobby_edge_37_20"
+2389 = "loc.tob_lobby_edge_37_21"
+2390 = "loc.tob_lobby_edge_37_22"

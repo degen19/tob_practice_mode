@@ -52,6 +52,8 @@ examine = "Enter: start at Verzik Vitur."
 [[npc]]
 id = "npc.tob_lobby_teacher"
 inherit = "npc.pattern_teacher"
+widthScale = 115
+heightScale = 115
 defaultMode = "None"
 wanderRange = 0
 actions = { ops = [{ text = "Build Team" }] }
@@ -75,3 +77,11 @@ defaultMode = "None"
 wanderRange = 0
 actions = { ops = [{ text = "Return to lobby" }] }
 examine = "Return to lobby: back to the lobby to change your team, gear or room."
+
+# By the castle door: the gear, supplies and ammo (the supplies list the potato's Gear opens).
+[[object]]
+id = "loc.tob_lobby_gear_rack"
+inherit = "loc.dwarf_keldagrim_weapon_rack_full"
+name = "Gear rack"
+actions = { ops = [{ text = "Gear" }] }
+desc = "Gear, supplies and ammo for the raid."

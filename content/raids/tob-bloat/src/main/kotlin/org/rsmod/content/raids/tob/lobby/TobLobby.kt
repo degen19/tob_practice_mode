@@ -5,6 +5,7 @@ import dev.openrune.ServerCacheManager
 import dev.openrune.rscm.RSCM.asRSCM
 import dev.openrune.rscm.RSCMType
 import jakarta.inject.Inject
+import org.rsmod.api.enums.NamedEnums
 import org.rsmod.api.game.process.GameLifecycle
 import org.rsmod.api.instances.DEFAULT_INSTANCE_GRACE_TICKS
 import org.rsmod.api.instances.InstanceAccess
@@ -30,11 +31,14 @@ import org.rsmod.map.CoordGrid
 import org.rsmod.map.zone.ZoneKey
 import org.rsmod.plugin.scripts.PluginScript
 import org.rsmod.plugin.scripts.ScriptContext
+import org.rsmod.routefinder.flag.CollisionFlag
 
 /**
- * The loading lobby: a shared hall everyone logs into. The six bosses stand evenly round its edge with the castle door
- * at north and the spawn at south, Mr. Mordaut's desk (the bot table) is in the middle with bots wandering round it, and
- * the party board and supply chest sit on the inner ring by the door. The floor is Verzik's arena, tiled.
+ * The loading lobby, a shared hall everyone logs into, laid out as OpenScim's: a dark disc in a black void. The six bosses
+ * stand on pedestals round it with the castle door at north and the spawn at south, Verzik's pillars on the ring between
+ * them; Mr. Mordaut and his desk (the bot table) sit on a gold circle in the middle with bots wandering round it; the
+ * party board and the gear rack stand by the door. The disc is floor decoration over Verzik's arena floor (tiled, so the
+ * client has tiles to walk on), shaded in bands out from the middle; tob_lobby_edges holds the rim's clipped tiles.
  */
 class TobLobby
 @Inject
@@ -60,7 +64,8 @@ constructor(private val d: SoloDeps, private val raids: SoloRaids, private val b
         for ((npc, room) in ENTRANCES) onOpNpc1(npc) { enter(room) }
         onOpNpc1(TM19) { mes("TM 19: Behind that door, a random room, role and scale. I'll brief you once it's open.") }
         onOpLoc1(CASTLE_DOOR) { if (inLobby(player)) mes("The castle door is locked for now: the random raid isn't ready yet.") }
-        onOpLoc1(NOTICE_BOARD) { if (inLobby(player)) mes("The party board isn't up yet: invites and join requests are coming.") }
+        onOpLoc1(NOTICE_BOARD) { if (inLobby(player)) mes("The party board isn't up yet: ::party invite / request for now.") }
+        onOpLoc1(GEAR_RACK) { raids.supplies?.invoke(this) }
     }
 
     private fun ProtectedAccess.enter(room: TobRoom) {
@@ -108,12 +113,18 @@ constructor(private val d: SoloDeps, private val raids: SoloRaids, private val b
         val at = CoordGrid(region.southWest.x, region.southWest.z, 0)
         base = at
         raids.lobby = at.translate(SPAWN.first, SPAWN.second)
-        for ((npc, spot) in BOSS_SPOTS) place(npc, at, spot)
-        place(TEACHER, at, CENTRE)
+        lay(at)
+        for ((npc, spot) in BOSS_SPOTS) {
+            val boss = place(npc, at, spot)
+            loc(PEDESTALS.getValue(boss.visType.size.coerceIn(PEDESTAL_SIZES)), at, spot, LocAngle.West)
+        }
+        loc(SYMBOL, at, CENTRE, LocAngle.West)
+        place(TEACHER, at, CENTRE).faceSquare(at.translate(SPAWN.first, SPAWN.second))
         place(TM19, at, TM19_SPOT)
-        loc(CASTLE_DOOR, at, DOOR_SPOT, LocAngle.South)
-        loc(NOTICE_BOARD, at, BOARD_SPOT, LocAngle.South)
-        loc(SUPPLY_CHEST, at, CHEST_SPOT, LocAngle.South)
+        for (deg in PILLAR_DEGREES) loc(PILLAR, at, ring(deg, PILLAR_RING), LocAngle.West)
+        loc(CASTLE_DOOR, at, DOOR_SPOT, DOOR_ANGLE)
+        loc(NOTICE_BOARD, at, BOARD_SPOT, STATION_ANGLE)
+        loc(GEAR_RACK, at, RACK_SPOT, STATION_ANGLE)
         for ((i, name) in BOT_NAMES.withIndex()) {
             val spot = ring(i * 360 / BOT_NAMES.size, BOT_RING)
             bots.spawn(name, at.translate(spot.first, spot.second), emptyList(), emptyList())?.let { wanderers += it }
@@ -122,20 +133,41 @@ constructor(private val d: SoloDeps, private val raids: SoloRaids, private val b
         System.getenv("TOB_LOBBY_DUMP")?.let { dump(at) }
     }
 
+    /** The disc tile by tile: its shade band inside, a clipped rim tile on the edge, black off it (and no walking there). */
+    private fun lay(at: CoordGrid) {
+        val edges = NamedEnums.tob_lobby_edges
+        for (x in 0 until SIZE) {
+            for (z in 0 until SIZE) {
+                val out = Math.hypot(x + 0.5 - DISC_CENTRE, z + 0.5 - DISC_CENTRE)
+                val tile = at.translate(x, z)
+                val edge = edges.getOrNull(x * EDGE_KEY + z)
+                val type =
+                    when {
+                        edge != null -> edge.internalName
+                        out < DISC_RADIUS -> FLOORS[(out / DISC_RADIUS * FLOORS.size).toInt().coerceAtMost(FLOORS.size - 1)]
+                        else -> VOID
+                    }
+                d.locRepo.add(tile, type, Int.MAX_VALUE, LocAngle.West, LocShape.GroundDecor)
+                if (out > DISC_RADIUS - WALK_MARGIN) d.collision.add(tile.x, tile.z, tile.level, CollisionFlag.BLOCK_WALK)
+            }
+        }
+    }
+
     /** An NPC centred on [spot] (its south-west tile is offset by half its size), facing the middle. */
     private fun place(type: String, at: CoordGrid, spot: Pair<Int, Int>): Npc {
         val size = ServerCacheManager.getNpc(type.asRSCM(RSCMType.NPC))?.size ?: 1
         val npc = Npc(type, at.translate(spot.first - size / 2, spot.second - size / 2))
         d.npcRepo.add(npc, Int.MAX_VALUE)
         npc.respawns = false
-        npc.faceSquare(at.translate(CENTRE.first, CENTRE.second))
+        if (spot != CENTRE) npc.faceSquare(at.translate(CENTRE.first, CENTRE.second))
         return npc
     }
 
     private fun loc(type: String, at: CoordGrid, spot: Pair<Int, Int>, angle: LocAngle) {
         val def = ServerCacheManager.getObject(type.asRSCM(RSCMType.LOC))
-        val w = def?.width ?: 1
-        val l = def?.length ?: 1
+        val turned = angle == LocAngle.North || angle == LocAngle.South
+        val w = (if (turned) def?.length else def?.width) ?: 1
+        val l = (if (turned) def?.width else def?.length) ?: 1
         d.locRepo.add(at.translate(spot.first - w / 2, spot.second - l / 2), type, Int.MAX_VALUE, angle, LocShape.CentrepieceStraight)
     }
 
@@ -168,16 +200,25 @@ constructor(private val d: SoloDeps, private val raids: SoloRaids, private val b
             val def = ServerCacheManager.getNpc(type.asRSCM(RSCMType.NPC))
             logger.info { "tob lobby npc $type: ${def?.name} size ${def?.size} op1 ${def?.actions?.getOpOrNull(0)}" }
         }
+        for (type in listOf(CASTLE_DOOR, NOTICE_BOARD, GEAR_RACK, PILLAR, SYMBOL)) {
+            val def = ServerCacheManager.getObject(type.asRSCM(RSCMType.LOC))
+            logger.info { "tob lobby loc $type: ${def?.name} ${def?.width}x${def?.length} op1 ${def?.actions?.getOpOrNull(0)}" }
+        }
     }
 
     companion object {
         const val BUILD_AT = 5
-        const val SIZE_ZONES = 6
+        const val SIZE_ZONES = 5
         const val SIZE = SIZE_ZONES * 8
         const val MAX_PLAYERS = 2000
         const val FLOOR_ZONE_X = 395
         const val FLOOR_ZONE_Z = 538
-        const val BOSS_RING = 15
+        const val DISC_CENTRE = SIZE / 2 + 0.5
+        const val DISC_RADIUS = 16.5
+        const val WALK_MARGIN = 0.4
+        const val EDGE_KEY = 64
+        const val BOSS_RING = 10.5
+        const val PILLAR_RING = 14.5
         const val BOT_RING = 7
         const val BOT_RING_MIN = 4
         const val WANDER_ODDS = 12
@@ -188,14 +229,34 @@ constructor(private val d: SoloDeps, private val raids: SoloRaids, private val b
         const val TM19 = "npc.tob_lobby_tm19"
         const val CASTLE_DOOR = "loc.tob_surface_castle_entrance"
         const val NOTICE_BOARD = "loc.tob_surface_notice_board"
-        const val SUPPLY_CHEST = "loc.tob_midway_chest_closed"
+        const val GEAR_RACK = "loc.tob_lobby_gear_rack"
+        const val PILLAR = "loc.tob_dungeon_verzik_pillar"
+        const val SYMBOL = "loc.tob_lobby_symbol"
+        const val VOID = "loc.tob_lobby_void"
+        val FLOORS = listOf("loc.tob_lobby_floor_0", "loc.tob_lobby_floor_1", "loc.tob_lobby_floor_2", "loc.tob_lobby_floor_3", "loc.tob_lobby_floor_4", "loc.tob_lobby_floor_5")
+        val PEDESTAL_SIZES = 3..7
+        val PEDESTALS =
+            mapOf(
+                3 to "loc.tob_lobby_pedestal_3",
+                4 to "loc.tob_lobby_pedestal_4",
+                5 to "loc.tob_lobby_pedestal_5",
+                6 to "loc.tob_lobby_pedestal_6",
+                7 to "loc.tob_lobby_pedestal_7",
+            )
+
+        /** The castle door's front faces east at angle 1 (Ver Sinhaza): turned once more it faces in from the north. */
+        val DOOR_ANGLE = LocAngle.East
+
+        /** The weapon rack's front faces west at angle 0 (Keldagrim): three turns face it south, to the middle. */
+        val STATION_ANGLE = LocAngle.South
         val NO_LOBBY = CoordGrid(0, 0, 0)
         val CENTRE = SIZE / 2 to SIZE / 2
 
         /** The tile [radius] out from the middle at [degrees] clockwise from north. */
-        fun ring(degrees: Int, radius: Int): Pair<Int, Int> {
+        fun ring(degrees: Number, radius: Number): Pair<Int, Int> {
             val a = Math.toRadians(degrees.toDouble())
-            return CENTRE.first + Math.round(radius * Math.sin(a)).toInt() to CENTRE.second + Math.round(radius * Math.cos(a)).toInt()
+            val r = radius.toDouble()
+            return CENTRE.first + Math.round(r * Math.sin(a)).toInt() to CENTRE.second + Math.round(r * Math.cos(a)).toInt()
         }
 
         val ENTRANCES =
@@ -210,12 +271,13 @@ constructor(private val d: SoloDeps, private val raids: SoloRaids, private val b
 
         /** Clockwise from the door: Maiden north-east round to Verzik north-west, the spawn's gap at south. */
         val BOSS_SPOTS = ENTRANCES.zip(listOf(45, 90, 135, 225, 270, 315)) { (npc, _), deg -> npc to ring(deg, BOSS_RING) }
-        val DOOR_SPOT = ring(0, BOSS_RING + 6)
-        val TM19_SPOT = ring(12, BOSS_RING + 3)
-        val SPAWN = ring(180, BOSS_RING + 4)
-        val BOARD_SPOT = ring(325, 7)
-        val CHEST_SPOT = ring(35, 7)
-        val POTATO_SPOT = CENTRE.first + 3 to CENTRE.second - 3
+        val PILLAR_DEGREES = listOf(22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5)
+        val DOOR_SPOT = ring(0, 15)
+        val TM19_SPOT = ring(14, 13)
+        val SPAWN = ring(180, 13)
+        val BOARD_SPOT = ring(354, 9.5)
+        val RACK_SPOT = ring(14, 9.5)
+        val POTATO_SPOT = CENTRE.first + 3 to CENTRE.second - 4
 
         val BOT_NAMES = listOf("Tick Perfect", "Bloat Goat", "Nylo Ninja", "Sote Note", "Scythe Guy", "Verz Herder")
 
