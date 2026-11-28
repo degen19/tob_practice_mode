@@ -1,5 +1,6 @@
 import re,sys,collections
 f=sys.argv[1]
+quad=any(' Freezer' in l for l in open(f,errors='ignore'))
 sw=collections.defaultdict(lambda: collections.defaultdict(set)); res={}; c=collections.Counter()
 for l in open(f,errors='ignore'):
     m=re.match(r'maiden (\S+) t(\d+) (Ranger|Melee|Mage) swung (\d+)',l)
@@ -18,4 +19,7 @@ for r in sw:
     tb=[t for t,w in sw[r]['Mage'] if w=='20997' and t>14]
     if any(t%5 not in ph for t in tb): md+=1
 n=len(res)
+if quad:
+    print(f,'rooms',n,'mean tick %.1f'%(sum(v[0] for v in res.values())/n),'leaks %.2f'%(sum(v[1] for v in res.values())/n),'(4s: the tick and up-close checks are trios only)')
+    sys.exit()
 print(f,'rooms',n,'mean tick %.1f'%(sum(v[0] for v in res.values())/n),'leaks %.2f'%(sum(v[1] for v in res.values())/n),'ranger/melee desync rooms',rd,dict(c))

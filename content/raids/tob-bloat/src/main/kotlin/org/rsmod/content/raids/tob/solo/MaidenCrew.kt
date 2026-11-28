@@ -941,12 +941,12 @@ class MaidenCrew(
     }
 
     /**
-     * The team stays on its tick until the 30s proc (no proc comes after it): the ranger and melee swing together (the mage's tbows go two ticks after theirs - 216
+     * A trio stays on its tick until the 30s proc (no proc comes after it): the ranger and melee swing together (the mage's tbows go two ticks after theirs - 216
      * of 221 in Blert's trios - so a DPS off it throws her shots and freezes off too). The tick is the last one both
      * swung on; a DPS that's slipped off it (a late Dinh's, a walk) waits to swing on it again.
      */
     private fun offTick(b: Bot, tt: Int): Boolean {
-        if (b.dps == null || phase == 0) return false
+        if (quad || b.dps == null || phase == 0) return false
         val other = crew.firstOrNull { it !== b && it.dps != null && it.player.isSlotAssigned && it.player.hitpoints > 0 } ?: return false
         if (other.next == tt) {
             teamTick = Math.floorMod(tt, SWING)
@@ -2778,8 +2778,8 @@ class MaidenCrew(
         val p = b.player
         var target = o.target
         if (!within(b, o)) {
-            // a DPS swing due now never waits or walks: it goes on what it reaches from where it stands
-            if (b.dps == null || !o.move.melee || p.actionDelay > clock.cycle) return
+            // a trio DPS swing due now never waits or walks: it goes on what it reaches from where it stands
+            if (quad || b.dps == null || !o.move.melee || p.actionDelay > clock.cycle) return
             val here = room.real(p.coords)
             target = crabs.filter { besideAt(here, it) && it.npc.hitpoints > 0 }.maxByOrNull { it.hp }?.npc ?: her.takeIf { room.besideHer(here) } ?: return
             trace { "t$t ${b.role} keeps its tick: its ${o.move} goes on ${crabs.firstOrNull { it.npc === target }?.key ?: "her"}" }

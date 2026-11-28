@@ -16,7 +16,7 @@ TOB_NYLO_POLICY=weights.tsv sh tools/bot-batch/batch.sh nylo tools/bot-batch/bla
 - **Result lines:**
   - Maiden: kill tick, procs, leaks, heals.
   - Nylo: boss tick, waves, nulls, stalls, pillars.
-- **`maiden_check.py`** reads a traced log and reports, per batch:
+- **`maiden_check.py`** reads a traced trio log and reports, per batch (on a 4s log it gives only the tick and leaks):
   - the mean kill tick and leaks;
   - how many rooms had a ranger and melee swinging off each other's tick (should be 0);
   - the mage's tbows from up close after the 50s.
