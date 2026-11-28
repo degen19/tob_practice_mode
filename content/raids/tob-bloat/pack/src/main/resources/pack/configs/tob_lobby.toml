@@ -1,0 +1,68 @@
+# The lobby's boss models: A Taste of Hope's non-combat bosses (Verzik in her last form), standing still on their
+# spots around the hall. Enter takes your party to that room.
+[[npc]]
+id = "npc.tob_lobby_maiden"
+inherit = "npc.tobquest_maiden"
+defaultMode = "None"
+wanderRange = 0
+actions = { ops = [{ text = "Enter" }] }
+examine = "Enter: start at the Maiden of Sugadinti."
+
+[[npc]]
+id = "npc.tob_lobby_bloat"
+inherit = "npc.tobquest_bloat"
+defaultMode = "None"
+wanderRange = 0
+actions = { ops = [{ text = "Enter" }] }
+examine = "Enter: start at the Pestilent Bloat."
+
+[[npc]]
+id = "npc.tob_lobby_nylocas"
+inherit = "npc.tobquest_nyloboss"
+defaultMode = "None"
+wanderRange = 0
+actions = { ops = [{ text = "Enter" }] }
+examine = "Enter: start at the Nylocas."
+
+[[npc]]
+id = "npc.tob_lobby_sotetseg"
+inherit = "npc.tobquest_sotetseg"
+defaultMode = "None"
+wanderRange = 0
+actions = { ops = [{ text = "Enter" }] }
+examine = "Enter: start at Sotetseg."
+
+[[npc]]
+id = "npc.tob_lobby_xarpus"
+inherit = "npc.tobquest_xarpus"
+defaultMode = "None"
+wanderRange = 0
+actions = { ops = [{ text = "Enter" }] }
+examine = "Enter: start at Xarpus."
+
+[[npc]]
+id = "npc.tob_lobby_verzik"
+inherit = "npc.verzik_phase2_to3_transition"
+defaultMode = "None"
+wanderRange = 0
+actions = { ops = [{ text = "Enter" }] }
+examine = "Enter: start at Verzik Vitur."
+
+# Mr. Mordaut at his desk in the middle of the hall: the bot table.
+[[npc]]
+id = "npc.tob_lobby_teacher"
+inherit = "npc.pattern_teacher"
+defaultMode = "None"
+wanderRange = 0
+actions = { ops = [{ text = "Build Team" }] }
+examine = "Build a team here: seats, roles, gear and the procedure the bots follow."
+
+# Beside the castle door: briefs you on the random raid behind it.
+[[npc]]
+id = "npc.tob_lobby_tm19"
+inherit = "npc.tob_male_orator"
+name = "TM 19"
+defaultMode = "None"
+wanderRange = 0
+actions = { ops = [{ text = "Talk-to" }] }
+examine = "Knows what's behind the castle door. Ask him."
