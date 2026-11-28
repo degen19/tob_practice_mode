@@ -86,9 +86,21 @@ object SoteRules {
     const val TORNADO = "npc.tob_sotetseg_creeper"
     const val TORNADO_ROW = 3
 
-    /** Under: out of sight (the shadow realm isn't copied). */
-    const val UNDER_X = 3320
-    const val UNDER_Y = 4345
+    /**
+     * The shadow realm (region 13379, level 3): its maze is this one's 81 tiles east and 1 north. The player under lands
+     * south of it, runs north to the portal and comes out west of her 17 ticks after the proc (Blert, every scale) - the
+     * players above finishing first doesn't bring them out; a solo comes out at the foot of the maze instead.
+     */
+    const val SHADOW_REGION = 13379
+    const val SHADOW_LEVEL = 3
+    const val SHADOW_X = 3354
+    const val SHADOW_A = 4311
+    const val UNDER_X = 3360
+    const val UNDER_Y = 4309
+    const val PORTAL_Y = 4330
+    const val UNDER_OUT_AFTER = 17
+    const val UNDER_OUT_X = 3275
+    const val UNDER_OUT_Y = 4327
 
     /** Off the floor, in the west wall: out of shot, yet in drawing range (15 tiles) of the entry and the stack. */
     const val WATCH_X = 3269

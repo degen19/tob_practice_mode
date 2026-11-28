@@ -10,6 +10,7 @@ import org.rsmod.api.instances.InstanceAccess
 import org.rsmod.api.instances.InstanceArea
 import org.rsmod.api.instances.InstanceManager
 import org.rsmod.api.instances.InstanceSpec
+import org.rsmod.api.instances.RegionLocal
 import org.rsmod.api.npc.hit.modifier.NpcHitModifier
 import org.rsmod.api.player.hit.modifier.PlayerHitModifier
 import org.rsmod.api.player.hook.TeleportType
@@ -21,6 +22,7 @@ import org.rsmod.api.random.GameRandom
 import org.rsmod.api.repo.loc.LocRepository
 import org.rsmod.api.repo.npc.NpcRepository
 import org.rsmod.api.repo.obj.ObjRepository
+import org.rsmod.api.repo.region.RegionTemplate
 import org.rsmod.api.repo.world.WorldRepository
 import org.rsmod.api.script.onCommand
 import org.rsmod.api.script.onEvent
@@ -36,6 +38,7 @@ import org.rsmod.game.movement.MoveSpeed
 import org.rsmod.map.CoordGrid
 import org.rsmod.plugin.scripts.PluginScript
 import org.rsmod.plugin.scripts.ScriptContext
+import org.rsmod.routefinder.collision.CollisionFlagMap
 
 /**
  * `::sote [1-5] [way]` - a private Sotetseg room playing the sim's plan live with a team of bots (5 unless given) that
@@ -58,6 +61,7 @@ constructor(
     private val playerHits: PlayerHitModifier,
     private val protectedAccess: ProtectedAccessLauncher,
     private val bots: RaidBots,
+    private val collision: CollisionFlagMap,
 ) : PluginScript() {
     private val logger = InlineLogger()
     private val rooms = HashMap<String, SoteLiveRoom>()
@@ -119,20 +123,20 @@ constructor(
                         maxPlayers = 6,
                         reclaimTicks = DEFAULT_EMPTY_INSTANCE_RECLAIM_TICKS,
                         graceTicks = DEFAULT_INSTANCE_GRACE_TICKS,
-                        area = InstanceArea.copyRegions(centerRegionId = SoteRules.REGION),
+                        area = area(),
                         settingsRowId = -1,
                     ),
                 access = InstanceAccess.Private,
                 currentTick = mapClock.cycle,
             ) ?: return null
-        fun at(x: Int, y: Int) = checkNotNull(instances.resolveCoord(session, CoordGrid(x, y, 0)))
+        fun at(x: Int, y: Int, level: Int = 0) = checkNotNull(instances.resolveCoord(session, CoordGrid(x, y, level)))
         val npc = Npc(SoteRules.NPC, at(SoteRules.X, SoteRules.Y))
         npcRepo.add(npc, Int.MAX_VALUE)
         npc.respawns = false
         npc.moveRestrict = MoveRestrict.PassThru
         npc.ignoreCombatInteractions = true
         instances.attachNpc(session.id, npc)
-        val room = SoteLiveRoom(session, npc, seed, team, way, ::at, npcRepo, objRepo, locRepo, worldRepo, npcHits, playerHits, protectedAccess, bots, look)
+        val room = SoteLiveRoom(session, npc, seed, team, way, { x, y -> at(x, y) }, { x, y -> at(x, y, SoteRules.SHADOW_LEVEL) }, npcRepo, objRepo, locRepo, worldRepo, npcHits, playerHits, protectedAccess, bots, look, collision)
         for (p in room.engine.ps) {
             val bot = bots.spawn(p.name, room.outsideTile(p.i), emptyList(), emptyList()) ?: continue
             bot.varMoveSpeed = MoveSpeed.Run
@@ -180,6 +184,21 @@ constructor(
         player.npcViewDistance = null
         Camera.camReset(player)
         protectedAccess.launch(player) { telejump(EXIT, TeleportType.Exempt) }
+    }
+
+    /** Her room and the shadow realm beside it (level 3), every level copied. */
+    private fun area(): InstanceArea {
+        val regions = listOf(SoteRules.REGION, SoteRules.SHADOW_REGION)
+        val template =
+            RegionTemplate.createLarge {
+                copyAllLevels(regions.minOf { it ushr 8 } shl 3, regions.minOf { it and 0xFF } shl 3) {
+                    zoneWidth = (regions.maxOf { it ushr 8 } - regions.minOf { it ushr 8 } + 1) * 8
+                    zoneLength = (regions.maxOf { it and 0xFF } - regions.minOf { it and 0xFF } + 1) * 8
+                    regionZoneX = 0
+                    regionZoneZ = 0
+                }
+            }
+        return InstanceArea.template(template, RegionLocal(0, 0, 0, 0, 0), EXIT)
     }
 
     private companion object {

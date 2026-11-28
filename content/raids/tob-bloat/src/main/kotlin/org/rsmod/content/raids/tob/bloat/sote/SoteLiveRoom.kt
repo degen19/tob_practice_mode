@@ -7,6 +7,7 @@ import dev.openrune.types.MoveRestrict
 import dev.openrune.types.NpcMode
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
 import org.rsmod.api.config.constants
 import org.rsmod.api.instances.InstanceSession
 import org.rsmod.api.npc.hit.modifier.NpcHitModifier
@@ -31,23 +32,28 @@ import org.rsmod.game.hit.HitType
 import org.rsmod.game.loc.LocAngle
 import org.rsmod.game.loc.LocInfo
 import org.rsmod.game.loc.LocShape
+import org.rsmod.game.map.collision.add
+import org.rsmod.game.map.collision.remove
 import org.rsmod.game.movement.MoveSpeed
 import org.rsmod.game.obj.Obj
 import org.rsmod.game.proj.ProjAnim
 import org.rsmod.map.CoordGrid
+import org.rsmod.routefinder.collision.CollisionFlagMap
+import org.rsmod.routefinder.flag.CollisionFlag
 
 /**
  * A live Sotetseg: the sim's Sotetseg ([SoteEngine]) runs it tick by tick for a team of 1-5 bots, and this room shows
  * it. They flinch round her on the team's tiles - a tile back between swings, in on her attack tick - and attack as the
  * engine has them; her orbs fly at them and split from them, the death ball comes down on them, and their HP is the
- * engine's, hit by hit. On t12 the west bot drops a shark by her south-west corner. At a maze everyone is caught (the
- * teleport animation), the floor darkens, and 3 ticks later one goes under (out of sight; their tile glows above) and
- * the rest are teleported south of the maze. They run up its first column to the shark through NPC Contact (the stall),
- * the wrong tiles zapping them, and take the stall's hits coming off it; a shark skipper runs up column 11 if others
- * stall; a solo goes under first, then crosses; a run maze: they follow its best route. Once anyone is past the third
- * row the tornado walks the path from its start. Off the maze their first click is her: they swing from the tile beside
- * her nearest them, then go back to their own, swinging off cooldown on the way. One seed, one raid: the same as the
- * index's ([SoteIndex]).
+ * engine's, hit by hit. Nobody walks through her. On t12 the west bot drops a shark by her south-west corner. At a maze
+ * everyone is caught (the teleport animation), the floor darkens, and 3 ticks later one goes under (out of sight; their
+ * tile glows above) and the rest are teleported south of the maze. They run up its first column to the shark through
+ * NPC Contact (the stall), the wrong tiles zapping them, and take the stall's hits coming off it; a shark skipper runs
+ * up column 11 if others stall; a solo goes under first, then crosses; a run maze: they follow its best route. The
+ * player under runs straight to the portal when the rest skip (the path below when anyone runs it) and comes out west
+ * of her, in time for the first swing the engine gives them. Once anyone is past the third row the tornado walks the
+ * path from its start. Off the maze their first click is her: they swing from the tile beside her nearest them, then go
+ * back to their own, swinging off cooldown on the way. One seed, one raid: the same as the index's ([SoteIndex]).
  */
 class SoteLiveRoom(
     val session: InstanceSession,
@@ -56,6 +62,7 @@ class SoteLiveRoom(
     val team: Int,
     val way: String,
     private val at: (Int, Int) -> CoordGrid,
+    private val shadow: (Int, Int) -> CoordGrid,
     private val npcRepo: NpcRepository,
     private val objRepo: ObjRepository,
     private val locRepo: LocRepository,
@@ -65,6 +72,7 @@ class SoteLiveRoom(
     private val protectedAccess: ProtectedAccessLauncher,
     private val clicks: RaidBots,
     private val look: RaidLook,
+    private val collision: CollisionFlagMap,
 ) {
     val bots = ArrayList<Player>()
     var log = false
@@ -85,12 +93,16 @@ class SoteLiveRoom(
     private var tornado: Npc? = null
     private var tornadoStep = 0
 
+    init {
+        for (tile in herTiles()) collision.add(tile, CollisionFlag.BLOCK_PLAYERS)
+    }
+
     /**
      * The maze as shown: its tiles and path (the run's own maze, or one rolled for the look when it's skipped), who
-     * crosses it (on it from [from], the teleport), the route the player under runs below from [underFrom], and the glow
+     * crosses it (on it from [from], the teleport), who is below ([below]: the player under, or a solo), and the glow
      * above on their tile.
      */
-    private class Visual(val maze: SoteMaze.Maze, val crossers: List<SoteEngine.P>, val from: Int, val underFrom: Int?) {
+    private class Visual(val maze: SoteMaze.Maze, val crossers: List<SoteEngine.P>, val from: Int, val below: SoteEngine.P?) {
         val tiles = SoteMaze.tiles(maze.seed)
         val path = SoteMaze.path(tiles, maze.seed)
         var glow: Pair<Pair<Int, Int>, LocInfo>? = null
@@ -126,8 +138,19 @@ class SoteLiveRoom(
 
     private val entry = RoomEntry(clicks, at(SoteRules.BARRIER_X, SoteRules.BARRIER_Y), pass = -1, run = RUN_FROM)
 
+    /** A teleport: the looping teleport animation from the proc stops as they land, or it hides them on the move. */
     private fun go(bot: Player, to: CoordGrid) {
         protectedAccess.launch(bot) { telejump(to, TeleportType.Exempt) }
+        bot.resetAnim()
+    }
+
+    private fun herTiles() = (0 until SoteRules.SIZE).flatMap { x -> (0 until SoteRules.SIZE).map { y -> at(SoteRules.X + x, SoteRules.Y + y) } }
+
+    private fun shadowTile(x: Int, y: Int) = shadow(SoteRules.SHADOW_X + x, SoteRules.SHADOW_A + SoteMaze.H - 1 - y)
+
+    /** Up from under: out of the portal west of her on [out], or two ticks before the engine's first swing for them if sooner. */
+    private fun outFromUnder(u: SoteEngine.P, out: Int) {
+        at(min(out, (u.next ?: out) - 2)) { botOf(u)?.let { go(it, at(SoteRules.UNDER_OUT_X, SoteRules.UNDER_OUT_Y)) } }
     }
 
     private fun at(t: Int, f: () -> Unit) {
@@ -146,8 +169,8 @@ class SoteLiveRoom(
         for (p in engine.ps) if (!p.dead) botOf(p)?.anim(TELEPORT_SEQ)
         paintFloor(DARK)
         at(t + SoteRules.TELEPORT_AFTER) {
-            under?.let { u -> botOf(u)?.let { go(it, at(SoteRules.UNDER_X, SoteRules.UNDER_Y)) } }
-            for (p in crossers) botOf(p)?.let { go(it, if (team == 1) at(SoteRules.UNDER_X, SoteRules.UNDER_Y) else start()) }
+            under?.let { u -> botOf(u)?.let { go(it, shadow(SoteRules.UNDER_X, SoteRules.UNDER_Y)) } }
+            for (p in crossers) botOf(p)?.let { go(it, if (team == 1) shadow(SoteRules.UNDER_X, SoteRules.UNDER_Y) else start()) }
         }
     }
 
@@ -224,8 +247,7 @@ class SoteLiveRoom(
             endMaze(v)
             return
         }
-        // the glow above on the tile the player under stands on below, as they run the path from its first tile
-        v.underFrom?.let { from -> glowAt(v, v.maze.route.getOrNull(engine.t - from)?.let { it.x to it.y }) }
+        glowAt(v, v.below?.let { botOf(it) }?.let { below(it.coords) })
         var past = false
         if (engine.t >= v.from) for (p in v.crossers) {
             val bot = botOf(p) ?: continue
@@ -260,6 +282,14 @@ class SoteLiveRoom(
             tornadoStep++
             tor.walk(v.path[tornadoStep].let { mazeTile(it.x, it.y) })
         }
+    }
+
+    /** The maze tile above the shadow realm tile [c], if it is on the maze below. */
+    private fun below(c: CoordGrid): Pair<Int, Int>? {
+        val base = shadowTile(0, SoteMaze.H - 1)
+        val x = c.x - base.x
+        val row = c.z - base.z
+        return if (x in 0 until SoteMaze.W && row in 0 until SoteMaze.H && c.level == base.level) x to SoteMaze.H - 1 - row else null
     }
 
     private fun glowAt(v: Visual, tile: Pair<Int, Int>?) {
@@ -318,6 +348,7 @@ class SoteLiveRoom(
     }
 
     fun remove() {
+        for (tile in herTiles()) collision.remove(tile, CollisionFlag.BLOCK_PLAYERS)
         if (sote.isSlotAssigned) npcRepo.del(sote, Int.MAX_VALUE)
         shark?.let { objRepo.del(it) }
         tornado?.let { if (it.isSlotAssigned) npcRepo.del(it, Int.MAX_VALUE) }
@@ -380,7 +411,11 @@ class SoteLiveRoom(
             teleport(t, under, crossers)
             // a skipped maze is rolled for the look only, apart from the engine's numbers
             val rolled = SoteMaze.roll(SimRng("$seed|maze$n"))
-            maze = Visual(rolled, crossers, t + SoteRules.TELEPORT_AFTER, under?.let { t + 4 + SoteMaze.underToStart(rolled.start) })
+            val below = under ?: crossers.singleOrNull()?.takeIf { team == 1 }
+            maze = Visual(rolled, crossers, t + SoteRules.TELEPORT_AFTER, below)
+            // with everyone else skipping, the path below doesn't matter: straight north to the portal, out as soon as they can
+            below?.let { b -> at(t + SoteRules.TELEPORT_AFTER + 1) { botOf(b)?.let { clicks.walk(it, shadow(SoteRules.UNDER_X, SoteRules.PORTAL_Y)) } } }
+            under?.let { outFromUnder(it, t + SoteRules.UNDER_OUT_AFTER) }
             if (team == 1) at(m - 3) { for (p in crossers) botOf(p)?.let { go(it, start()) } }
             // the stallers run up column 1 to the shark; a shark skipper alone does too. With others stalling, a skipper
             // can't run with them (their wrong-tile splash): two ticks diagonally north-east, then on to column 11 and up it
@@ -401,7 +436,6 @@ class SoteLiveRoom(
                     bot.spotanim(RSCM.getReverseMapping(RSCMType.SPOTANIM, SoteRules.CONTACT_GFX), height = 96)
                 }
             }
-            under?.let { u -> at(back) { botOf(u)?.let { go(it, stackTile(u.i)) } } }
         }
 
         /**
@@ -411,7 +445,7 @@ class SoteLiveRoom(
         override fun mazeRun(t: Int, n: Int, run: SoteEngine.Run, under: SoteEngine.P?) {
             val runners = engine.ps.filter { !it.dead && it !== under }
             teleport(t, under, runners)
-            maze = Visual(run.maze, runners, t + SoteRules.TELEPORT_AFTER, under?.let { run.light })
+            maze = Visual(run.maze, runners, t + SoteRules.TELEPORT_AFTER, under)
             val route = run.maze.route.map { mazeTile(it.x, it.y) }
             fun all(f: (Player) -> Unit) = runners.forEach { p -> botOf(p)?.let(f) }
             at(t + 5) { all { clicks.walk(it, at(SoteRules.MAZE_X + 3, SoteRules.MAZE_A - 1)) } }
@@ -419,7 +453,15 @@ class SoteLiveRoom(
             at(run.onFirst - SoteMaze.runnersToStart(run.maze.start)) { all { clicks.walk(it, route[0]) } }
             for (k in 1..run.maze.toN) at(run.onFirst + k - 1) { all { clicks.walk(it, route[k]) } }
             at(run.light) { lit = run.maze.route.joinToString(";") { "${it.x},${SoteMaze.H - 1 - it.y}" } }
-            under?.let { u -> at(run.clickOff + 2) { botOf(u)?.let { go(it, stackTile(u.i)) } } }
+            // the player under lights the route below for them, a tile a tick from its first tile, then out by the portal
+            under?.let { u ->
+                val below = run.maze.route.map { shadowTile(it.x, it.y) }
+                at(t + SoteRules.TELEPORT_AFTER + 1) { botOf(u)?.let { clicks.walk(it, below[0]) } }
+                for (k in 1 until below.size) at(run.light + k - 1) { botOf(u)?.let { clicks.walk(it, below[k]) } }
+                val end = run.light + below.size - 1
+                at(end) { botOf(u)?.let { clicks.walk(it, shadow(SoteRules.SHADOW_X + run.maze.route.last().x, SoteRules.PORTAL_Y)) } }
+                outFromUnder(u, end + 2)
+            }
         }
 
         override fun stallOut(t: Int, p: SoteEngine.P, hits: List<Int>, pneck: Boolean) {
