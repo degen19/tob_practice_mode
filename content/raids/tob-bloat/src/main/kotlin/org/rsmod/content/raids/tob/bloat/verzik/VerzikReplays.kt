@@ -6,11 +6,12 @@ import java.util.zip.GZIPInputStream
 import org.rsmod.content.raids.tob.bloat.maiden.MaidenIndex
 
 /**
- * The 50 fastest Verzik rooms on Blert at each scale (2-5), as recorded: every player's tile, gear, overhead and attack
- * each tick, every NPC's type, tile and hitpoints, and her attacks. Exported by `tools/blert/verzik.py export`; ticks
- * count from the room's first tick, tiles are the room's real coordinates.
+ * Verzik raids to play out, by scale (2-5): [blert], Blert's 50 fastest rooms as recorded (`tools/blert/verzik.py
+ * export`), and [sim], verzikSim's raids with their movement from Blert (`resources/verzik/simreplay.mjs`). Each holds
+ * every player's tile, gear, overhead and attack each tick, every NPC's type, tile and hitpoints, and her attacks;
+ * ticks count from the room's first tick, tiles are the room's real coordinates.
  */
-object VerzikBlert {
+object VerzikReplays {
     class Attack(val t: Int, val player: Int, val name: String, val anim: Int, val weapon: Int, val target: Int)
 
     class Spell(val t: Int, val player: Int, val name: String, val anim: Int, val gfx: Int, val target: Int)
@@ -32,6 +33,7 @@ object VerzikBlert {
         val scale: Int,
         val end: Int,
         val rank: Int,
+        val failed: Boolean,
         private val tiles: List<IntArray>,
         private val hitpoints: List<IntArray>,
         val gear: List<List<Triple<Int, Int, Int>>>,
@@ -58,10 +60,14 @@ object VerzikBlert {
         fun markAt(name: String): Int? = marks.firstOrNull { it.second == name }?.first
     }
 
-    val raids: Map<Int, List<Raid>> by lazy {
-        val stream = VerzikBlert::class.java.getResourceAsStream("/verzik/blert.json.gz") ?: return@lazy emptyMap()
+    val blert: Map<Int, List<Raid>> by lazy { load("/verzik/blert.json.gz") }
+
+    val sim: Map<Int, List<Raid>> by lazy { load("/verzik/sim.json.gz") }
+
+    private fun load(resource: String): Map<Int, List<Raid>> {
+        val stream = VerzikReplays::class.java.getResourceAsStream(resource) ?: return emptyMap()
         val root = GZIPInputStream(stream).use { ObjectMapper().readTree(it) }
-        root.fields().asSequence().associate { (scale, list) -> scale.toInt() to list.mapIndexed { k, r -> raid(r, k + 1) } }
+        return root.fields().asSequence().associate { (scale, list) -> scale.toInt() to list.mapIndexed { k, r -> raid(r, k + 1) } }
     }
 
     private fun raid(r: JsonNode, rank: Int): Raid =
@@ -70,6 +76,7 @@ object VerzikBlert {
             r["scale"].asInt(),
             r["end"].asInt(),
             rank,
+            r["failed"]?.asBoolean() ?: false,
             r["tiles"].map { row -> IntArray(row.size()) { row[it].asInt() } },
             r["hp"].map { row -> IntArray(row.size()) { row[it].asInt() } },
             r["gear"].map { p -> p.map { Triple(it[0].asInt(), it[1].asInt(), it[2].asInt()) } },
@@ -91,14 +98,33 @@ object VerzikBlert {
         )
 
     fun pick(scale: Int, rank: Int?, pick: Int): Raid? {
-        val list = raids[scale].orEmpty()
+        val list = blert[scale].orEmpty()
         if (list.isEmpty()) return null
         return if (rank != null) list.getOrNull(rank - 1) else list[Math.floorMod(pick, list.size)]
     }
 
+    /** A sim raid at [scale]: `median`, `top10`, `slow` (slowest 10%), `fail`, `time m:ss.t`, `seed vN`, or any. */
+    fun simRaid(scale: Int, how: String?, arg: String?, pick: Int): Raid? {
+        val all = sim[scale].orEmpty()
+        val wins = all.filter { !it.failed }
+        fun some(l: List<Raid>) = if (l.isEmpty()) null else l[Math.floorMod(pick, l.size)]
+        return when (how) {
+            null, "again" -> some(all)
+            "median" -> wins.getOrNull(wins.size / 2)
+            "top10", "fast" -> some(wins.take(maxOf(1, wins.size / 10)))
+            "slow" -> some(wins.takeLast(maxOf(1, wins.size / 10)))
+            "fail", "failed" -> some(all.filter { it.failed })
+            "time" -> MaidenIndex.parse(arg ?: "")?.let { want -> wins.minByOrNull { kotlin.math.abs(it.end - want) } }
+            "seed" -> all.firstOrNull { it.uuid == "sim-$arg" }
+            else -> null
+        }
+    }
+
     fun stats(): String =
         (2..5).joinToString("; ") { s ->
-            val l = raids[s].orEmpty()
-            "${s}s: ${l.size} raids, fastest ${l.firstOrNull()?.time}, median ${l.getOrNull(l.size / 2)?.time}"
+            val b = blert[s].orEmpty()
+            val m = sim[s].orEmpty()
+            val wins = m.filter { !it.failed }
+            "${s}s: sim ${wins.size}/${m.size} killed, median ${wins.getOrNull(wins.size / 2)?.time}; Blert fastest ${b.firstOrNull()?.time}, median ${b.getOrNull(b.size / 2)?.time}"
         }
 }

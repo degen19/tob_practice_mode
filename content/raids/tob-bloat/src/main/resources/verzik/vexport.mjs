@@ -1,15 +1,16 @@
-// The 5s Verzik raids for the server: each raid's timeline (attacks, her events, HP, phase points) from the sim's own
-// log, through the Show raid trace. node vexport.mjs N out.json
+// A scale's Verzik raids: each raid's timeline (attacks, her events, HP, phase points) from the sim's own log, through
+// the Show raid trace, for simreplay.mjs. VERZIKSIM=<sim> node vexport.mjs <scale> [N] [out.json.gz] (reads cfgs<scale>.json)
 import { readFileSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
+const TEAM = Number(process.argv[2] || 5);
 const SIM = process.env.VERZIKSIM || new URL('../../../../../../../../verzikSim.JS/', import.meta.url).pathname;
 const { runOneLogged } = await import(`${SIM}/engine/optimize.js`);
 const { Rng } = await import(`${SIM}/engine/rng.js`);
 const { verzTrace } = await import(`${SIM}/verzraid.js`);
-const cfgs = JSON.parse(readFileSync('cfgs5.json', 'utf8'));
-const n = Number(process.argv[2] || 300), raids = [];
+const cfgs = JSON.parse(readFileSync(`cfgs${TEAM}.json`, 'utf8'));
+const n = Number(process.argv[3] || 300), raids = [];
 for (let k = 1; k <= n; k++) {
-  const seed = `v${k}`, r = runOneLogged(cfgs, 5, new Rng(seed));
+  const seed = `v${k}`, r = runOneLogged(cfgs, TEAM, new Rng(seed));
   const tr = verzTrace(r.log, cfgs.map((c) => c.name), cfgs);
   const marks = [], atk = [], boss = [], hp = [];
   let lastHp = null;
@@ -21,7 +22,7 @@ for (let k = 1; k <= n; k++) {
   }
   raids.push({ seed, end: r.end ?? null, marks, atk, boss, hp });
 }
-const out = process.argv[3] || 'verzik5.json.gz';
+const out = process.argv[4] || `verzik${TEAM}.json.gz`;
 writeFileSync(out, gzipSync(JSON.stringify(raids)));
 const ok = raids.filter((x) => x.end != null).map((x) => x.end).sort((a, b) => a - b);
 console.log('raids', n, 'ok', ok.length, 'median', ok[ok.length >> 1], 'bytes', gzipSync(JSON.stringify(raids)).length);

@@ -184,6 +184,7 @@ class VerzikLooks(
 
         /** Blert: her P1 blast hurts 2 ticks after her attack (537 of 566), the P2 spark too (320 of 345). */
         const val ZAP_LANDS = 2
+
         /** A real raid frame by frame: the orb leaves her hands ~1.5 ticks into her attack, high, and lands ~2.3 ticks in. */
         const val P1_LAUNCH = 45
         const val P1_LAND_CYCLES = 70
