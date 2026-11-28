@@ -87,6 +87,7 @@ class MaidenCrew(
         var swungAt = 0
         var predodgeAt = -1
         var aimed: Npc? = null
+        var aimedMove: Move? = null
         val route = ArrayDeque<CoordGrid>()
         var routeAt: CoordGrid? = null
         var aimedFor = -1
@@ -221,7 +222,7 @@ class MaidenCrew(
         inflight.removeAll { it.land < t }
         barrages.removeAll { it.first < t }
         for (b in crew) thrown(b)
-        if (TRACING) for (b in crew) swung(b)
+        for (b in crew) swung(b)
         val flinching = herAttack()
         for (b in crew) {
             val p = b.player
@@ -635,19 +636,20 @@ class MaidenCrew(
             when (next) {
                 "tbr", "tba" -> tbowGap(b)
                 "zcbs" -> REACH_OF.getValue("zcbs")
-                "qfz" -> if (gapBow(b)) tbowGap(b) else params.casterGap
-                "tfz", "tpile" -> params.casterGap
+                "qfz", "tfz" -> if (gapBow(b)) tbowGap(b) else params.casterGap
+                "tpile" -> params.casterGap
                 else -> return false
             }
         val here = room.real(b.player.coords)
-        val fits = { c: CoordGrid ->
+        val inBand = { c: CoordGrid ->
             room.gapToHer(c) in far - 1..far && c.x - ROOM_X > MX1 && abs(ROOM_Y - c.z - MAGE_ROW) <= MAGE_ROWS && room.inArena(c) && !room.bloody(c) && !underCrab(c, b.next)
         }
+        val reach = !quad && phase != 0 && far == tbowGap(b)
+        val fits = { c: CoordGrid -> inBand(c) && (!reach || covers(c)) }
         if (fits(here)) return true
-        val dest =
-            (-STAND_SEARCH..STAND_SEARCH).flatMap { dx -> (-STAND_SEARCH..STAND_SEARCH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
-                .filter(fits)
-                .minWithOrNull(compareBy({ maxOf(abs(it.x - here.x), abs(it.z - here.z)) }, { abs(ROOM_Y - it.z - MAGE_ROW) })) ?: return true
+        val near = compareBy<CoordGrid>({ maxOf(abs(it.x - here.x), abs(it.z - here.z)) }, { abs(ROOM_Y - it.z - MAGE_ROW) })
+        val box = (-STAND_SEARCH..STAND_SEARCH).flatMap { dx -> (-STAND_SEARCH..STAND_SEARCH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
+        val dest = box.filter(fits).minWithOrNull(near) ?: if (inBand(here)) return true else box.filter(inBand).minWithOrNull(near) ?: return true
         trace { "t$t ${b.role} moves to ${dest.x - ROOM_X},${ROOM_Y - dest.z} for its $next (swing t${b.next})" }
         walk(b, dest)
         return true
@@ -660,6 +662,7 @@ class MaidenCrew(
      * its tbow spot and walks back in on the tbow's cooldown.
      */
     private fun gapBow(b: Bot): Boolean {
+        if (!quad) return trioGapBow(b)
         val w = latestWave() ?: return false
         val list = qPlans[w]?.lists?.get(b.role) ?: return false
         val idx = b.qI[w].orEmpty()
@@ -679,6 +682,29 @@ class MaidenCrew(
             }
             else -> false
         }
+    }
+
+    /**
+     * The trio mage's next swing a tbow between its freezes, as [tfzPick] will pick it: its freezes of the wave made,
+     * the next clump not yet in and due a tbow or more after the swing, with no old pile to barrage first.
+     */
+    private fun trioGapBow(b: Bot): Boolean {
+        val w = latestWave() ?: return false
+        val plan = planOf(w)
+        val done = b.tfzD[w].orEmpty()
+        if (plan.fz.any { it !in done }) return false
+        val tt = max(b.next, t)
+        val lp = lastProc ?: return false
+        for (which in listOf("3s", "4s")) {
+            if (which in done) continue
+            val ready = clumpReady(w, which, tt) ?: continue
+            if (ready || (w == 30 && which == "4s" && !waveHas(w, THREE_RE))) return false
+            if (w == 70 && plan.fz.isEmpty() && which == "3s") return "tb" !in done && tt >= lp + 3
+            val due = lp + if (which == "3s") THREES_DUE else FOURS_DUE
+            if (tt + 5 > due) return false
+            return w == 70 || barragePrim("old", tt)?.let { aoe3(it).sumOf { c -> c.hp } >= OLD_PILE_HP } != true
+        }
+        return false
     }
 
     /**
@@ -784,11 +810,26 @@ class MaidenCrew(
 
     private fun roomTick(clockEnd: Int): Int = if (clockEnd <= 0) -1 else t + (clockEnd - clock.cycle) - 1
 
-    /** Traces: every attack that went off (ordered or the game's own next swing), by its weapon. */
+    /** Every attack that went off (ordered or the game's own next swing): recorded as Blert's attack event, and traced. */
     private fun swung(b: Bot) {
         val ad = b.player.actionDelay
         if (ad == b.swungAt || ad <= clock.cycle) return
         b.swungAt = ad
+        val p = b.player
+        val target = (p.interaction as? InteractionNpc)?.target ?: b.aimed
+        val here = room.real(p.coords)
+        val dist = when {
+            target == null -> -1
+            target === her -> room.gapToHer(here)
+            else -> castDist(here, target)
+        }
+        val move = if (target === b.aimed) b.aimedMove?.name ?: "" else ""
+        room.recordEvent(
+            ATTACK_EVENT,
+            "\"player\":{\"name\":\"${p.username}\"},\"attack\":{\"move\":\"$move\",\"weapon\":{\"id\":${p.worn[3]?.id ?: -1}}," +
+                "\"target\":{\"roomId\":${target?.slotId ?: -1}},\"distanceToTarget\":$dist}",
+            here,
+        )
         trace { "t$t ${b.role} swung ${b.player.worn[3]?.id} at ${(b.player.interaction as? InteractionNpc)?.target?.let { n -> crabs.firstOrNull { it.npc === n }?.key ?: "her" }} ad $ad" }
     }
 
@@ -1984,7 +2025,7 @@ class MaidenCrew(
                 }
                 return "tbr"
             }
-            if (tt + atkOf("ax").speed <= due) return "ax:${looseNear(b, tt)?.key ?: "maiden"}"
+            if (tt + atkOf("ax").speed <= due && b.owns("xbows")) return "ax:${looseNear(b, tt)?.key ?: "maiden"}"
             return "wait"
         }
         return null
@@ -2069,7 +2110,7 @@ class MaidenCrew(
             leave(plan, f.id, w, tt)
         }
         val (first, at) = best.firstOrNull() ?: return null
-        if (at > tt) return if (at - tt >= atkOf("tbr").speed) "tbr" else if (at - tt >= atkOf("ax").speed) "ax:${looseNear(b, tt)?.key ?: "maiden"}" else "wait"
+        if (at > tt) return if (at - tt >= atkOf("tbr").speed) "tbr" else if (at - tt >= atkOf("ax").speed && b.owns("xbows")) "ax:${looseNear(b, tt)?.key ?: "maiden"}" else "wait"
         b.tfzD.getOrPut(first.w) { HashSet() } += first.id
         if (first.clump) {
             val mine = ofWave(first.w, if (first.id == "3s") THREES else FOURS)
@@ -2821,6 +2862,7 @@ class MaidenCrew(
         o.walkTo = null
         b.route.clear()
         b.aimed = target
+        b.aimedMove = o.move
         b.aimedFor = max(clock.cycle, p.actionDelay)
         trace { "t$t ${b.role} fires ${o.move} at ${crabs.firstOrNull { it.npc === target }?.key ?: "her"} from ${room.real(p.coords).let { "${it.x - ROOM_X},${ROOM_Y - it.z}" }} energy ${b.spec} delay ${p.actionDelay - clock.cycle} weapon ${p.worn[3]?.id}" }
         for ((slot, obj) in o.move.set.worn) {
@@ -2917,6 +2959,7 @@ class MaidenCrew(
 
     private companion object {
         val TRACING = System.getenv("TOB_TRIO_TRACE") != null
+        const val ATTACK_EVENT = 5
         const val SPELLBOOK_SWAP = "component.magic_spellbook:spellbook_swap"
         const val HEAL_OTHER = "component.magic_spellbook:heal_other"
         const val HEAL_MIN = 10
