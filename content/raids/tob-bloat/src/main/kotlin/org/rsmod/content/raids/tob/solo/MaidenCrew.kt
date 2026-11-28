@@ -2529,7 +2529,8 @@ class MaidenCrew(
         val under = { c: Crab -> from != null && (from.x - ROOM_X) in c.x..c.x + 1 && (ROOM_Y - from.z) in c.y..c.y + 1 }
         if (id == "old" || id == "pile") {
             val w = latestWave()
-            return crabs.filter { id == "pile" || it.wave != w }.maxWithOrNull(compareBy<Crab> { c ->
+            // a preload goes on a clump: a lone floating crab only when there's none
+            return crabs.filter { id == "pile" || it.wave != w }.maxWithOrNull(compareBy<Crab> { c -> if (id == "pile" && aoe3(c).size >= 2) 1 else 0 }.thenBy { c ->
                 val n = aoe3(c)
                 n.count { tt > it.immuneTo && tt > it.frozenTo } * 30 + n.sumOf { it.hp }
             }.thenBy { if (under(it)) 0 else 1 })
