@@ -16,7 +16,7 @@ Ground truth, in this order:
 ## Repos
 
 - `degen19/tob_practice_mode`: the server (OpenRune, Kotlin). ToB lives in `content/raids/tob-bloat`.
-- `degen19/verzikSim.JS`: the browser and Node Monte Carlo sim for Verzik and Sotetseg (Xarpus local only). Several
+- `degen19/verzikSim.JS`: the browser and Node Monte Carlo sim for Verzik, Sotetseg, Xarpus and Maiden. Several
   server rooms are ports of its engines (see "Tie-ins").
 
 ## How we work: branches, one Admin
@@ -93,7 +93,6 @@ If OpenRS2 is unreachable from your workspace, tell the owner. The Admin has a w
   The Admin checks that the two still match.
 - **verzikSim's own rules** (its `HANDOFF.md`, `CONVENTIONS.md`):
   - nothing goes live on GitHub Pages without the owner saying "push";
-  - Xarpus stays local;
   - the `.xlsx` template is edited only by patching its XML.
 
 ## The shared to-do list

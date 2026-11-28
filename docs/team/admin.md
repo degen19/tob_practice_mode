@@ -38,7 +38,7 @@ This chat must be linked to the owner's computer (the Claude desktop app). The s
 - **Parity:** Sotetseg, Xarpus and Verzik on the server are ports of its engines. When either side changes a mechanic,
   check the other matches (same seed, same raid).
 - **Pushing:** its main branch is the live GitHub Pages site. Only push there when the owner says "push", following
-  its `HANDOFF.md` / `CONVENTIONS.md`. Xarpus stays local.
+  its `HANDOFF.md` / `CONVENTIONS.md`.
 
 ## Tracking
 
