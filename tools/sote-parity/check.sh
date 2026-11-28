@@ -1,5 +1,5 @@
 #!/bin/sh
-# check.sh <verzikSim dir> <team> <raids>: the server's SoteEngine against the sim, seed by seed (s1..s<raids>).
+# check.sh <verzikSim dir> <team>[/way] <raids>: the server's SoteEngine against the sim, seed by seed (s1..s<raids>).
 # Prints the first difference of any raid that differs, then how many matched. Build first: ./gradlew -q :content:raids:tob-bloat:classes
 SIM=$1; TEAM=$2; N=${3:-50}
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
