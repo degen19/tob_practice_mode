@@ -44,7 +44,7 @@ class VerzikLooks(
     fun urn(v: Npc, vCentre: CoordGrid, p: Player, tile: CoordGrid) {
         v.facePlayer(p)
         v.anim(P2_MAGIC)
-        val lands = projTiles(URN_PROJ, vCentre, tile, delay = URN_TICKS * 30, speed = 0, startHeight = 100, endHeight = 0, angle = 40, start = 30)
+        val lands = projTiles(URN_PROJ, vCentre, tile, delay = URN_TICKS * 30, speed = 0, startHeight = 100, endHeight = 0, angle = 40, start = URN_LAUNCH)
         later(lands) { gfx(URN_IMPACT, tile) }
     }
 
@@ -79,9 +79,6 @@ class VerzikLooks(
     }
 
     fun summonReds(v: Npc) = v.anim(P2_HEAL)
-
-    /** The shield's dome round her (a real raid: it holds for the shield's ticks); resent each tick, it lasts one. */
-    fun shield(v: Npc) = v.spotanim(SHIELD_GFX)
 
     fun spawning(tile: CoordGrid) = gfx(SPAWNING_GFX, tile)
 
@@ -136,8 +133,6 @@ class VerzikLooks(
 
     fun p1Dies(v: Npc) = v.anim(P1_DEATH)
 
-    fun p2Arrives(v: Npc) = later(1) { if (v.isSlotAssigned) v.anim(P2_SPAWN) }
-
     fun p2Dies(v: Npc) = v.anim(P2_DEATH)
 
     fun p3Rises(v: Npc) = v.anim(P3_SPAWN)
@@ -190,7 +185,8 @@ class VerzikLooks(
         const val P1_LAND_CYCLES = 70
         const val P1_START_HEIGHT = 140
         const val P1_ANGLE = 16
-        const val URN_TICKS = 6
+        const val URN_TICKS = 2
+        const val URN_LAUNCH = 15
         const val ATHANATOS_FLIGHT = 6
         const val RED_HEAL_SPEED = 4
         const val P1_ATTACK = "seq.verzik_phase1_attack_magic"
@@ -200,7 +196,6 @@ class VerzikLooks(
         const val P1_IMPACT_PILLAR = "spotanim.verzik_phase1_impactpillar"
         const val P1_IMPACT_SOUND = "synth.tob_verzik_spark_2"
         const val PILLAR_HIT_SOUND = "synth.tob_pillar_hit"
-        const val P2_SPAWN = "seq.verzik_phase2_spawn"
         const val P2_MAGIC = "seq.verzik_phase2_attack_magic"
         const val P2_MELEE = "seq.verzik_phase2_attack_melee"
         const val P2_HEAL = "seq.verzik_phase2_heal"
@@ -214,7 +209,6 @@ class VerzikLooks(
         const val PURPLE_HEAL_PROJ = "spotanim.verzik_phase2_poisonglobule"
         const val SPAWNING_GFX = "spotanim.verzik_phase2_spawning"
         const val RED_SPAWN_SEQ = "seq.elemental_spawn"
-        const val SHIELD_GFX = "spotanim.verzik_phase2_poisonaura"
         const val PURPLE_SPAWN_SEQ = "seq.tob_spider_tank_spawn"
         const val RED_POP_SEQ = "seq.elemental_death"
         const val RED_HEAL_PROJ = "spotanim.verzik_phase2_bloodproj"
