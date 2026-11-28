@@ -55,6 +55,16 @@ Ground truth, in this order:
 
 ## Testing without the owner
 
+**First-time setup:**
+
+1. `git pull`. `api/generated/build.gradle.kts` is now in git; before that, the build stopped at `api/inv-plugin`.
+2. `cp game.example.yml game.yml`, if `game.yml` isn't there.
+3. `./gradlew install`. It downloads the OSRS cache from OpenRS2 into `.data/cache` and builds the server cache.
+4. `./gradlew -q :or-cache:buildCache`. It generates `api/generated`'s sources (dbtable and enum accessors).
+5. `service postgresql start` (or the embedded one install sets up), then `./gradlew -q :server:app:classes`.
+
+If OpenRS2 is unreachable from your workspace, tell the owner. The Admin has a working cache and can hand it over.
+
 - **Build:** `./gradlew install` once, then `./gradlew -q :server:app:classes`.
   - If you touched a `-pack` module, a `gamevals.toml` or CS2, also run `./gradlew -q :or-cache:buildCache`.
   - PostgreSQL has to be running: `service postgresql start`.
