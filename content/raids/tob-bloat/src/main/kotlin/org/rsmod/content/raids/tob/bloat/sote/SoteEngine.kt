@@ -146,6 +146,7 @@ class SoteEngine(
         private set
     var defLvl = SOTE_DEF
         private set
+    private var drained = false
     var phase = 0
         private set
     private var stopAt = marks[0]
@@ -262,6 +263,7 @@ class SoteEngine(
     /** A prefire's (or ZCB spec's) chance and max against her Defence now. */
     private fun prefireNumbers(kind: String, d: Int): Pair<Double, Int> {
         val pf = PREFIRE.getValue(kind)
+        if (pf.mage) return SoteNumbers.MAGE.getValue(pf.weapon).let { hitChance(it.roll, defRoll(d, "mage")) to it.mx }
         val r = SoteNumbers.RANGED.getValue(pf.weapon)
         return hitChance(if (pf.spec > 0) r.roll * 2 else r.roll, defRoll(d, "range")) to r.mx
     }
@@ -337,6 +339,7 @@ class SoteEngine(
             p.thrallNext = null
         }
         defLvl = SOTE_DEF
+        drained = false
         var m = t + 5
         while (instanceOf(m) != 0) m++
         if (team == 1) m += SOLO_UNDER
@@ -995,6 +998,11 @@ class SoteEngine(
                         damage(t, r, "${p.name} ${h.label} ruby")
                         d = if (pf.spec > 0) 0 else d
                     }
+                    if (pf.drain && !drained) {
+                        drained = true
+                        defLvl = max(SOTE_DEF_FLOOR, defLvl - floor(defLvl * 0.15).toInt())
+                        L("t$t Shadow Barrage drains her Defence -> $defLvl")
+                    }
                     damage(t, d, "${p.name} ${h.label}")
                 } else L("t$t ${p.name} ${h.label} misses")
             } else if (kind == "zcb") {
@@ -1274,7 +1282,7 @@ class SoteEngine(
         }
     }
 
-    class Prefire(val weapon: String, val tick: Int, val delay: Int, val spec: Int = 0)
+    class Prefire(val weapon: String, val tick: Int, val delay: Int, val spec: Int = 0, val mage: Boolean = false, val drain: Boolean = false)
 
     companion object {
         val SOTE_HP = mapOf(5 to 4000, 4 to 3500, 3 to 3000, 2 to 3000, 1 to 3000)
@@ -1341,6 +1349,8 @@ class SoteEngine(
                 "Twisted bow" to Prefire("Twisted bow", 5, 3),
                 "ZCB auto" to Prefire("Zaryte crossbow", 6, 3),
                 "ZCB spec" to Prefire("Zaryte crossbow", 6, 3, 75),
+                "Shadow Barrage" to Prefire("Shadow ancient sceptre", 5, 4, mage = true, drain = true),
+                "Tumeken's shadow" to Prefire("Tumeken's shadow", 5, 4, mage = true),
             )
 
         fun mazeDmg(hp: Int) = if (hp >= 106) 22 else if (hp >= 90) 21 else if (hp >= 75) 20 else if (hp >= 60) 19 else if (hp >= 45) 18 else if (hp >= 30) 17 else 16
