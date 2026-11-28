@@ -383,8 +383,8 @@ class MaidenCrew(
     }
 
     /**
-     * Waiting on the 30s with 50s freezes still to make, a four's freezer stands where its barrage reaches every 1 and 2
-     * as they come in; its freezes made, it goes back out to its tbow spot as the trio mage does.
+     * Waiting on the 30s with its next swing a 50s freeze, a four's freezer stands where its barrage reaches every 1 and 2
+     * as they come in; its next swing a tbow, it goes back out to its tbow spot as the trio mage does.
      */
     private fun coverSpawns(b: Bot) {
         val here = room.real(b.player.coords)
@@ -399,7 +399,7 @@ class MaidenCrew(
         room.inArena(c) && !room.under(c) && !room.blocked(c) && !room.bloody(c) &&
             FIRST_SPAWNS.all { spot -> room.spawnAt(spot).let { s -> SoloRoom.boxDist(c.x, c.z, s.x, s.z, s.x + 1, s.z + 1) in 1..CAST_RANGE && bots.sees(room.at(c), room.at(s), 2) } }
 
-    private fun awaits30s(b: Bot): Boolean = quad && b.role.freezes && room.phase == WAVES.size - 1 && !qfzSpent(b)
+    private fun awaits30s(b: Bot): Boolean = quad && b.role.freezes && room.phase == WAVES.size - 1 && upcoming(b) == "qfz" && !gapBow(b)
 
     private fun dodge(b: Bot): Boolean {
         val p = b.player
@@ -635,7 +635,8 @@ class MaidenCrew(
             when (next) {
                 "tbr", "tba" -> tbowGap(b)
                 "zcbs" -> REACH_OF.getValue("zcbs")
-                "tfz", "tpile", "qfz" -> params.casterGap
+                "qfz" -> if (gapBow(b)) tbowGap(b) else params.casterGap
+                "tfz", "tpile" -> params.casterGap
                 else -> return false
             }
         val here = room.real(b.player.coords)
@@ -650,6 +651,34 @@ class MaidenCrew(
         trace { "t$t ${b.role} moves to ${dest.x - ROOM_X},${ROOM_Y - dest.z} for its $next (swing t${b.next})" }
         walk(b, dest)
         return true
+    }
+
+    /**
+     * A four's freezer whose next swing is a tbow between its freezes, as [qfzPick] will pick it: a missing crab's slot
+     * on the 70s (on the 50s too, once the melee freeze has no ZCB left), a 30s bow slot with a clump of its in to
+     * freeze after, or a clump not yet in, due a tbow or more after the swing with no old pile to barrage. It tbows from
+     * its tbow spot and walks back in on the tbow's cooldown.
+     */
+    private fun gapBow(b: Bot): Boolean {
+        val w = latestWave() ?: return false
+        val list = qPlans[w]?.lists?.get(b.role) ?: return false
+        val idx = b.qI[w].orEmpty()
+        val (k, which) = list.withIndex().firstOrNull { (k, _) -> k !in idx } ?: return false
+        val tt = max(b.next, t)
+        return when (which) {
+            "fill" -> k > 0 && (w == WAVES[0] || (w == WAVES[1] && (b.role != NyloRole.Freezer || b.zcbDone)))
+            "bow", "zbow" -> {
+                val clump = list.withIndex().any { (j, x) -> j > k && j !in idx && (x == "3s" || x == "4s") && clumpReady(w, x, tt) != null }
+                val zcb = (which == "zbow" || clump) && !b.zcbDone && b.owns("zcb")
+                clump && !zcb
+            }
+            "3s", "4s" -> {
+                val lp = procOf(w) ?: return false
+                val due = lp + if (which == "3s") THREES_DUE else FOURS_DUE
+                tt + atkOf("tbr").speed <= due && clumpReady(w, which, tt) != true && oldPile(w, tt) == null
+            }
+            else -> false
+        }
     }
 
     /**
@@ -1217,7 +1246,7 @@ class MaidenCrew(
                     }
                     return fallback(b, a)
                 }
-                if (a == "qfz" && (r == "wait" || r == "tbr" || r == "ibs:old" || r.substringAfter('@', "").toIntOrNull()?.let { it != latestWave() } == true)) return r
+                if (a == "qfz" && (r == "wait" || r == "tbr" || r == "ibs:old" || r.startsWith("ax:") || r.substringAfter('@', "").toIntOrNull()?.let { it != latestWave() } == true)) return r
                 // a freezer's line stays until its list for the wave is spent (a late split hands it a third clump)
                 if (a == "qfz" && !last && !qfzSpent(b)) b.step--
                 // the chins line stays until its chins (and the accurate tbow after three) are thrown
@@ -1564,6 +1593,7 @@ class MaidenCrew(
                         return "ibs:$it"
                     }
                     if (tt + atkOf("tbr").speed <= due) return oldPile(w, tt) ?: "tbr"
+                    if (tt + atkOf("ax").speed <= due && b.owns("xbows")) return "ax:${looseNear(b, tt)?.key ?: "maiden"}"
                     return "wait"
                 }
                 else -> {
