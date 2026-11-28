@@ -16,7 +16,8 @@ import org.rsmod.map.CoordGrid
 /**
  * Bots playing Xarpus as Blert's 50 fastest rooms of their scale do.
  *
- * - Exhumeds: the nearest free bot stands on each one as it comes up (a heal only goes while nobody's on it). Four ticks
+ * - Exhumeds: the nearest free bot stands on each one as it comes up (a heal only goes while nobody's on it), and waits
+ *   on his pool for the next ([WAIT]). Four ticks
  *   before he rises they wait under his pool on the middle of each side, and on the tick he rises they step out to the
  *   tile beside it (south, west, north, east, then south again) and attack the tick after. Thralls go up just before.
  * - Specs, by scale: everyone mauls first in trios and up except the 4s' and 5s' scythers, who BGS once the mauls are in
@@ -49,6 +50,7 @@ class XarpusCrew(
         var seconded = false
         var dpsDone = false
         var thrallAt = -THRALL_COOLDOWN
+        var cover: XarpusSolo.Exhumed? = null
         var lastSwing = -1
         var home: CoordGrid = tile(SPOTS[i % SPOTS.size])
         var dumped: CoordGrid = home
@@ -116,12 +118,14 @@ class XarpusCrew(
             }
             return
         }
-        val free = crew.toMutableList()
-        for (e in room.exhumedsNow.sortedBy { it.born }) {
-            val b = free.minByOrNull { cheb(here(it), e.tile) } ?: break
-            free -= b
-            walk(b, e.tile)
+        val up = room.exhumedsNow
+        for (b in crew) if (b.cover !in up) b.cover = null
+        for (e in up.sortedBy { it.born }) {
+            if (crew.any { it.cover === e }) continue
+            val b = crew.filter { it.cover == null }.minByOrNull { cheb(here(it), e.tile) } ?: break
+            b.cover = e
         }
+        for (b in crew) walk(b, b.cover?.tile ?: tile(WAIT[b.i % WAIT.size]))
     }
 
     /* ---- the acid */
@@ -285,6 +289,9 @@ class XarpusCrew(
         /** Under his pool on the middle of each side, and the tile beside it they step out to (Blert, from his SW). */
         val UNDER = arrayOf(intArrayOf(2, 1), intArrayOf(1, 2), intArrayOf(2, 3), intArrayOf(3, 2), intArrayOf(3, 1))
         val SPOTS = arrayOf(intArrayOf(2, -1), intArrayOf(-1, 2), intArrayOf(2, 5), intArrayOf(5, 2), intArrayOf(4, -1))
+
+        /** Where they wait for the next exhumed: on his pool, within a run of three ticks of any tile (Blert's solos and duos). */
+        val WAIT = arrayOf(intArrayOf(1, 1), intArrayOf(3, 3), intArrayOf(1, 3), intArrayOf(3, 1), intArrayOf(2, 2))
 
         /** Every tile touching his 5x5. */
         val RING: List<IntArray> =
