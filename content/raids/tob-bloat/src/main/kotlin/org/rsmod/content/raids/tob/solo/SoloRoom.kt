@@ -5,6 +5,8 @@ import dev.openrune.rscm.RSCM.asRSCM
 import dev.openrune.rscm.RSCMType
 import dev.openrune.types.MoveRestrict
 import dev.openrune.types.aconverted.SpotanimType
+import kotlin.math.abs
+import kotlin.math.max
 import org.rsmod.api.instances.InstanceSession
 import org.rsmod.api.npc.heal
 import org.rsmod.api.player.clearInteractionRoute
@@ -13,11 +15,11 @@ import org.rsmod.api.player.hit.queueHit
 import org.rsmod.api.player.output.mes
 import org.rsmod.api.player.protect.ProtectedAccess
 import org.rsmod.api.player.stat.baseHitpointsLvl
+import org.rsmod.api.player.stat.hitpoints
 import org.rsmod.api.player.stat.stat
 import org.rsmod.api.player.stat.statBase
 import org.rsmod.api.player.stat.statRestore
 import org.rsmod.api.player.vars.intVarp
-import org.rsmod.api.player.stat.hitpoints
 import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
 import org.rsmod.game.hit.Hit
@@ -28,8 +30,6 @@ import org.rsmod.game.loc.LocShape
 import org.rsmod.game.movement.MoveSpeed
 import org.rsmod.game.proj.ProjAnim
 import org.rsmod.map.CoordGrid
-import kotlin.math.abs
-import kotlin.math.max
 
 /**
  * One room of a solo raid: a private copy of the room's map, the NPCs it spawns and the locs it puts down, and its clock.
@@ -202,10 +202,10 @@ abstract class SoloRoom(val id: TobRoom, val owner: Player, val session: Instanc
             .append("\"hit\":{\"player\":\"${p.username}\",\"roomId\":${npc.slotId},\"weapon\":${hit.righthandType()?.id ?: -1},\"damage\":${hit.damage}}}\n")
     }
 
-    /** Notes a room event of Blert's [type] with its fields ([json]: the inside of an object) at this tick. */
-    fun recordEvent(type: Int, json: String) {
+    /** Notes a room event of Blert's [type] with its fields ([json]: the inside of an object) at this tick, on [at] (a real tile). */
+    fun recordEvent(type: Int, json: String, at: CoordGrid? = null) {
         if (recording.length > MAX_RECORDING) return
-        recording.append("{\"type\":$type,\"stage\":$stage,\"tick\":$t,\"xCoord\":0,\"yCoord\":0,$json}\n")
+        recording.append("{\"type\":$type,\"stage\":$stage,\"tick\":$t,\"xCoord\":${at?.x ?: 0},\"yCoord\":${at?.z ?: 0},$json}\n")
     }
 
     /** Writes the recording to .data/recordings (one file per attempt at the room). */

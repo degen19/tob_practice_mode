@@ -12,3 +12,13 @@ tob_supplies_tabs = 45606
 
 [gamevals.enum]
 combo_rune_aether = 65408
+
+[gamevals.dbtable]
+tob_xarpus_scales = 63000
+
+[gamevals.dbrow]
+tob_xarpus_scale_solo = 63000
+tob_xarpus_scale_duo = 63001
+tob_xarpus_scale_trio = 63002
+tob_xarpus_scale_four = 63003
+tob_xarpus_scale_five = 63004

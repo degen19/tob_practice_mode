@@ -5,6 +5,7 @@ import org.rsmod.api.instances.InstanceSession
 import org.rsmod.api.invtx.invAdd
 import org.rsmod.api.player.output.soundSynth
 import org.rsmod.api.player.protect.ProtectedAccess
+import org.rsmod.api.table.TobXarpusScalesRow
 import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
 import org.rsmod.game.hit.Hit
@@ -14,15 +15,16 @@ import org.rsmod.game.loc.LocShape
 import org.rsmod.map.CoordGrid
 
 /**
- * Xarpus, solo (3750 hitpoints plus 20 for every exhumed heal).
+ * Xarpus, for the party that came in (Blert's 50 fastest rooms of each scale: [TobXarpusScalesRow]).
  *
- * - The exhumeds: he sits in his pool (the feeding form) and can't be hurt. Exhumeds come up one at a time, every 12
- *   ticks from the first instance tick 1 at or after tick 8 (Blert: 8 to 11, by when you came in), and last 11; from
- *   their third tick each one sends him an orb of energy every tick nobody stands on it (+20 hitpoints). Seven of
- *   them, then 92 ticks after the first he rises - the fighting form.
- * - Phase 2: every 4 ticks he spits poison at your tile; it lands 3 ticks later and leaves a pool (hurting you if
- *   you're still on it), then bounces on to two other random tiles. Stand under him on the tick he spits and he
- *   tramples you (two hits of up to 8) instead of spitting. Standing in a pool poisons you harder the longer you stay.
+ * - The exhumeds: he sits in his pool (the feeding form) and can't be hurt. Exhumeds come up every 12 ticks in a solo,
+ *   8 in duos and trios, 4 in 4s and 5s (7 / 9 / 12 / 15 / 18 of them), from the first instance tick 1 at or after
+ *   tick 8, and each lasts 11 (so up to three are up at once); from its third tick each one sends him an orb of energy
+ *   every tick nobody stands on it (20 / 16 / 12 / 9 / 8 hitpoints). 20 ticks after the last one comes up he rises.
+ * - Phase 2: every 4 ticks he spits poison at the next player in turn; it leaves 2 ticks later, lands on the tile they
+ *   stood on and leaves a pool, then bounces once or twice: to the tiles the next players in turn stood on when he
+ *   spat, or random tiles once there's nobody left. Stand under him on the tick he spits and he tramples you (two hits
+ *   of up to 8) instead of throwing it. Standing in a pool poisons you harder the longer you stay.
  * - At 33% (on his next 4-tick cycle) he screeches: no more spitting. He stares at one quarter of the room and turns
  *   to another every 8 ticks (never the same one twice); attack him from the quarter he's looking at and he spits back
  *   for 50-80.
@@ -34,43 +36,89 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
 
     override fun inArena(c: CoordGrid): Boolean = c.level == 1 && c.x in 3160..3180 && c.z in 4380..4394
 
-    private lateinit var xarpus: Npc
-    private var phase = 0
-    private var hp = BASE_HP
+    lateinit var xarpus: Npc
+        private set
+    private lateinit var scale: TobXarpusScalesRow
+    var phase = 0
+        private set
+    private var hp = SOLO_HP
     private var exhumeds = 0
     private var firstExhumed = -1
-    private var screechAt = -1
-    private var gaze = -1
+    var screechAt = -1
+        private set
+    var heals = 0
+        private set
+    var gaze = -1
+        private set
     private var gazeAt = 0
     private var lastSpitBack = -100
-    private var nextSpit = 0
-    private var poolTicks = 0
-    private var dead = -1
+    var nextSpit = 0
+        private set
+    private var spitTurn = 0
+    private val poolTicks = HashMap<Player, Int>()
 
-    private class Exhumed(val loc: LocInfo, val tile: CoordGrid, val born: Int)
+    /** What each player has taken from him (acid, poison, trampling, spit-backs). */
+    val taken = HashMap<Player, Int>()
+    var dead = -1
+        private set
 
-    private var exhumed: Exhumed? = null
+    /** His last spit: the tick and who it went at. */
+    var lastSpitAt = -1
+        private set
+    var lastSpitTarget: Player? = null
+        private set
+
+    class Exhumed(val loc: LocInfo, val tile: CoordGrid, val born: Int) {
+        val heals = ArrayList<Int>()
+    }
+
+    private val exhumedsUp = ArrayList<Exhumed>()
     private val pools = HashMap<CoordGrid, LocInfo>()
+
+    val exhumedsNow: List<Exhumed>
+        get() = exhumedsUp
+
+    val pooled: Set<CoordGrid>
+        get() = pools.keys
+
+    /** The room tick he rises on, once the first exhumed is up (-1 before). */
+    val riseAt: Int
+        get() = if (firstExhumed < 0) -1 else firstExhumed + (scale.exhumeds - 1) * scale.exhumedGap + RISE_AFTER_LAST
+
+    /** Who his next spit goes at. */
+    fun nextSpitAt(): Player? = order().let { if (it.isEmpty()) null else it[Math.floorMod(spitTurn, it.size)] }
 
     override fun build() {
         phase = 0
-        hp = hp(BASE_HP, entryHp(3400))
+        hp = hp(SOLO_HP, entryHp(ENTRY_FIVE_HP))
         exhumeds = 0
         firstExhumed = -1
         screechAt = -1
+        heals = 0
         gaze = -1
         dead = -1
-        poolTicks = 0
-        exhumed = null
+        spitTurn = 0
+        lastSpitAt = -1
+        lastSpitTarget = null
+        poolTicks.clear()
+        taken.clear()
+        exhumedsUp.clear()
         pools.clear()
         xarpus = spawn(COMBAT, CoordGrid(X + 1, Y + 1, 1), hp)
         transmog(xarpus, STATIC)
     }
 
     override fun onStart() {
-        logger.info { "xarpus skeletons ${findLocs("loc.tob_skeleton_with_weapon").map { it.first }}" }
+        val size = (1 + helpers.size).coerceIn(1, MAX_PARTY)
+        scale = TobXarpusScalesRow.all().first { it.party == size }
+        hp = hp(scale.hitpoints, entryHp(ENTRY_FIVE_HP, size))
+        xarpus.baseHitpointsLvl = hp
+        xarpus.hitpoints = hp
         transmog(xarpus, FEEDING)
     }
+
+    /** The order he spits in (and the bounces follow): the owner, then the others as they came in. */
+    private fun order(): List<Player> = party().let { here -> (listOf(owner) + helpers).filter { it in here } }
 
     override fun floor(npc: Npc): Int? = if (npc === xarpus && dead < 0) 1 else null
 
@@ -84,9 +132,9 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             val seen = if (hit.queueTag == 0) p != null && quarter(real(p.coords)) == gaze else hit.queueTag == SEEN
             if (p != null && seen) {
                 lastSpitBack = t
-                val boost = (hp - BASE_HP).coerceAtLeast(0).toDouble() / BASE_HP
+                val boost = (hp - scale.hitpoints).coerceAtLeast(0).toDouble() / scale.hitpoints
                 p.spotanim("spotanim.tob_xarpus_acidsplash")
-                hurt(p, (rand(SPIT_BACK_MIN, SPIT_BACK_MAX) * (1 + 0.4 * boost)).toInt(), source = xarpus)
+                harm(p, (rand(SPIT_BACK_MIN, SPIT_BACK_MAX) * (1 + 0.4 * boost)).toInt())
             }
         }
         return hit.damage
@@ -123,9 +171,10 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
     /* ---- the exhumeds */
 
     private fun exhumedPhase() {
-        val p = inside()
-        val e = exhumed
-        if (e != null) {
+        val stood = party().map { real(it.coords) }.toSet()
+        val up = exhumedsUp.iterator()
+        while (up.hasNext()) {
+            val e = up.next()
             val age = t - e.born
             if (age == EXHUMED_LIFE - 1) {
                 d.worldRepo.locAnim(e.loc, "seq.tob_xarpus_exhumed_end")
@@ -134,20 +183,20 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             if (age == 1) d.worldRepo.locAnim(e.loc, "seq.tob_xarpus_exhumed_loop")
             if (age >= EXHUMED_LIFE) {
                 delLoc(e.loc)
-                exhumed = null
-            } else if (age >= HEAL_FROM) {
-                val stood = p != null && real(p.coords) == e.tile
-                if (!stood) {
-                    val lands = projTiles("spotanim.tob_xarpus_exhumed_energyorb", e.tile, CoordGrid(X + 2, Y + 2, 1), speed = 4, startHeight = 0, endHeight = 80)
-                    sound(HEAL_SHOT_SOUND, e.tile, SOUND_RADIUS)
-                    xarpus.anim("seq.tob_xarpus_absorb")
-                    // his max rises with each heal, and the heal shows as a hitsplat on him when the orb reaches him
-                    later(lands) {
-                        sound(SWALLOW_SOUND, real(xarpus.coords), SOUND_RADIUS)
-                        hp += HEAL
-                        xarpus.baseHitpointsLvl = hp
-                        healNpc(xarpus, HEAL)
-                    }
+                recordExhumed(e)
+                up.remove()
+            } else if (age >= HEAL_FROM && e.tile !in stood) {
+                e.heals += t
+                heals++
+                val lands = projTiles("spotanim.tob_xarpus_exhumed_energyorb", e.tile, CoordGrid(X + 2, Y + 2, 1), speed = 4, startHeight = 0, endHeight = 80)
+                sound(HEAL_SHOT_SOUND, e.tile, SOUND_RADIUS)
+                xarpus.anim("seq.tob_xarpus_absorb")
+                // his max rises with each heal, and the heal shows as a hitsplat on him when the orb reaches him
+                later(lands) {
+                    sound(SWALLOW_SOUND, real(xarpus.coords), SOUND_RADIUS)
+                    hp += scale.heal
+                    xarpus.baseHitpointsLvl = hp
+                    healNpc(xarpus, scale.heal)
                 }
             }
         }
@@ -155,29 +204,36 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             firstExhumed = t
             logger.info { "xarpus: first exhumed at t$t, clock ${d.mapClock.cycle}" }
         }
-        if (firstExhumed >= 0 && exhumeds < EXHUMEDS && (t - firstExhumed) % EXHUMED_EVERY == 0) {
+        if (firstExhumed >= 0 && exhumeds < scale.exhumeds && (t - firstExhumed) % scale.exhumedGap == 0) {
             exhumeds++
             val tile = exhumedTile()
             // a ground decoration (you stand on it), rising, looping, then sinking
             val l = loc("loc.tob_xarpus_exhumed", tile, shape = LocShape.GroundDecor)
             d.worldRepo.locAnim(l, "seq.tob_xarpus_exhumed_start")
             sound(EXHUMED_OPEN_SOUND, tile, SOUND_RADIUS)
-            exhumed = Exhumed(l, tile, t)
+            exhumedsUp += Exhumed(l, tile, t)
         }
-        if (firstExhumed >= 0 && t - firstExhumed >= RISE_AFTER) rise()
+        if (firstExhumed >= 0 && t >= riseAt) rise()
     }
 
     private fun exhumedTile(): CoordGrid {
         repeat(60) {
-            val c = CoordGrid(rand(3162, 3178), rand(4380, 4393), 1)
-            if (boxDist(c.x, c.z, X, Y, X + 4, Y + 4) > 0 && !blocked(c)) return c
+            val c = CoordGrid(rand(ARENA_MIN_X, ARENA_MAX_X), rand(ARENA_MIN_Y, ARENA_MAX_Y), 1)
+            if (boxDist(c.x, c.z, X, Y, X + 4, Y + 4) > 0 && !blocked(c) && exhumedsUp.none { it.tile == c }) return c
         }
         return CoordGrid(3164, 4388, 1)
     }
 
+    private fun recordExhumed(e: Exhumed) =
+        recordEvent(141, "\"xarpusExhumed\":{\"spawnTick\":${e.born},\"healAmount\":${scale.heal},\"healTicks\":${e.heals}}", e.tile)
+
     private fun rise() {
-        exhumed?.let { delLoc(it.loc) }
-        exhumed = null
+        for (e in exhumedsUp) {
+            delLoc(e.loc)
+            recordExhumed(e)
+        }
+        exhumedsUp.clear()
+        recordEvent(140, "\"xarpusPhase\":1")
         phase = 2
         xarpus.resetTransmog()
         xarpus.telejump(d.collision, at(X, Y, 1))
@@ -201,42 +257,59 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             mes("Xarpus is dead.")
             return
         }
-        val p = inside()
         // the screech, on his next cycle at or under 33%
         if (phase == 2 && xarpus.hitpoints <= hp * SCREECH_PCT / 100 && instanceTick == CYCLE_TICK) {
             phase = 3
             screechAt = t
+            recordEvent(140, "\"xarpusPhase\":2")
             xarpus.anim("seq.tob_xarpus_fly_up")
             mes("Xarpus begins to stare intently.")
             turn()
         }
-        if (p != null) poison(p)
-        if (p != null) trample(p)
-        if (phase == 2 && p != null && t >= nextSpit) spit(p)
+        val party = party()
+        for (p in party) poison(p)
+        poolTicks.keys.retainAll(party.toSet())
+        for (p in party) trample(p)
+        if (phase == 2 && party.isNotEmpty() && t >= nextSpit) spit()
         if (phase == 3 && t - gazeAt >= GAZE_TICKS) turn()
     }
 
-    private fun spit(p: Player) {
+    fun under(c: CoordGrid): Boolean = boxDist(c.x, c.z, X, Y, X + 4, Y + 4) == 0
+
+    /**
+     * His spit at the next player in turn. Under him on the tick, they're trampled instead: he still rears to spit
+     * (Blert logs the attack) but throws nothing. Where the others in turn stand now is where it bounces to.
+     */
+    private fun spit() {
         nextSpit = t + SPIT_EVERY
-        // a player under him on the tick he spits isn't spat at - he goes to the next player in orb order instead, so
-        // in a solo he doesn't spit at all (Blert: every skipped spit in a solo has the player under him that tick)
-        val here = real(p.coords)
-        if (boxDist(here.x, here.z, X, Y, X + 4, Y + 4) == 0) return
+        val order = order()
+        val k = Math.floorMod(spitTurn, order.size)
+        spitTurn = k + 1
+        val p = order[k]
+        val tile = real(p.coords)
+        lastSpitAt = t
+        lastSpitTarget = p
         xarpus.facePlayer(p)
         xarpus.anim("seq.tob_xarpus_attack_ranged")
         recordAttack(xarpus, 10)
-        val tile = here
+        if (under(tile)) return
+        val next = (1 until order.size).map { real(order[(k + it) % order.size].coords) }
+        val bounces = rand(1, MAX_BOUNCES)
         // Blert: the spit leaves 2 ticks after his attack and flies a tick per tile less one (from his centre)
         val lands = projTiles("spotanim.tob_xarpus_acidspit", CoordGrid(X + 2, Y + 2, 1), tile, delay = 30, speed = 30, startHeight = 90, endHeight = 0, start = 60)
-        later(lands) { splat(tile, bounce = true) }
+        val from = t + SPIT_LEAVES
+        later(lands) { splat(tile, bounceTo(tile, next, bounces), from) }
     }
 
-    /**
-     * The acid lands on [tile] (hurting whoever stands there); a spit then bounces on to the next two players in orb
-     * order, and where there's no next player to a random tile - in a solo, two different random tiles.
-     */
-    private fun splat(tile: CoordGrid, bounce: Boolean) {
+    /** Blert: the next players' tiles in turn (none for one stood on the spit's own tile), then random tiles. */
+    private fun bounceTo(from: CoordGrid, next: List<CoordGrid>, n: Int): List<CoordGrid?> =
+        (0 until n).map { i -> if (i < next.size) next[i].takeIf { it != from } else null }
+
+    /** The acid lands on [tile], hurting whoever stands there, and bounces on ([to]: a tile, or null for a random one). */
+    private fun splat(tile: CoordGrid, to: List<CoordGrid?> = emptyList(), from: Int = t, bounced: CoordGrid? = null) {
         if (phase != 2) return
+        val origin = bounced?.let { "{\"x\":${it.x},\"y\":${it.z}}" } ?: "null"
+        recordEvent(142, "\"xarpusSplat\":{\"source\":${if (bounced == null) 1 else 2},\"startTick\":$from,\"bounceFrom\":$origin}", tile)
         gfx("spotanim.tob_xarpus_acidsplash", tile)
         sound(ACID_FLOOR_SOUND, tile, SOUND_RADIUS)
         if (tile !in pools) {
@@ -245,44 +318,53 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
             d.worldRepo.locAnim(pool, "seq.tob_xarpus_acid_splat_start")
             later(1) { if (pools[tile] === pool) d.worldRepo.locAnim(pool, "seq.tob_xarpus_acid_splat_loop") }
         }
-        val p = inside()
-        if (p != null && real(p.coords) == tile) hurt(p, rand(SPLAT_MIN, SPLAT_MAX), source = xarpus)
-        if (!bounce) return
-        val targets = ArrayList<CoordGrid>(2)
-        var tries = 0
-        while (targets.size < 2 && tries++ < 100) {
-            val c = CoordGrid(rand(ARENA_MIN_X, ARENA_MAX_X), rand(ARENA_MIN_Y, ARENA_MAX_Y), 1)
-            if (c == tile || c in targets || !inArena(c) || blocked(c) || boxDist(c.x, c.z, X, Y, X + 4, Y + 4) == 0) continue
-            targets += c
+        for (p in party()) if (real(p.coords) == tile) harm(p, rand(SPLAT_MIN, SPLAT_MAX))
+        val targets = ArrayList<CoordGrid>(to.size)
+        for (c in to) {
+            if (c != null) {
+                targets += c
+                continue
+            }
+            var tries = 0
+            while (tries++ < 100) {
+                val r = CoordGrid(rand(ARENA_MIN_X, ARENA_MAX_X), rand(ARENA_MIN_Y, ARENA_MAX_Y), 1)
+                if (r == tile || r in targets || blocked(r) || under(r)) continue
+                targets += r
+                break
+            }
         }
         for (c in targets) {
             // Blert: a bounce leaves as the spit lands and flies a tick per tile plus one
             val lands = projTiles("spotanim.tob_xarpus_acidspit", tile, c, delay = 30, speed = 30, startHeight = 0, endHeight = 0, angle = 40, start = 0)
-            later(lands) { splat(c, bounce = false) }
+            val leaves = t
+            later(lands) { splat(c, from = leaves, bounced = tile) }
         }
     }
 
     /** Under him once he's up (spitting or staring): trampled every tick, two hits of up to 8, two ticks later. */
     private fun trample(p: Player) {
-        if (phase < 2) return
-        val here = real(p.coords)
-        if (boxDist(here.x, here.z, X, Y, X + 4, Y + 4) != 0) return
-        repeat(2) { hurt(p, rand(0, TRAMPLE_MAX), source = xarpus, delay = TRAMPLE_DELAY) }
+        if (phase < 2 || !under(real(p.coords))) return
+        repeat(2) { harm(p, rand(0, TRAMPLE_MAX), TRAMPLE_DELAY) }
+    }
+
+    private fun harm(p: Player, damage: Int, delay: Int = 1) {
+        taken.merge(p, hurt(p, damage, source = xarpus, delay = delay), Int::plus)
     }
 
     /** Standing in a pool: poison that grows the longer you stay (2 up to 8 a tick). */
     private fun poison(p: Player) {
         if (real(p.coords) in pools) {
-            poolTicks++
+            val n = (poolTicks[p] ?: 0) + 1
+            poolTicks[p] = n
             p.soundSynth(ACID_BURN_SOUND)
-            hurt(p, minOf(POISON_MAX, POISON_START + poolTicks / 2), source = xarpus)
+            harm(p, minOf(POISON_MAX, POISON_START + n / 2))
         } else {
-            poolTicks = 0
+            poolTicks.remove(p)
         }
     }
 
     /** P3: which quarter of the room he's looking at (0 NE, 1 SE, 2 SW, 3 NW). */
-    private fun quarter(c: CoordGrid): Int {
+    fun quarter(c: CoordGrid): Int {
         val east = c.x > X + 2
         val north = c.z > Y + 2
         return when {
@@ -361,8 +443,9 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val COMBAT = "npc.tob_xarpus_combat"
         const val STATIC = "npc.tob_xarpus_static"
         const val FEEDING = "npc.tob_xarpus_feeding"
-        const val BASE_HP = 3750
-        const val HEAL = 20
+        const val SOLO_HP = 3750
+        const val ENTRY_FIVE_HP = 3400
+        const val MAX_PARTY = 5
         const val EXHUMED_OPEN_SOUND = "synth.tob_xarpus_exhumes_open"
         const val EXHUMED_CLOSE_SOUND = "synth.tob_xarpus_exhumes_close"
         const val HEAL_SHOT_SOUND = "synth.tob_xarpus_exhume_health_shots"
@@ -372,21 +455,21 @@ class XarpusSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
 
         /** How far his sounds carry: his attack animation's sound reach in the cache. */
         const val SOUND_RADIUS = 7
-        const val EXHUMEDS = 7
         const val FIRST_EXHUMED = 8
-        const val EXHUMED_EVERY = 12
         const val EXHUMED_LIFE = 11
         const val HEAL_FROM = 3
-        const val RISE_AFTER = 92
+        const val RISE_AFTER_LAST = 20
+        const val MAX_BOUNCES = 2
         const val CYCLE_TICK = 1
         const val CYCLE = 4
         const val FIRST_SPIT = 7
         const val SPIT_EVERY = 4
+        const val SPIT_LEAVES = 2
         const val DAWNBRINGER = "obj.verzik_special_weapon"
         const val TRAMPLE_MAX = 8
         const val TRAMPLE_DELAY = 2
-        const val ARENA_MIN_X = 3160
-        const val ARENA_MAX_X = 3180
+        const val ARENA_MIN_X = 3163
+        const val ARENA_MAX_X = 3177
         const val ARENA_MIN_Y = 4380
         const val ARENA_MAX_Y = 4394
         const val SPLAT_MIN = 6
