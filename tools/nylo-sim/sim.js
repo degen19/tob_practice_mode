@@ -34,15 +34,17 @@ const WEAPONS = {
   ayak: { hits: 'G', speed: 3, range: 10, area: 'single', set: 'ayak', type: 'magic' },
   tome: { hits: 'G', speed: 3, range: 10, area: 'single', set: 'tome', type: 'magic' },
   barrage: { hits: 'G', speed: 5, range: 10, area: 'square', set: 'barrage', type: 'magic', freeze: true },
-  dinh: { hits: 'M', speed: 5, range: 1, area: 'bash', set: 'dinh', type: 'melee', spec: 500 },
+  dinh: { hits: 'M', speed: 5, range: 1, area: 'bash', set: 'dinh', type: 'melee', spec: 500, once: true },
   claws: { hits: 'M', speed: 4, range: 1, area: 'single', set: 'claws', type: 'melee', spec: 500, hitsplats: 4 },
+  tomespec: { hits: 'G', speed: 3, range: 10, area: 'single', set: 'tome', dmg: 'tome', type: 'magic', spec: 500, once: true },
 };
 const WEAPON_NAMES = Object.keys(WEAPONS);
 const KITS = {
-  G: ['barrage', 'tome', 'crossbows', 'tbow', 'scythe', 'claws'],
+  G: ['barrage', 'tome', 'crossbows', 'tbow', 'scythe', 'claws', 'tomespec'],
   R: ['tbow', 'chins', 'crossbows', 'ayak', 'scythe', 'claws'],
   M: ['scythe', 'smash', 'thrust', 'dinh', 'crossbows', 'ayak', 'tbow'],
 };
+const DC_CHARGES = 2, DC_TICKS = 100, DC_ENERGY = 150, FLOW_PER_SPEC = 3, FLOW_MAX = 5, FLOW_TICKS = 50, FLOW_SPEED = 2, FLOW_ACC = 1.5, FLOW_DMG = 0.6;
 const AREA_MAX = 9, LINE_TILES = 3, BASH_RADIUS = 5, BASH_MAX = 10;
 
 class Rng {
@@ -75,7 +77,7 @@ class Room {
     this.lastWaveAt = 0;
     this.hits = []; // {at, nylo, dmg, player, wrong}
     this.nextId = 1;
-    this.players = ROLES.map((r, i) => ({ i, role: r, x: 32, z: 30, readyAt: 0, set: KITS[r][0], target: null, spec: 1000, tx: 32, tz: 30 }));
+    this.players = ROLES.map((r, i) => ({ i, role: r, x: 32, z: 30, readyAt: 0, set: KITS[r][0], target: null, spec: 1000, tx: 32, tz: 30, used: {}, flow: 0, flowUntil: -1, dc: r === 'G' ? null : { charges: DC_CHARGES, until: DC_TICKS } }));
     this.log = opts.log ? [] : null;
     this.stats = opts.stats ? [] : null;
   }
@@ -208,6 +210,8 @@ class Room {
       if (n.hp <= 0 || n.gone || n.exploding >= 0) continue;
       if (h.wrong || n.nulled & (1 << h.player)) continue;
       n.hp -= h.dmg;
+      const p = this.players[h.player];
+      if (n.hp <= 0 && p.dc && p.dc.charges > 0) { p.dc.charges--; p.spec = Math.min(1000, p.spec + DC_ENERGY); }
     }
     this.hits = keep;
   }
@@ -228,7 +232,7 @@ class Room {
     this.cleanupEnd();
     for (const p of this.players) this.player(p);
     this.land(); // hits land after the room's own step: a kill shows the tick after, as in the server
-    if (this.t % 50 === 0) for (const p of this.players) p.spec = Math.min(1000, p.spec + 100);
+    for (const p of this.players) if (this.t % (p.role === 'G' ? 25 : 50) === 0) p.spec = Math.min(1000, p.spec + 100);
     this.t++;
   }
 
@@ -333,12 +337,19 @@ class Room {
     const vic = this.victims(w, n, p, wanted);
     const wrong = this.wrongs(w, n, p, all);
     const bit = 1 << p.i;
+    if (this.t >= p.flowUntil) p.flow = 0;
+    const flowing = (w === 'tome' || w === 'tomespec') && p.flow > 0;
+    if (flowing) { p.flow--; p.flowUntil = this.t + FLOW_TICKS; }
+    const boosts = w === 'tomespec' ? 1 + (flowing ? 1 : 0) : flowing ? 1 : 0;
+    let landed = false;
     for (const v of vic) {
       if (v.style !== W.hits || v.nulled & bit) continue;
       let dmg;
       if (W.area === 'scythe' && v.big) { const a = this.sample(w, false); dmg = a + Math.floor(a / 2) + Math.floor(a / 4); }
       else if (W.hitsplats) { dmg = 0; for (let k = 0; k < W.hitsplats; k++) dmg += this.sample(w, true); }
+      else if (boosts) { dmg = this.sample(w, v.big); if (dmg === 0 && this.rng.next() < FLOW_ACC * boosts / (1 + FLOW_ACC * boosts)) dmg = this.sample(w, v.big); dmg = Math.floor(dmg * (1 + FLOW_DMG * boosts)); }
       else dmg = this.sample(w, v.big);
+      if (dmg > 0) landed = true;
       const dealt = Math.min(dmg, v.hp);
       v.pending += dealt;
       this.hits.push({ at: this.t + delay, nylo: v, dmg: dealt, player: p.i, wrong: false });
@@ -347,8 +358,10 @@ class Room {
     for (const o of wrong) o.nulled |= bit;
     if (W.freeze) for (const o of [...vic, ...wrong].slice(0, AREA_MAX)) o.frozenUntil = this.t + FREEZE_TICKS;
     if (W.spec) p.spec -= W.spec;
+    if (W.once) p.used[w] = 1;
+    if (w === 'tomespec' && landed) { p.flow = Math.min(FLOW_MAX, p.flow + FLOW_PER_SPEC); p.flowUntil = this.t + FLOW_TICKS; }
     p.set = W.set;
-    p.readyAt = this.t + W.speed;
+    p.readyAt = this.t + (w === 'tome' && boosts ? FLOW_SPEED : W.speed);
     p.last = n;
     if (this.log) this.log.push(`t${this.t} ${p.role} ${w} w${n.wave}${n.big ? 'B' : ''}${n.style} x${vic.length}`);
   }
@@ -363,6 +376,7 @@ class Room {
 
   player(p) {
     const t = this.t;
+    if (p.dc && t >= p.dc.until) { p.dc.charges = DC_CHARGES; p.dc.until = t + DC_TICKS; }
     if (p.plan && (p.plan.n.gone || p.plan.n.hp <= 0 || p.plan.n.exploding >= 0 || (p.plan.n.nulled & (1 << p.i)))) p.plan = null;
     // decide on the tick before the weapon's ready (the click), as the server's crew does
     if (p.readyAt <= t + 1 && (!p.plan || p.plan.at < t - 1)) {

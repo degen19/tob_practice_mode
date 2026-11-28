@@ -19,7 +19,7 @@ function killP(w, big, hp) {
   return (KILLP[key] = k / arr.length);
 }
 
-const FEATURES = ['bias', 'own', 'nVic', 'bigVic', 'nWrong', 'big', 'aggro', 'biting', 'life', 'walk', 'swap', 'same', 'stall', 'standsAtCheck', 'cleanup', 'cleanGone', 'speed', 'kills', 'inLane', 'claimed', 'bigSplitStall', 'wave', 'young', 'split', 'crowd', 'mustLast', 'bigLate', 'endRank', 'endGap', 'ownKills', 'lateWave', 'cleanBig', 'aggroLate', 'onlyMe', 'oldness', 'oldLate'];
+const FEATURES = ['bias', 'own', 'nVic', 'bigVic', 'nWrong', 'big', 'aggro', 'biting', 'life', 'walk', 'swap', 'same', 'stall', 'standsAtCheck', 'cleanup', 'cleanGone', 'speed', 'kills', 'inLane', 'claimed', 'bigSplitStall', 'wave', 'young', 'split', 'crowd', 'mustLast', 'bigLate', 'endRank', 'endGap', 'ownKills', 'lateWave', 'cleanBig', 'aggroLate', 'onlyMe', 'oldness', 'oldLate', 'flow'];
 const NF = FEATURES.length + WEAPON_NAMES.length;
 const POST_FEATURES = ['pbias', 'untilWave', 'ownLane', 'allLane', 'bigLane', 'postDist', 'othersThere', 'mine', 'pwave', 'pcrowd'];
 const NP = POST_FEATURES.length;
@@ -74,6 +74,7 @@ function features(room, p, w, n, vic, wrong, ctx) {
   f[33] = others / 2;
   f[34] = Math.max(0, Math.min(2, (room.wave - n.wave) / 5));
   f[35] = room.wave >= 28 ? f[34] : 0;
+  f[36] = w === 'tome' && p.flow > 0 && room.t < p.flowUntil ? 1 : 0;
   f[FEATURES.length + WEAPON_NAMES.indexOf(w)] = 1;
   return f;
 }
@@ -129,6 +130,7 @@ class LinearPolicy {
     for (const w of KITS[p.role]) {
       const W = WEAPONS[w];
       if (W.spec && p.spec < W.spec) continue;
+      if (W.once && p.used[w]) continue;
       for (const n of wanted) {
         if (n.style !== W.hits) continue;
         if (W.range <= 1 && !room.meleeReach(n)) continue;
