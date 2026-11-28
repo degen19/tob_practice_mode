@@ -503,6 +503,9 @@ class MaidenCrew(
         return listOf(ax + dy to ay + dx, ax - dy to ay - dx).any { (x, y) -> x in MT_X..MX1 && y in MT_Y..MY1 }
     }
 
+    /** Not on her south side: a Dinh's on her never goes from there (the owner). */
+    private fun notSouth(c: CoordGrid): Boolean = ROOM_Y - c.z <= MY1
+
     /**
      * The next attack on her from closer in (the sim has them there by then): a scythe beside her, a ranged attack
      * within its range, walked during the cooldown.
@@ -517,12 +520,12 @@ class MaidenCrew(
             return
         }
         if (atkOf(next).style != 'm') return
-        val beside = room.besideHer(here)
+        val beside = room.besideHer(here) && (next !in DINH_LINES || notSouth(here))
         if (beside && fromPost(b, here) <= POST_NEAR) return
         val dist = { c: CoordGrid -> maxOf(abs(c.x - here.x), abs(c.z - here.z)) }
         val open =
             (-REACH..REACH).flatMap { dx -> (-REACH..REACH).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
-                .filter { room.besideHer(it) && room.inArena(it) && !room.under(it) && !room.bloody(it) }
+                .filter { room.besideHer(it) && room.inArena(it) && !room.under(it) && !room.bloody(it) && (next !in DINH_LINES || notSouth(it)) }
         val nearest = open.minOfOrNull(dist) ?: return
         val spare = RUN * (b.next - t - 1)
         val dest = open.filter { fromPost(b, it) <= POST_NEAR && dist(it) <= maxOf(if (beside) 0 else nearest, spare) }.minByOrNull(dist) ?: if (beside) return else open.minByOrNull(dist) ?: return
@@ -2926,7 +2929,7 @@ class MaidenCrew(
      */
     private fun within(b: Bot, o: Order): Boolean {
         val p = b.player
-        if (o.target === her) return true
+        if (o.target === her) return o.move != Move.Dinh || notSouth(room.real(p.coords)) || walkFor(b, o) { room.besideHer(it) && notSouth(it) }
         val waited = o.meeting
         o.meeting = false
         if (o.move == Move.Barrage || o.move == Move.Rush) {
