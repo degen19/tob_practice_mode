@@ -1,5 +1,6 @@
 {
- "name": "Solo Blert-style",
+ "name": "1s from Blert 5adddde9",
+ "source": "5adddde9-f55e-4ca6-9e26-f4d5b901a1cf",
  "entry": {
   "x": 10,
   "heading": "west"
@@ -7,12 +8,16 @@
  "damage_factor": 1.1,
  "players": [
   {
-   "name": "Solo",
-   "stall": true,
-   "necks": 6,
-   "hp": 115,
-   "first_swing": 999,
+   "name": "Caywu",
+   "gate": "east",
    "enter": 0,
+   "stall": false,
+   "necks": 8,
+   "hp": 115,
+   "first_swing": 6,
+   "walk_swings": [],
+   "walk_sides": [],
+   "walk_stalls": [],
    "walk_specs": [],
    "down_specs": [
     {
@@ -22,16 +27,31 @@
     },
     {
      "weapon": "CHALLY_SPEC",
-     "at": 31
+     "at": 31,
+     "down": 1
+    },
+    {
+     "weapon": "BLOWPIPE",
+     "at": 8,
+     "down": 2
+    },
+    {
+     "weapon": "CHALLY_SPEC",
+     "at": 31,
+     "down": 2
+    },
+    {
+     "weapon": "CHALLY_SPEC",
+     "at": 29,
+     "down": 3
     }
    ],
-   "rewalk_attack": false,
    "down_start": [
     2,
     3,
-    4,
-    3
-   ]
+    4
+   ],
+   "rewalk_attack": false
   }
  ]
 }

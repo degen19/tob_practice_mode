@@ -17,8 +17,8 @@ sys.path.insert(0, HERE)
 from bloat import Room, in_tank, LOOP, CORNERS
 from combat import Weapons
 
-SPEC_COST = {"CLAW_SPEC": 50, "BGS_SPEC": 50, "CHALLY_SPEC": 30, "ZCB_SPEC": 75}
-SPEED = {"ZCB_AUTO": 5, "TWISTED_BOW": 5, "SCYTHE": 5, "CLAW_SPEC": 4, "BGS_SPEC": 6, "CHALLY_SPEC": 7, "ZCB_SPEC": 5}
+SPEC_COST = {"BLOWPIPE": 50, "CLAW_SPEC": 50, "BGS_SPEC": 50, "CHALLY_SPEC": 30, "ZCB_SPEC": 75}
+SPEED = {"BLOWPIPE": 2, "ZCB_AUTO": 5, "TWISTED_BOW": 5, "SCYTHE": 5, "CLAW_SPEC": 4, "BGS_SPEC": 6, "CHALLY_SPEC": 7, "ZCB_SPEC": 5}
 RING = [(x, y) for x in range(12, 20) for y in range(12, 20) if not in_tank(x, y)]
 RING_SET = set(RING)
 STALL_LOCK = 3
@@ -189,6 +189,7 @@ class Player:
         self.rewalk_attack = spec.get("rewalk_attack", True)
         self.walk_swings = spec.get("walk_swings")
         self.walk_sides = spec.get("walk_sides", [])
+        self.walk_stalls = spec.get("walk_stalls")
         self.down_start = spec.get("down_start", [0])
         self.pray = spec.get("pray_missiles", True)
         self.pos = pos
@@ -306,10 +307,13 @@ def run(proc, seed, record=False, weapons=None):
             elif ready and t >= p.first and not (rewalk and not p.rewalk_attack) and (nxt is None or nxt <= t):
                 wpn = "SCYTHE"
             landing_soon = set().union(*[v for when, v in hands_by.items() if t < when <= t + 3]) if hands_by else set()
-            moving = hiding or not p.stall or down is not None or t < p.first or t >= p.next_attack or p.pos in landing_soon
+            moving = hiding or not p.stall or down is not None or t < p.first or t >= p.next_attack
+            stalled = p.stall_cast >= 0 and p.stall_cast <= t <= p.stall_cast + STALL_LOCK
+            if stalled:
+                moving = False
             if moving:
                 p.pos = safe_step(p.pos, target, hands_by.get(t + 1, set()), bx, by, seen_now)
-            elif p.pos in hands_by.get(t + 1, set()):
+            elif not stalled and p.pos in hands_by.get(t + 1, set()):
                 p.pos = safe_step(p.pos, p.pos, hands_by.get(t + 1, set()))
             if wpn in SPEC_COST and p.energy < SPEC_COST[wpn]:
                 wpn = "SCYTHE" if (down is not None or t >= p.first) else None
@@ -325,7 +329,7 @@ def run(proc, seed, record=False, weapons=None):
                 p.next_attack = t + SPEED[wpn]
                 p.last_swing = t
                 acts.append([p.i, wpn])
-                if p.stall and down is None:
+                if p.stall and down is None and (p.walk_stalls is None or t in p.walk_stalls):
                     p.stall_cast = t + 1
             elif p.necks > 0 and p.neck != "pneck":
                 p.neck = "pneck"

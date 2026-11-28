@@ -1,5 +1,6 @@
 {
- "name": "Duo Blert-style",
+ "name": "2s from Blert d40f72ce",
+ "source": "d40f72ce-5e47-4d58-b221-22ad310adb5f",
  "entry": {
   "x": 17,
   "heading": "east"
@@ -7,31 +8,13 @@
  "damage_factor": 1.0,
  "players": [
   {
-   "name": "Melee 1",
+   "name": "Dayer",
+   "gate": "east",
+   "enter": 0,
    "stall": true,
    "necks": 6,
    "hp": 115,
    "first_swing": 2,
-   "enter": 0,
-   "walk_specs": [],
-   "down_specs": [
-    {
-     "weapon": "CLAW_SPEC",
-     "at": 7,
-     "down": 1
-    },
-    {
-     "weapon": "CHALLY_SPEC",
-     "at": 31,
-     "down": 1
-    },
-    {
-     "weapon": "CHALLY_SPEC",
-     "at": 9,
-     "down": 2
-    }
-   ],
-   "rewalk_attack": false,
    "walk_swings": [
     2,
     7,
@@ -40,18 +23,21 @@
     31,
     36
    ],
-   "down_start": [
+   "walk_sides": [
+    "front",
+    "back",
+    "front",
+    "any",
+    "back",
+    "any"
+   ],
+   "walk_stalls": [
     2,
-    4
-   ]
-  },
-  {
-   "name": "Melee 2",
-   "stall": true,
-   "necks": 6,
-   "hp": 115,
-   "first_swing": 12,
-   "enter": 10,
+    17,
+    26,
+    31,
+    36
+   ],
    "walk_specs": [],
    "down_specs": [
     {
@@ -70,17 +56,59 @@
      "down": 2
     }
    ],
-   "rewalk_attack": false,
+   "down_start": [
+    2,
+    4
+   ],
+   "rewalk_attack": false
+  },
+  {
+   "name": "Exhailing",
+   "gate": "east",
+   "enter": 10,
+   "stall": true,
+   "necks": 6,
+   "hp": 115,
+   "first_swing": 12,
    "walk_swings": [
     12,
     17,
     31,
     36
    ],
+   "walk_sides": [
+    "back",
+    "any",
+    "any",
+    "front"
+   ],
+   "walk_stalls": [
+    12,
+    31
+   ],
+   "walk_specs": [],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 7,
+     "down": 1
+    },
+    {
+     "weapon": "CHALLY_SPEC",
+     "at": 31,
+     "down": 1
+    },
+    {
+     "weapon": "CHALLY_SPEC",
+     "at": 9,
+     "down": 2
+    }
+   ],
    "down_start": [
     2,
     4
-   ]
+   ],
+   "rewalk_attack": false
   }
  ]
 }

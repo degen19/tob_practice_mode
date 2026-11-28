@@ -87,13 +87,14 @@ def build(scale, uuid=None):
         for i, d in enumerate(downs):
             ts = [t - d for t, _ in swings.get(n, []) + specs.get(n, []) if 0 <= t - d < 33]
             starts.append(min(ts) if ts else 0)
-        after_swing = {t + 1 for t in walk_ticks}
-        stall = len([t for t in stalls.get(n, []) if t in after_swing]) >= 2
+        cast = set(stalls.get(n, []))
+        walk_stalls = [t for t in walk_ticks if t + 1 in cast]
+        stall = len(walk_stalls) >= 2
         rewalk = any(downs[0] + 33 <= t < (downs[1] if len(downs) > 1 else 10 ** 6) for t, _ in swings.get(n, [])) if downs else True
         players.append({
             "name": n, "gate": gate, "enter": first_in, "stall": stall, "necks": 8 if not stall else 6, "hp": 115,
             "first_swing": min(walk_ticks + [t for t in (s["tick"] for s in wspecs)] or [999]),
-            "walk_swings": walk_ticks, "walk_sides": sides, "walk_specs": wspecs,
+            "walk_swings": walk_ticks, "walk_sides": sides, "walk_stalls": walk_stalls, "walk_specs": wspecs,
             "down_specs": dspecs, "down_start": starts or [0], "rewalk_attack": rewalk,
         })
     return {"name": f"{scale}s from Blert {uuid[:8]}", "source": uuid,

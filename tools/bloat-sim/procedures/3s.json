@@ -1,38 +1,27 @@
 {
- "name": "Trio Blert-style",
+ "name": "3s from Blert 4197e12f",
+ "source": "4197e12f-eeb7-457c-ac73-bd301928a156",
+ "entry": {
+  "x": 17,
+  "heading": "east"
+ },
+ "damage_factor": 1.0,
  "players": [
   {
-   "name": "Mage",
+   "name": "MickySwag",
+   "gate": "east",
+   "enter": 0,
    "stall": false,
    "necks": 8,
    "hp": 115,
    "first_swing": 2,
-   "walk_specs": [],
-   "down_specs": [
-    {
-     "weapon": "CLAW_SPEC",
-     "at": 10
-    },
-    {
-     "weapon": "CLAW_SPEC",
-     "at": 14
-    }
-   ],
-   "enter": 0,
    "walk_swings": [
     2,
     7,
     16,
     21,
     26,
-    31,
-    36,
-    41,
-    46,
-    51,
-    56,
-    61,
-    66
+    31
    ],
    "walk_sides": [
     "front",
@@ -40,16 +29,56 @@
     "front",
     "any",
     "front",
-    "any",
-    "front"
-   ]
+    "any"
+   ],
+   "walk_stalls": [],
+   "walk_specs": [],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 14,
+     "down": 1
+    },
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 18,
+     "down": 1
+    }
+   ],
+   "down_start": [
+    4
+   ],
+   "rewalk_attack": false
   },
   {
-   "name": "Melee",
+   "name": "Shrayylmao",
+   "gate": "west",
+   "enter": 3,
    "stall": true,
    "necks": 6,
    "hp": 115,
-   "first_swing": 15,
+   "first_swing": 9,
+   "walk_swings": [
+    15,
+    21,
+    26,
+    31,
+    36
+   ],
+   "walk_sides": [
+    "front",
+    "back",
+    "any",
+    "back",
+    "front"
+   ],
+   "walk_stalls": [
+    15,
+    21,
+    26,
+    31,
+    36
+   ],
    "walk_specs": [
     {
      "weapon": "BGS_SPEC",
@@ -59,35 +88,66 @@
    "down_specs": [
     {
      "weapon": "CLAW_SPEC",
-     "at": 10
+     "at": 7,
+     "down": 1
     }
    ],
-   "enter": 3,
-   "gate": "west"
+   "down_start": [
+    2
+   ],
+   "rewalk_attack": false
   },
   {
-   "name": "Ranger",
+   "name": "austinshoo",
+   "gate": "east",
+   "enter": 4,
    "stall": true,
    "necks": 6,
    "hp": 115,
    "first_swing": 6,
+   "walk_swings": [
+    6,
+    11,
+    16,
+    21,
+    26,
+    31,
+    36
+   ],
+   "walk_sides": [
+    "front",
+    "back",
+    "any",
+    "back",
+    "any",
+    "back",
+    "front"
+   ],
+   "walk_stalls": [
+    11,
+    16,
+    21,
+    26,
+    31,
+    36
+   ],
    "walk_specs": [],
    "down_specs": [
     {
      "weapon": "CLAW_SPEC",
-     "at": 10
+     "at": 12,
+     "down": 1
     },
     {
      "weapon": "CLAW_SPEC",
-     "at": 14
+     "at": 16,
+     "down": 1
     }
    ],
-   "enter": 4
+   "down_start": [
+    2
+   ],
+   "rewalk_attack": false
   }
- ],
- "entry": {
-  "x": 17,
-  "heading": "east"
- },
- "damage_factor": 1.0
+ ]
 }
