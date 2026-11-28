@@ -10,7 +10,7 @@ while pgrep -f "[G]ameServerKt" >/dev/null; do sleep 2; done
 rm -f .data/recordings/${ROOM}*-*
 (GAME_TICK_MS=60 TOB_TRIO=$N TOB_TRIO_ROOM=$ROOM TOB_TRIO_PARAMS="$PARAMS" timeout 1800 ./gradlew -q :server:app:run > "$LOG" 2>&1 &)
 sleep 30
-while [ "$(grep -ac "$ROOM\(ocas\)\? trio" "$LOG")" -lt "$N" ] && pgrep -f "[G]ameServerKt" >/dev/null; do sleep 3; done
+while [ "$(grep -ac "$ROOM\(cas\)\? trio" "$LOG")" -lt "$N" ] && pgrep -f "[G]ameServerKt" >/dev/null; do sleep 3; done
 pkill -f "[G]ameServerKt"
 sleep 2
-grep -a "$ROOM\(ocas\)\? trio" "$LOG"
+grep -a "$ROOM\(cas\)\? trio" "$LOG"
