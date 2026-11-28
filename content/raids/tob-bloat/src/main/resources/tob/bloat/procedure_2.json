@@ -1,0 +1,86 @@
+{
+ "name": "Duo Blert-style",
+ "entry": {
+  "x": 17,
+  "heading": "east"
+ },
+ "damage_factor": 1.0,
+ "players": [
+  {
+   "name": "Melee 1",
+   "stall": true,
+   "necks": 6,
+   "hp": 115,
+   "first_swing": 2,
+   "enter": 0,
+   "walk_specs": [],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 7,
+     "down": 1
+    },
+    {
+     "weapon": "CHALLY_SPEC",
+     "at": 31,
+     "down": 1
+    },
+    {
+     "weapon": "CHALLY_SPEC",
+     "at": 9,
+     "down": 2
+    }
+   ],
+   "rewalk_attack": false,
+   "walk_swings": [
+    2,
+    7,
+    17,
+    26,
+    31,
+    36
+   ],
+   "down_start": [
+    2,
+    4
+   ]
+  },
+  {
+   "name": "Melee 2",
+   "stall": true,
+   "necks": 6,
+   "hp": 115,
+   "first_swing": 12,
+   "enter": 10,
+   "walk_specs": [],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 7,
+     "down": 1
+    },
+    {
+     "weapon": "CHALLY_SPEC",
+     "at": 31,
+     "down": 1
+    },
+    {
+     "weapon": "CHALLY_SPEC",
+     "at": 9,
+     "down": 2
+    }
+   ],
+   "rewalk_attack": false,
+   "walk_swings": [
+    12,
+    17,
+    31,
+    36
+   ],
+   "down_start": [
+    2,
+    4
+   ]
+  }
+ ]
+}

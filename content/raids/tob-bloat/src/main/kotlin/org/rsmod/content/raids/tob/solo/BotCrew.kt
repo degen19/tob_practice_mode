@@ -22,6 +22,9 @@ interface BotCrew {
     /** Anything a bot does before the room starts (outside it, as a team would), after it's potted up. */
     fun prepare(bot: org.rsmod.game.entity.Player) {}
 
+    /** Before the room starts, outside: true when the crew picks its own moment to go in (it clicks the gates itself). */
+    fun enter(): Boolean = false
+
     /** The room tick the run ended on, -1 while it's still going. */
     fun doneAt(): Int
 

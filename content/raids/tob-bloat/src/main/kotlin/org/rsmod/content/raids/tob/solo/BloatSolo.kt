@@ -22,12 +22,13 @@ class BloatSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Co
     override fun inArena(c: CoordGrid): Boolean = BloatRules.inRoom(c.x - BASE_X, c.z - BASE_Y) && !BloatRules.inTank(c.x - BASE_X, c.z - BASE_Y)
 
     private lateinit var bloat: Npc
-    private lateinit var room: BloatRoom
+    lateinit var room: BloatRoom
+        private set
     private var dead = -1
 
     override fun build() {
         dead = -1
-        val hp = hp(BloatRules.hitpoints(1), entryHp(1600))
+        val hp = hp(BloatRules.hitpoints(1), entryHp(ENTRY_HP))
         bloat = spawn(NPC, CoordGrid(BASE_X + 8, BASE_Y + 8, 0), hp)
         val region = checkNotNull(d.instances.regionOf(session))
         room = BloatRoom(session, bloat, at(BASE_X, BASE_Y), d.random, d.worldRepo, d.playerHits, d.collision, hp, region.southWest, region.northEast)
@@ -37,12 +38,24 @@ class BloatSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Co
         bloat.telejump(d.collision, at(BASE_X + sx, BASE_Y + sy))
     }
 
+    /** He's sized for the party that comes in (Normal: 1500 up to a trio, 1750 in a four, 2000 in a five). */
+    override fun onStart() {
+        val team = 1 + helpers.size
+        room.resize(hp(BloatRules.hitpoints(team), entryHp(ENTRY_HP, team)))
+    }
+
+    /** The bloat, for a crew. */
+    val boss: Npc
+        get() = bloat
+
     override fun floor(npc: Npc): Int? = if (npc === bloat && dead < 0) 1 else null
 
     override fun land(npc: Npc, hit: Hit): Int? {
         if (npc !== bloat) return null
         if (dead >= 0) return 0
-        return room.land(hit.damage)
+        val dealt = room.land(hit.damage)
+        if (HIT_TRACE) println("bloathit t${room.t} down ${room.down} dmg ${hit.damage} dealt $dealt by ${attacker(hit)?.username}")
+        return dealt
     }
 
     /** He patrols his loop before the room starts, as in the game. */
@@ -69,8 +82,23 @@ class BloatSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Co
             return
         }
         val was = room.mode
-        room.tick(listOfNotNull(player()))
+        room.tick((listOf(owner) + helpers).filter { it.isSlotAssigned })
         if (room.mode != was) recordEvent(if (room.mode == BloatRoom.Mode.Down) 110 else 111, "\"bloatDown\":{}")
+        recordHands()
+    }
+
+    private val handsFalling = HashMap<Int, String>()
+
+    /** Hands into the room's recording as Blert has them: the drop (112) and the splat (113), with their tiles. */
+    private fun recordHands() {
+        for ((lands, tiles) in room.falling) {
+            if (lands in handsFalling) continue
+            val json = "\"bloatHands\":[" + tiles.joinToString(",") { (x, y) -> "{\"x\":${BASE_X + x},\"y\":${BASE_Y + y}}" } + "]"
+            handsFalling[lands] = json
+            recordEvent(HANDS_DROP, json)
+        }
+        val landed = handsFalling.keys.filter { it <= room.t }
+        for (lands in landed) recordEvent(HANDS_SPLAT, handsFalling.remove(lands)!!)
     }
 
     override fun autoTarget(): Npc? = bloat
@@ -91,5 +119,9 @@ class BloatSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: Co
         const val DEATH_SOUND_RADIUS = 15
         const val DEATH_TICKS = 6
         const val DEATH_SEQ_TICKS = 3
+        const val ENTRY_HP = 1600
+        const val HANDS_DROP = 112
+        val HIT_TRACE = System.getenv("TOB_HIT_TRACE") != null
+        const val HANDS_SPLAT = 113
     }
 }

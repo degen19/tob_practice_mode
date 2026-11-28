@@ -43,11 +43,46 @@ class BloatRoom(
     private val worldRepo: WorldRepository,
     private val hitModifier: PlayerHitModifier,
     private val collision: CollisionFlagMap,
-    val max: Int,
+    max: Int,
     private val southWest: CoordGrid,
     private val northEast: CoordGrid,
 ) {
     private val logger = InlineLogger()
+
+    var max: Int = max
+        private set
+
+    /** The room's hitpoints for the team that came in (set as the room starts). */
+    fun resize(hitpoints: Int) {
+        max = hitpoints
+        npc.baseHitpointsLvl = hitpoints
+        npc.hitpoints = hitpoints
+    }
+
+    /** Which way round he walks: 1 anticlockwise, -1 clockwise. */
+    val heading: Int
+        get() = dir
+
+    /** Hands falling: the tick each lands and its room tiles. */
+    val falling: List<Pair<Int, List<Pair<Int, Int>>>>
+        get() = hands
+
+    /** Where his south-west tile will be [ticks] on if he keeps walking (no turn, no down). */
+    fun ahead(ticks: Int): Pair<Int, Int> {
+        var k = li
+        var war = walkAfterTurn
+        repeat(ticks) {
+            val next = LOOP[Math.floorMod(k + dir, LOOP.size)]
+            val stride = if (speed < 2 || war > 0 || next in BloatRules.CORNERS) 1 else 2
+            k = Math.floorMod(k + dir * stride, LOOP.size)
+            war = (war - 1).coerceAtLeast(0)
+        }
+        return LOOP[k]
+    }
+
+    /** Downs so far, the walk he's on counting from 1. */
+    val walks: Int
+        get() = walkN
 
     private val sight = org.rsmod.routefinder.LineValidator(collision)
 

@@ -1,0 +1,143 @@
+{
+ "name": "4s Blert-style",
+ "players": [
+  {
+   "name": "Mage",
+   "stall": true,
+   "necks": 6,
+   "hp": 115,
+   "first_swing": 8,
+   "walk_specs": [
+    {
+     "weapon": "BGS_SPEC",
+     "tick": 2
+    }
+   ],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 10
+    }
+   ],
+   "enter": 0,
+   "walk_swings": [
+    8,
+    19,
+    24,
+    29,
+    34,
+    39,
+    44,
+    49,
+    54,
+    59,
+    64,
+    69
+   ]
+  },
+  {
+   "name": "Melee 1",
+   "stall": true,
+   "necks": 6,
+   "hp": 115,
+   "first_swing": 5,
+   "walk_specs": [
+    {
+     "weapon": "BGS_SPEC",
+     "tick": 10
+    }
+   ],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 10
+    }
+   ],
+   "enter": 3,
+   "walk_swings": [
+    5,
+    19,
+    24,
+    29,
+    34,
+    39,
+    44,
+    49,
+    54,
+    59,
+    64,
+    69
+   ]
+  },
+  {
+   "name": "Melee 2",
+   "stall": true,
+   "necks": 6,
+   "hp": 115,
+   "first_swing": 19,
+   "walk_specs": [],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 10
+    },
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 14
+    }
+   ],
+   "enter": 12,
+   "walk_swings": [
+    19,
+    24,
+    29,
+    34,
+    39,
+    44,
+    49,
+    54,
+    59,
+    64,
+    69
+   ]
+  },
+  {
+   "name": "Ranger",
+   "stall": true,
+   "necks": 6,
+   "hp": 115,
+   "first_swing": 14,
+   "walk_specs": [],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 10
+    },
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 14
+    }
+   ],
+   "enter": 0,
+   "walk_swings": [
+    14,
+    19,
+    24,
+    29,
+    34,
+    39,
+    44,
+    49,
+    54,
+    59,
+    64,
+    69
+   ]
+  }
+ ],
+ "entry": {
+  "x": 15,
+  "heading": "east"
+ },
+ "damage_factor": 1.0
+}
