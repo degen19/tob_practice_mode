@@ -67,6 +67,14 @@ Every event has `type`, `stage`, `tick`, `xCoord`, `yCoord`, plus:
   - This matches 1,648 of 1,657 wave checks.
 - **Nylo boss:** it spawns 16–19 ticks after cleanup end (type 122).
 - **Maiden trios:** the mage's tbow goes 2 ticks after the ranger and melee swings (216 of 221).
+- **Maiden by scale (the 50 fastest Normal rooms of each, `maiden-top.tgz` from `./maiden_fetch.sh <scale> 50`,
+  `python3 -I maiden_scales.py <dir> 2 3 4 5`):**
+  - room ticks (median, best): duo 181 / 165, trio 124 / 115, 4s 113 / 108, 5s 102 / 97. 70s spawn tick: 48 / 32 / 32 /
+    32; 50s 88 / 57 / 52 / 57; 30s 132.5 / 82 / 77 / 76. Leaks a room 2.66 / 2.52 / 3.14 / 4.76.
+  - duos: one scythe player who barrages (43 of 50 freeze at all), one scythe + tbow or Ralos; no Dinh's. The freezes are
+    late, from +4 (70s: `+4 +9` in 22 rooms); the 50s / 30s mostly just the clumps (`+11 +16`).
+  - 5s: three freezers (one with a scythe, two with a tbow), a scythe + halberd melee, a scythe + tbow ranger; no Dinh's.
+    Each of two freezers takes only the 1s / 2s: 70s `+1 +6` (87 of 100), 50s `+1 +6 +11`, 30s `+2 +7 +12`.
 - **Xarpus (the 50 fastest Normal rooms of each scale, 250 rooms):**
   - exhumeds: 7 every 12 ticks solo, 9 / 12 every 8 in duos / trios, 15 / 18 every 4 in 4s / 5s, from the first
     instance tick 1 at or after tick 8; each lasts 11 and heals from its third tick (20 / 16 / 12 / 9 / 8 a heal). He
