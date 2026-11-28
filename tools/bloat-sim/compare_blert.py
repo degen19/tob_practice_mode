@@ -25,12 +25,18 @@ def blert_tracks(uuid, scale):
     return pos, b
 
 
-def same_start_seed(proc, b, tries=400):
+def same_start_seed(proc, b, tries=300):
+    """The seed whose Bloat stays on the recorded path longest (same start, turns and down)."""
+    best = (None, None, -1)
     for s in range(tries):
         f = team.run(proc, s, record=True)["frames"]
-        if tuple(f[0]["b"][:2]) == b[0] and tuple(f[1]["b"][:2]) == b[1]:
-            return s, f
-    return None, None
+        n = 0
+        while n < len(f) and n in b and tuple(f[n]["b"][:2]) == b[n]:
+            n += 1
+        if n > best[2]:
+            best = (s, f, n)
+    print(f"Bloat on the recorded path for {best[2]} ticks")
+    return best[0], best[1]
 
 
 def main(path, ticks=40):

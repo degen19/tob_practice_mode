@@ -190,6 +190,7 @@ class Player:
         self.walk_swings = spec.get("walk_swings")
         self.walk_sides = spec.get("walk_sides", [])
         self.walk_stalls = spec.get("walk_stalls")
+        self.track = {int(k): tuple(v) for k, v in spec.get("track", {}).items()}
         self.down_start = spec.get("down_start", [0])
         self.pray = spec.get("pray_missiles", True)
         self.pos = pos
@@ -221,6 +222,11 @@ def run(proc, seed, record=False, weapons=None):
     if start is not None:
         start = LOOP[(LOOP.index(start) - direction) % len(LOOP)]
     room = Room(team, rng, start, direction)
+    bloat_track = {int(k): tuple(v) for k, v in proc.get("bloat_track", {}).items()}
+    rec_downs = set(proc.get("downs", []))
+    flip = bool(bloat_track) and (bloat_track[0][1] >= 14) != (LOOP[(room.li + room.dir) % len(LOOP)][1] >= 14)
+    mirror_b = (lambda y: 27 - y) if flip else (lambda y: y)
+    mirror_p = (lambda c: (c[0], 31 - c[1])) if flip else (lambda c: c)
     w = weapons or Weapons()
     factor = proc.get("damage_factor", 1.0)
     if factor != 1.0:
@@ -260,16 +266,68 @@ def run(proc, seed, record=False, weapons=None):
         for when, tiles in room.hands:
             hands_by.setdefault(when, set()).update(tiles)
         seen_now = {c for c in OUTER if ray_clear(bx + 2, by + 2, *c)}
+        rec = bloat_track.get(t)
+        in_sync = rec is not None and (rec[0], mirror_b(rec[1])) == (bx, by) and (t not in rec_downs or room.mode == "down")
         for p in ps:
             if p.dead or t < p.stunned_until:
                 continue
             if p.pos[0] >= 24 or p.pos[0] <= 7:
-                if t >= p.enter:
+                rec_in = mirror_p(p.track[t]) if in_sync and t in p.track else None
+                if rec_in is not None:
+                    p.pos = rec_in
+                    continue
+                if rec_in is None and t >= p.enter:
                     side_x = 23 if p.pos[0] >= 24 else 8
                     first_act = min([p.first] + [k for k in p.walk_specs if k >= t])
                     p.pos = (side_x, 15)
                     aim = plan_tile(p, room, t, hands_by, [], ready=max(first_act, t + 1), side="any", still=True)
                     p.pos = (side_x, min(max(aim[1], 14), 17))
+                continue
+            want = mirror_p(p.track[t]) if in_sync and t in p.track else None
+            if want is not None and 8 <= want[0] <= 23:
+                landing_next = hands_by.get(t + 1, set())
+                stalled = p.stall_cast >= 0 and p.stall_cast <= t < p.stall_cast + STALL_LOCK
+                if want in landing_next and not stalled:
+                    near = [c for c in OUTER if max(abs(c[0] - p.pos[0]), abs(c[1] - p.pos[1])) <= 2 and c not in landing_next]
+                    want = min(near, key=lambda c: (c not in RING_SET, max(abs(c[0] - want[0]), abs(c[1] - want[1])))) if near else want
+                if not stalled:
+                    p.pos = want
+                rewalk = down is None and room.walk_n > 1
+                nxt = min([x for x in p.walk_swings if x > p.last_swing] or [10 ** 6]) if p.walk_swings is not None and down is None and room.walk_n == 1 else None
+                wpn = None
+                if down is not None:
+                    k = t - room.down_at
+                    if k == 0:
+                        n_down = sum(1 for e in room.events if e[1] == "down")
+                        p.down_specs = {d["at"]: d["weapon"] for d in p.down_spec_list if d.get("down", n_down) == n_down}
+                        p.next_attack = max(p.next_attack, t + p.down_start[min(n_down, len(p.down_start)) - 1])
+                    if t >= p.next_attack:
+                        wpn = p.down_specs.get(k, "SCYTHE")
+                elif t in p.walk_specs and t >= p.next_attack:
+                    wpn = p.walk_specs[t]
+                elif t >= p.next_attack and nxt is not None and nxt <= t:
+                    wpn = "SCYTHE"
+                if wpn in SPEC_COST and p.energy < SPEC_COST[wpn]:
+                    wpn = "SCYTHE"
+                if wpn and in_reach(p.pos, bx, by):
+                    p.energy -= SPEC_COST.get(wpn, 0)
+                    salve = p.necks == 0 or down is not None or (p.salve == "always" and p.hp >= SAFE_SALVE_HP)
+                    hits = w.hits(wpn, room.defence, rng) if salve else [(a, x * 5 // 6) for a, x in w.hits(wpn, room.defence, rng)]
+                    if salve:
+                        p.neck = "salve"
+                    for delay, dmg in hits:
+                        landing.setdefault(t + delay, []).append((dmg, wpn))
+                    p.next_attack = t + SPEED[wpn]
+                    p.last_swing = t
+                    acts.append([p.i, wpn])
+                    if p.stall and down is None and (p.walk_stalls is None or t in p.walk_stalls):
+                        p.stall_cast = t + 1
+                elif p.necks > 0 and p.neck != "pneck":
+                    p.neck = "pneck"
+                if t == p.stall_cast:
+                    spells.append([p.i, "HUMIDIFY"])
+                    p.locked_until = t + STALL_LOCK
+                    p.stalls += 1
                 continue
             hold = 5 if p.stall and down is None else 1
             danger = set().union(*[v for when, v in hands_by.items() if t < when <= t + hold]) if hands_by else set()
@@ -309,7 +367,7 @@ def run(proc, seed, record=False, weapons=None):
                 wpn = "SCYTHE"
             landing_soon = set().union(*[v for when, v in hands_by.items() if t < when <= t + 3]) if hands_by else set()
             moving = hiding or not p.stall or down is not None or t < p.first or t >= p.next_attack
-            stalled = p.stall_cast >= 0 and p.stall_cast <= t <= p.stall_cast + STALL_LOCK
+            stalled = p.stall_cast >= 0 and p.stall_cast <= t < p.stall_cast + STALL_LOCK
             if stalled:
                 moving = False
             if moving:

@@ -97,7 +97,12 @@ def build(scale, uuid=None):
             "walk_swings": walk_ticks, "walk_sides": sides, "walk_stalls": walk_stalls, "walk_specs": wspecs,
             "down_specs": dspecs, "down_start": starts or [0], "rewalk_attack": rewalk,
         })
+    last = max(b)
+    tracks = {n: {str(t): list(p) for t, p in ps.items() if t <= last} for n, ps in pos.items()}
+    for pl in players:
+        pl["track"] = tracks[pl["name"]]
     return {"name": f"{scale}s from Blert {uuid[:8]}", "source": uuid,
+            "bloat_track": {str(t): list(p) for t, p in b.items()}, "downs": downs,
             "entry": {"x": b[0][0], "heading": "east" if east else "west"}, "damage_factor": 1.0, "players": players}
 
 
