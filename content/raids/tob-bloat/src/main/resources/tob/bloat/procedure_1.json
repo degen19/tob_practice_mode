@@ -1,0 +1,37 @@
+{
+ "name": "Solo Blert-style",
+ "entry": {
+  "x": 10,
+  "heading": "west"
+ },
+ "damage_factor": 1.1,
+ "players": [
+  {
+   "name": "Solo",
+   "stall": true,
+   "necks": 6,
+   "hp": 115,
+   "first_swing": 999,
+   "enter": 0,
+   "walk_specs": [],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 7,
+     "down": 1
+    },
+    {
+     "weapon": "CHALLY_SPEC",
+     "at": 31
+    }
+   ],
+   "rewalk_attack": false,
+   "down_start": [
+    2,
+    3,
+    4,
+    3
+   ]
+  }
+ ]
+}

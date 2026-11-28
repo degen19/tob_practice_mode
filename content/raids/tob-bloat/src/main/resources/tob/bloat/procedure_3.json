@@ -1,0 +1,93 @@
+{
+ "name": "Trio Blert-style",
+ "players": [
+  {
+   "name": "Mage",
+   "stall": false,
+   "necks": 8,
+   "hp": 115,
+   "first_swing": 2,
+   "walk_specs": [],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 10
+    },
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 14
+    }
+   ],
+   "enter": 0,
+   "walk_swings": [
+    2,
+    7,
+    16,
+    21,
+    26,
+    31,
+    36,
+    41,
+    46,
+    51,
+    56,
+    61,
+    66
+   ],
+   "walk_sides": [
+    "front",
+    "back",
+    "front",
+    "any",
+    "front",
+    "any",
+    "front"
+   ]
+  },
+  {
+   "name": "Melee",
+   "stall": true,
+   "necks": 6,
+   "hp": 115,
+   "first_swing": 15,
+   "walk_specs": [
+    {
+     "weapon": "BGS_SPEC",
+     "tick": 9
+    }
+   ],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 10
+    }
+   ],
+   "enter": 3,
+   "gate": "west"
+  },
+  {
+   "name": "Ranger",
+   "stall": true,
+   "necks": 6,
+   "hp": 115,
+   "first_swing": 6,
+   "walk_specs": [],
+   "down_specs": [
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 10
+    },
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 14
+    }
+   ],
+   "enter": 4
+  }
+ ],
+ "entry": {
+  "x": 17,
+  "heading": "east"
+ },
+ "damage_factor": 1.0
+}

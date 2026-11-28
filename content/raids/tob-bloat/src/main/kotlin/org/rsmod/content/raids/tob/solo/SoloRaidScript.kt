@@ -315,6 +315,11 @@ constructor(
                 where == TobRoom.MAIDEN && System.getenv("TOB_TRIO_SIZE") == "4" -> NyloRole.QUAD
                 else -> NyloRole.TRIO
             }
+        if (where == TobRoom.BLOAT) {
+            val size = System.getenv("TOB_TRIO_SIZE")?.toIntOrNull() ?: 3
+            for (i in 1..teams) startBloat("$i", size) ?: return
+            return
+        }
         for (i in 1..teams) startTrio("$i", where, trioParams.getOrNull(i - 1) ?: "", roles) ?: return
     }
 
@@ -347,6 +352,32 @@ constructor(
         }
         teamRoles[room] = roles
         trios[room] = crewFor(room, crew.map { it.second!! to it.first }, params) ?: return null
+        return room
+    }
+
+    /** A Bloat bot team of [size] in a fresh room, playing the shipped procedure for that size (bots named for its seats). */
+    private fun startBloat(tag: String, size: Int): SoloRoom? {
+        val plan = BloatProcedure.forTeam(size)
+        val crew = plan.players.map { seat -> seat to bots.spawn("${seat.name.replace(" ", "")}$tag", EXIT, BloatCrew.GEAR, BloatCrew.pack(seat)) }
+        if (crew.any { it.second == null }) {
+            for ((_, bot) in crew) bot?.let(bots::remove)
+            logger.warn { "bloat team $tag: no room for its bots" }
+            return null
+        }
+        for ((_, bot) in crew) {
+            kit(bot!!, NyloRole.Melee, maiden = true)
+            raids.undying += bot
+        }
+        val owner = crew[0].second!!
+        auto += owner
+        travel(owner, TobRoom.BLOAT)
+        val room = raids.byOwner[owner.username] as? BloatSolo ?: return null
+        for ((_, bot) in crew.drop(1)) {
+            room.helpers += bot!!
+            org.rsmod.game.entity.util.PathingEntityCommon.telejump(bot, d.collision, room.at(room.entry))
+        }
+        teamRoles[room] = List(crew.size) { NyloRole.Melee }
+        trios[room] = BloatCrew(room, crew.map { (seat, bot) -> bot!! to seat }, bots, plan)
         return room
     }
 
@@ -546,6 +577,7 @@ constructor(
             }
             return
         }
+        if (trio.enter()) return
         if (room.instanceTick != Math.floorMod(TRIO_START_TICK - CLICK_LEAD, INSTANCE_CYCLE)) return
         val barriers = room.findLocs(BARRIER)
         room.passAt = d.mapClock.cycle + 1
