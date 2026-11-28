@@ -320,21 +320,23 @@ constructor(
             for (i in 1..teams) startBloat("$i", size) ?: return
             return
         }
-        for (i in 1..teams) startTrio("$i", where, trioParams.getOrNull(i - 1) ?: "", roles) ?: return
+        for (i in 1..teams) startBotTeam("$i", where, trioParams.getOrNull(i - 1) ?: "", TobGroup.botTeam("${roles.first().name}$i", roles)) ?: return
     }
 
-    /** The roles each bot team plays, by its room. */
-    private val teamRoles = HashMap<SoloRoom, List<NyloRole>>()
+    /** The group each bot team plays as, by its room. */
+    private val groups = HashMap<SoloRoom, TobGroup>()
 
-    /** A bot team in a fresh room (bots named for their roles, Mage[tag] and so on); null if they can't all log in. */
-    private fun startTrio(tag: String, where: TobRoom, params: String, roles: List<NyloRole> = NyloRole.TRIO): SoloRoom? {
+    /** An all-bot [group] in a fresh room (bots named for their roles, Mage[tag] and so on); null if they can't all log in. */
+    private fun startBotTeam(tag: String, where: TobRoom, params: String, group: TobGroup): SoloRoom? {
+        require(group.people.isEmpty()) { "a bot team has no people seated" }
         val maiden = where == TobRoom.MAIDEN
         val xarpus = where == TobRoom.XARPUS
-        val quad = roles.size == 4
+        val quad = group.size == 4
         val crew =
-            roles.mapIndexed { k, role ->
+            group.seats.mapIndexed { k, seat ->
+                val role = seat.role
                 val sets = if (xarpus) NyloLoadout.xarpusSets() else if (maiden) NyloLoadout.maidenSets(role, quad) else NyloLoadout.sets(role)
-                role to spawnCrewBot(if (xarpus) "X${k + 1}_$tag" else "${role.name}$tag", role, sets, maiden || xarpus)
+                seat to spawnCrewBot(if (xarpus) "X${k + 1}_$tag" else "${role.name}$tag", seat, sets, maiden || xarpus)
             }
         if (crew.any { it.second == null }) {
             for ((_, bot) in crew) bot?.let(bots::remove)
@@ -350,8 +352,8 @@ constructor(
             room.helpers += bot!!
             org.rsmod.game.entity.util.PathingEntityCommon.telejump(bot, d.collision, room.at(room.entry))
         }
-        teamRoles[room] = roles
-        trios[room] = crewFor(room, crew.map { it.second!! to it.first }, params) ?: return null
+        groups[room] = group
+        trios[room] = crewFor(room, crew.map { it.second!! to it.first.role }, params) ?: return null
         return room
     }
 
@@ -365,7 +367,7 @@ constructor(
             return null
         }
         for ((_, bot) in crew) {
-            kit(bot!!, NyloRole.Melee, maiden = true)
+            kit(bot!!, TobSeat(NyloRole.Melee), maiden = true)
             raids.undying += bot
         }
         val owner = crew[0].second!!
@@ -376,7 +378,7 @@ constructor(
             room.helpers += bot!!
             org.rsmod.game.entity.util.PathingEntityCommon.telejump(bot, d.collision, room.at(room.entry))
         }
-        teamRoles[room] = List(crew.size) { NyloRole.Melee }
+        groups[room] = TobGroup.botTeam(owner.username, List(crew.size) { NyloRole.Melee })
         trios[room] = BloatCrew(room, crew.map { (seat, bot) -> bot!! to seat }, bots, plan)
         return room
     }
@@ -402,7 +404,7 @@ constructor(
     private fun watch(player: Player, where: TobRoom, roles: List<NyloRole> = NyloRole.TRIO) {
         watching(player)?.let { endTrio(it) }
         raids.byOwner[player.username]?.let { close(it) }
-        val room = startTrio("w${++watchRuns}", where, "", roles) ?: return player.mes("No room for a bot team right now.")
+        val room = startBotTeam("w${++watchRuns}", where, "", TobGroup.botTeam(player.username, roles)) ?: return player.mes("No room for a bot team right now.")
         spectators.getOrPut(room) { ArrayList() } += player
         room.watchers += player
         player.npcViewDistance = VIEW_DISTANCE
@@ -417,17 +419,17 @@ constructor(
     /** The potato's Restart room while watching: the room and its bots start over from outside the barrier; you stay put. */
     private fun rewatch(player: Player): Boolean {
         val room = watching(player) ?: return false
-        val roles = teamRoles[room] ?: NyloRole.TRIO
-        val crew = roles.zip(listOf(room.owner) + room.helpers)
+        val seats = groups[room]?.seats ?: return false
+        val crew = seats.zip(listOf(room.owner) + room.helpers)
         room.reset()
         finished -= room
         readied -= room
         val maiden = room.id == TobRoom.MAIDEN
-        for ((role, bot) in crew) {
-            refit(bot, role, maiden, roles.size == 4)
+        for ((seat, bot) in crew) {
+            refit(bot, seat, maiden, seats.size == 4)
             org.rsmod.game.entity.util.PathingEntityCommon.telejump(bot, d.collision, room.at(room.entry))
         }
-        trios[room] = crewFor(room, crew.map { (role, bot) -> bot to role }, "") ?: return false
+        trios[room] = crewFor(room, crew.map { (seat, bot) -> bot to seat.role }, "") ?: return false
         return true
     }
 
@@ -442,7 +444,7 @@ constructor(
     private fun endTrio(room: SoloRoom) {
         val crew = listOf(room.owner) + room.helpers
         trios.remove(room)
-        teamRoles.remove(room)
+        groups.remove(room)
         readied.remove(room)
         finished.remove(room)
         auto.remove(room.owner)
@@ -460,25 +462,28 @@ constructor(
         }
     }
 
-    private fun spawnCrewBot(name: String, role: NyloRole, sets: List<GearSet>, maiden: Boolean): Player? {
-        val bot = bots.spawn(name, EXIT, NyloLoadout.worn(sets), packFor(role, sets, maiden)) ?: return null
-        kit(bot, role, maiden)
+    private fun spawnCrewBot(name: String, seat: TobSeat, sets: List<GearSet>, maiden: Boolean): Player? {
+        val bot = bots.spawn(name, EXIT, NyloLoadout.worn(sets), packFor(seat, sets, maiden)) ?: return null
+        kit(bot, seat, maiden)
         return bot
     }
 
-    private fun packFor(role: NyloRole, sets: List<GearSet>, maiden: Boolean): List<String> {
+    private fun packFor(seat: TobSeat, sets: List<GearSet>, maiden: Boolean): List<String> {
+        val role = seat.role
         val extra = if (!maiden) NyloLoadout.nyloExtras(role) else if (role.freezes) NyloLoadout.ANCIENT_RUNES + NyloLoadout.SURGE + NyloLoadout.DIAMOND_BOLTS else NyloLoadout.LUNAR_RUNES + NyloLoadout.SURGE + NyloLoadout.BOOK
-        return (NyloLoadout.pack(role, sets) + extra).distinct()
+        val swap = if (seat.book == SeatBook.LunarSwap) NyloLoadout.LUNAR_RUNES else emptyList()
+        return (NyloLoadout.pack(role, sets) + extra + swap).distinct()
     }
 
     /** Back to a fresh bot's gear and pack (a restarted room: supplies, charges and ammo as they walked in with). */
-    private fun refit(bot: Player, role: NyloRole, maiden: Boolean, quad: Boolean = false) {
+    private fun refit(bot: Player, seat: TobSeat, maiden: Boolean, quad: Boolean = false) {
+        val role = seat.role
         val sets = if (maiden) NyloLoadout.maidenSets(role, quad) else NyloLoadout.sets(role)
         for (slot in 0 until bot.worn.size) bot.worn[slot] = null
         for (slot in 0 until bot.inv.size) bot.inv[slot] = null
         for ((slot, obj) in NyloLoadout.worn(sets)) bot.worn[slot] = org.rsmod.game.inv.InvObj(obj)
-        for ((i, obj) in packFor(role, sets, maiden).withIndex()) bot.inv[i] = org.rsmod.game.inv.InvObj(obj)
-        kit(bot, role, maiden)
+        for ((i, obj) in packFor(seat, sets, maiden).withIndex()) bot.inv[i] = org.rsmod.game.inv.InvObj(obj)
+        kit(bot, seat, maiden)
         for (stat in BOT_STATS) bot.statMap.setCurrentLevel(stat, bot.statBase(stat).toByte())
         org.rsmod.api.player.SpellResets.reset(bot)
         bot.clearInteractionRoute()
@@ -489,7 +494,8 @@ constructor(
         bot.rebuildAppearance()
     }
 
-    private fun kit(bot: Player, role: NyloRole, maiden: Boolean) {
+    private fun kit(bot: Player, seat: TobSeat, maiden: Boolean) {
+        val role = seat.role
         val stacks = NyloLoadout.SPELL_RUNES + NyloLoadout.CHINCHOMPAS + NyloLoadout.DIAMOND_BOLTS
         for (slot in 0 until bot.inv.size) {
             val obj = bot.inv[slot] ?: continue
@@ -501,7 +507,7 @@ constructor(
         org.rsmod.content.raids.tob.bloat.fillCharges(bot.inv)
         val arrows = if (maiden) NyloLoadout.SEEKING_ARROWS else NyloLoadout.ARROWS
         org.rsmod.api.player.worn.DizanasQuiver.store(bot, arrows.asRSCM(dev.openrune.rscm.RSCMType.OBJ), RUNES)
-        val book = if (role.freezes) ANCIENTS else if (maiden) LUNARS else ARCEUUS
+        val book = if (seat.book == SeatBook.LunarSwap) LUNARS else if (role.freezes) ANCIENTS else if (maiden) LUNARS else ARCEUUS
         book?.let { org.rsmod.api.player.vars.VarPlayerIntMapSetter.set(bot, "varbit.spellbook", it) }
         bot.varMoveSpeed = org.rsmod.game.movement.MoveSpeed.Run
     }
