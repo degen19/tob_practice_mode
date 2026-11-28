@@ -424,7 +424,8 @@ def plan_tile(p, room, t, hands_by, stallers, ready=None, side="front", still=Fa
     ready = max(p.next_attack, t) if ready is None else ready
     fbx, fby = future_sw(room, ready - t)
     nbx, nby = room.sw
-    hand_at = set().union(*[v for when, v in hands_by.items() if ready <= when <= ready + 1]) if hands_by else set()
+    stays = STALL_LOCK + 2 if p.stall and (p.walk_stalls is None or ready in p.walk_stalls) else 1
+    hand_at = set().union(*[v for when, v in hands_by.items() if ready <= when <= ready + stays]) if hands_by else set()
     best, best_cost = None, None
     ax, ay = future_sw(room, ready - t + 1)
     heading = (ax - fbx, ay - fby)
