@@ -285,10 +285,14 @@ def run(proc, seed, record=False, weapons=None):
                 continue
             want = mirror_p(p.track[t]) if in_sync and t in p.track else None
             if want is not None and 8 <= want[0] <= 23:
-                landing_next = hands_by.get(t + 1, set())
                 stalled = p.stall_cast >= 0 and p.stall_cast <= t < p.stall_cast + STALL_LOCK
-                if want in landing_next and not stalled:
-                    near = [c for c in OUTER if max(abs(c[0] - p.pos[0]), abs(c[1] - p.pos[1])) <= 2 and c not in landing_next]
+                stalls_soon = p.stall and down is None and p.walk_stalls is not None and any(t <= x <= t + 1 for x in p.walk_stalls)
+                reach = STALL_LOCK + 2 if stalls_soon else 1
+                danger = set().union(*[v for when, v in hands_by.items() if t < when <= t + reach]) if hands_by else set()
+                if want in danger and not stalled:
+                    near = [c for c in OUTER if max(abs(c[0] - p.pos[0]), abs(c[1] - p.pos[1])) <= 2 and c not in danger]
+                    if stalls_soon:
+                        near = [c for c in near if in_reach(c, bx, by)] or near
                     want = min(near, key=lambda c: (c not in RING_SET, max(abs(c[0] - want[0]), abs(c[1] - want[1])))) if near else want
                 if not stalled:
                     p.pos = want

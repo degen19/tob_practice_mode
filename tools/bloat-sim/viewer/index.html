@@ -111,13 +111,19 @@ function derive(r) {
     if (t.hd) shadows.push({ from: i, tiles: t.hd });
   }
   const pos = r.names.map(() => new Array(n).fill(null));
+  const died = r.names.map(() => -1);
+  r.t.forEach((t, i) => (t.death || []).forEach(p => { if (died[p] < 0) died[p] = i; }));
   for (let p = 0; p < r.names.length; p++) {
-    let lp = null;
-    for (let i = 0; i < n; i++) { const q = r.t[i].p[p]; if (q) lp = q; pos[p][i] = lp; }
+    let lp = null, first = null;
+    for (let i = 0; i < n; i++) {
+      const q = r.t[i].p[p];
+      if (q) { lp = q; first = first || q; }
+      pos[p][i] = died[p] >= 0 && i >= died[p] ? [first && first[0] <= 7 ? 6 : 25, 14 + (p % 4)] : lp;
+    }
   }
   const used = r.names.map(() => ({}));
   r.t.forEach(t => { (t.a || []).forEach(([p, w]) => used[p][w] = (used[p][w] || 0) + 1); (t.sp || []).forEach(([p, w]) => used[p][w] = (used[p][w] || 0) + 1); });
-  return { bloat, down, shadows, pos, used };
+  return { bloat, down, shadows, pos, used, died };
 }
 
 function tabs() {
@@ -187,8 +193,11 @@ function draw(frac = 1) {
       const cx = px(x) + s / 2 + Math.cos(a) * r, cy = py(y) + s / 2 + Math.sin(a) * r, rad = s * (n > 1 ? 0.24 : 0.34);
       if (swing[p]) { g.strokeStyle = WCOL[swing[p]] || "#fff"; g.lineWidth = Math.max(2, s * 0.14); g.beginPath(); g.arc(cx, cy, rad + s * 0.12, 0, 7); g.stroke(); }
       if (stall[p]) { g.strokeStyle = SCOL[stall[p]] || "#fff"; g.setLineDash([3, 3]); g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, rad + s * 0.16, 0, 7); g.stroke(); g.setLineDash([]); }
+      const gone = derived.died[p] >= 0 && tick >= derived.died[p];
+      g.globalAlpha = gone ? 0.4 : 1;
       g.fillStyle = PCOL[p]; g.beginPath(); g.arc(cx, cy, rad, 0, 7); g.fill();
       g.fillStyle = "#111"; g.font = `700 ${rad * 1.3}px Inter`; g.fillText(String(p + 1), cx, cy + rad * 0.45);
+      g.globalAlpha = 1;
     });
   }
   const rt = tick - pre();
