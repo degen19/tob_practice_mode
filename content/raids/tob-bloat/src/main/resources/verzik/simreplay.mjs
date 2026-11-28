@@ -31,6 +31,9 @@ const HER = {
 };
 const SCYTHES = new Set([22325, 25736, 25739]);
 
+const NYLOS = new Set([8381, 8382, 8383]);
+const HER_SWINGS = new Set(['Attack', 'Lightning', 'Purple crab', 'Blood heal']);
+const PURPLE_WINDOW = 16, LEAD = 2, WEB_TICKS = 44;
 const MELEE = new Set(['SCYTHE', 'CLAW_SCRATCH', 'CLAW_SPEC', 'CHALLY_SPEC', 'ELDER_MAUL', 'SULPHUR_BLADES']);
 const DAWN_DROP_AFTER = 2, DAWN_PICK_AFTER = 1, TRANSFER_ANIM = 4411, TRANSFER_GFX = 734;
 
@@ -84,7 +87,31 @@ function warp(simP, blertP, simEnd) {
   };
 }
 
-function convert(sim, tpl, scale) {
+/** The template with its players reordered: its P3 tank and its purple blowpiper as the sim's tank and purple DC. */
+function remap(tpl, sim) {
+  const n = tpl.players, perm = [...Array(n).keys()];
+  const modeOf = (xs) => { const c = new Map(); for (const x of xs) c.set(x, (c.get(x) || 0) + 1); return [...c.entries()].sort((a, b) => b[1] - a[1])[0]?.[0]; };
+  const purpleIdx = new Set(tpl.npcs.map((x, i) => (x.track[0][1] === PURPLE ? i : -1)).filter((i) => i >= 0));
+  const tplTank = modeOf(tpl.her.filter((h) => h[2].startsWith('P3_') && h[3] >= 0).map((h) => h[3]));
+  const tplPipe = modeOf(tpl.attacks.filter((a) => a[2] === 'BLOWPIPE' && purpleIdx.has(a[5])).map((a) => a[1]));
+  const put = (simIdx, tplIdx) => {
+    if (simIdx == null || simIdx < 0 || tplIdx == null || simIdx >= n) return;
+    const at = perm.indexOf(tplIdx);
+    [perm[simIdx], perm[at]] = [perm[at], perm[simIdx]];
+  };
+  put(sim.tank, tplTank);
+  if (sim.purpleDc !== sim.tank) put(sim.purpleDc, tplPipe);
+  const inv = perm.map((_, k) => perm.indexOf(k));
+  return {
+    ...tpl,
+    tiles: perm.map((k) => tpl.tiles[k]), prayers: perm.map((k) => tpl.prayers[k]), gear: perm.map((k) => tpl.gear[k]),
+    attacks: tpl.attacks.map((a) => [a[0], inv[a[1]], ...a.slice(2)]),
+    her: tpl.her.map((h) => [h[0], h[1], h[2], h[3] >= 0 && h[3] < n ? inv[h[3]] : h[3]]),
+  };
+}
+
+function convert(sim, tpl0, scale) {
+  const tpl = remap(tpl0, sim);
   const end = sim.end ?? Math.max(...sim.hp.map((h) => h[0]), ...sim.atk.map((a) => a[3] ?? a[0])) + 1;
   const sp = { p1dies: at(sim, 'P1 dies'), p2: at(sim, 'P2'), reds: at(sim, 'Reds') ?? null, p2dies: at(sim, 'P2 dies') ?? null, p3: at(sim, 'P3') ?? null };
   const bp = blertPhases(tpl);
@@ -108,18 +135,40 @@ function convert(sim, tpl, scale) {
   for (let t = 0; t <= end + (sim.end != null ? BAT_GAP : 0); t++) {
     const form = formAt(t), [x, y] = herTile(t), h = hpAt(t);
     const base = form === P1 ? P1_HP[scale] : form === T12 ? 0 : P2_HP[scale];
-    const hp = form === T12 || form === BAT ? 0 : h ? Math.max(0, h[1]) : base;
+    const later = h && ((form === P1 && h[2] !== 'P1') || (form === P2 && h[2] === 'P3'));
+    const hp = form === T12 || form === BAT || later ? 0 : h ? Math.max(0, h[1]) : base;
     const row = [t, form, x, y, Math.min(hp, base), base];
     if (!her.length || her.at(-1).slice(1).join() !== row.slice(1).join()) her.push(row);
   }
   const npcs = [{ spawn: 0, death: null, track: her }];
   const index = { '': 0 };
 
+  // her purple and what comes with it, tick for tick as the template played it: the nylocas she sends with it and
+  // where the players go for it (Boak, dodging, the blowpipe)
+  const simThrow = sim.boss.find((b) => b[1] === 'Purple crab')?.[0];
+  const tplThrow = tpl.her.find((h) => h[2] === 'P2_PURPLE')?.[0];
+  const window = (() => {
+    if (simThrow == null || tplThrow == null) return null;
+    let last = tplThrow + PURPLE_WINDOW;
+    for (const x of tpl.npcs) {
+      const type = x.track[0][1];
+      if (x.spawn >= tplThrow && x.spawn <= tplThrow + PURPLE_WINDOW && (type === PURPLE || NYLOS.has(type)) && x.death != null) last = Math.max(last, x.death + 1);
+    }
+    const len = Math.min(last - tplThrow, (sp.reds ?? sp.p2dies ?? end) - simThrow);
+    return len > 0 ? { from: simThrow, to: simThrow + len, shift: simThrow - tplThrow } : null;
+  })();
+  const inWindow = (k) => window && k >= window.from - window.shift && k < window.to - window.shift;
+
   // what the sim doesn't model, warped from the template: pillars, nylocas, tornadoes
   const back = (k) => { let t = 0; while (t < end && w(t + 1) <= k) t++; return t; };
   for (const x of tpl.npcs) {
     const type = x.track[0][1];
     if ([P1, P2, P3, T12, T23, BAT, 8369, 14796, RED, PURPLE].includes(type)) continue;
+    if (inWindow(x.spawn)) {
+      const sh = window.shift, death = x.death == null ? window.to : Math.min(end, x.death + sh);
+      npcs.push({ spawn: x.spawn + sh, death, track: x.track.map((s) => [s[0] + sh, ...s.slice(1)]).filter((s) => s[0] <= death) });
+      continue;
+    }
     const spawn = back(x.spawn);
     if (spawn >= end) continue;
     const track = x.track.map((s) => [Math.max(spawn, back(s[0])), ...s.slice(1)]).filter((s, i, a) => i === 0 || s[0] !== a[i - 1][0]);
@@ -191,21 +240,29 @@ function convert(sim, tpl, scale) {
   const melee = (name) => MELEE.has(name);
   const footprint = (t) => { const [x, y] = herTile(t); const form = formAt(t); return { x, y, size: form === P1 || form === T12 ? 5 : form === P2 || form === BAT ? 3 : 7 }; };
   const crabFoot = (key, t) => { const c = npcs[index[key]]; if (!c) return null; const s0 = c.track[0]; return { x: s0[2], y: s0[3], size: s0[1] === PURPLE ? 3 : 2 }; };
+  const herHits = new Set(sim.boss.filter((b) => HER_SWINGS.has(b[1])).map((b) => b[0]));
+  const dawnTile = dawnRuns.length ? [footprint(0).x + 2, footprint(0).y - 1] : null;
   for (let p = 0; p < n; p++) {
     const swings = tplSwings(p);
     const mine = acts.filter((a) => a.i === p);
-    // P1: their tile; the next Dawn holder on the first holder's tile from before they pick it up till they're done with it
+    // P1: their tile, off Verzik's centre tile unless they still have a Dawnbringer turn to come
     const f1 = footprint(0);
     let base1 = mode(p, 1, bp.p1dies) ?? warped[p][0];
     if (mine.some((a) => a.t < sp.p1dies && melee(a.name)) && !reaches(base1, f1, false)) base1 = beside(base1, f1);
-    for (let t = 0; t < Math.min(sp.p1dies, end + 1); t++) desired[p][t] = [...base1];
-    // P2 before reds: a rest tile a step out, a swing tile beside her
+    if (dawnTile && base1[0] === dawnTile[0] && base1[1] === dawnTile[1]) base1 = beside([dawnTile[0] - 1, dawnTile[1]], f1);
+    const lastDawn = dawnRuns.filter((r) => r.i === p).reduce((m, r) => Math.max(m, r.drop), -1);
+    for (let t = 0; t < Math.min(sp.p1dies, end + 1); t++) desired[p][t] = t <= lastDawn ? [...dawnTile] : [...base1];
+    // P2 before reds: beside her, a step out only on the tick she attacks (her bounce) unless they swing on it
     const f2 = { x: vt.find((r) => r[1] === P2)[2], y: vt.find((r) => r[1] === P2)[3], size: 3 };
     const near2 = mode(p, bp.p2, bp.reds ?? bp.p2dies, (k) => swings.has(k)) ?? mode(p, bp.p2, bp.reds ?? bp.p2dies) ?? [f2.x + 1, f2.y - 2];
     const swing2 = beside(near2, f2), rest2 = away(swing2, f2);
     const p2end = sp.reds ?? sp.p2dies ?? end + 1;
-    for (let t = sp.p2; t < Math.min(p2end, end + 1); t++) desired[p][t] = [...rest2];
-    for (const a of mine) if (a.t >= sp.p2 && a.t < p2end && melee(a.name) && a.key === '') desired[p][a.t] = [...swing2];
+    const swingsAt = new Set(mine.map((a) => a.t));
+    for (let t = sp.p2; t < Math.min(p2end, end + 1); t++) desired[p][t] = herHits.has(t) && !swingsAt.has(t) ? [...rest2] : [...swing2];
+    if (window) for (let t = window.from; t < Math.min(window.to, end + 1); t++) {
+      const k = t - window.shift;
+      if (k >= 0 && k <= tpl.end) desired[p][t] = [tpl.tiles[p][2 * k], tpl.tiles[p][2 * k + 1]];
+    }
     // reds: beside what they swing at next
     if (sp.reds != null) {
       const redsEnd = sp.p2dies ?? end + 1;
@@ -227,35 +284,49 @@ function convert(sim, tpl, scale) {
       for (const a of mine) if (a.t >= sp.p3 && a.t <= end && melee(a.name)) desired[p][a.t] = beside(desired[p][a.t], footprint(a.t));
     }
   }
+  // nobody under her (P2 on): a tile inside her goes to the nearest beside her
+  for (let p = 0; p < n; p++) for (let t = sp.p1dies; t <= end; t++) {
+    const f = footprint(t), [x, y] = desired[p][t];
+    if (x >= f.x && x < f.x + f.size && y >= f.y && y < f.y + f.size) desired[p][t] = beside(desired[p][t], f);
+  }
   // every melee swing from a tile that reaches what it hits
   for (const a of acts) {
     if (a.t > end || !melee(a.name)) continue;
     const f = a.key ? crabFoot(a.key, a.t) ?? footprint(a.t) : footprint(a.t);
     if (!reaches(desired[a.i][a.t], f, a.name === 'CHALLY_SPEC')) desired[a.i][a.t] = beside(desired[a.i][a.t], f);
   }
-  // the Dawnbringer's holders stand on its tile while they have it
-  const dawnTile = dawnRuns.length ? [...desired[dawnRuns[0].i][0]] : null;
-  for (const run of dawnRuns) for (let t = Math.max(0, (run.pick ?? 0) - 1); t <= Math.min(run.drop, sp.p1dies - 1); t++) desired[run.i][t] = [...dawnTile];
   // moves: two tiles a tick at most (running); a tile they must be on (a swing, the Dawnbringer) is set off for early
   // enough to reach it
   const must = desired.map(() => Array(end + 1).fill(false));
   for (const a of acts) if (a.i < n && a.t <= end) must[a.i][a.t] = true;
-  for (const run of dawnRuns) for (let t = Math.max(0, (run.pick ?? 0) - 1); t <= Math.min(run.drop, sp.p1dies - 1, end); t++) must[run.i][t] = true;
+  for (const run of dawnRuns) for (let t = 0; t <= Math.min(run.drop, sp.p1dies - 1, end); t++) must[run.i][t] = true;
   desired.forEach((row, p) => {
     for (let t = end; t >= 1; t--) {
       if (!must[p][t]) continue;
       const [x1, y1] = row[t], [x0, y0] = row[t - 1];
-      if (Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) <= 2) continue;
-      row[t - 1] = [x1 + Math.max(-2, Math.min(2, x0 - x1)), y1 + Math.max(-2, Math.min(2, y0 - y1))];
+      if (Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) <= LEAD) continue;
+      row[t - 1] = [x1 + Math.max(-LEAD, Math.min(LEAD, x0 - x1)), y1 + Math.max(-LEAD, Math.min(LEAD, y0 - y1))];
       must[p][t - 1] = true;
     }
   });
+  // each tick's step: the one (of up to two tiles) that ends nearest where they're going, never through her while she
+  // spins webs (her tiles block them then)
+  const websAt = at(sim, 'Webs');
+  const spinning = (t) => websAt != null && t >= websAt && t <= websAt + WEB_TICKS;
+  const inside = (x, y, f) => x >= f.x && x < f.x + f.size && y >= f.y && y < f.y + f.size;
   const tiles = desired.map((row) => {
     const out = [row[0]];
     for (let t = 1; t <= end; t++) {
       const [x0, y0] = out[t - 1], [x1, y1] = row[t];
-      const dx = Math.max(-2, Math.min(2, x1 - x0)), dy = Math.max(-2, Math.min(2, y1 - y0));
-      out.push([x0 + dx, y0 + dy]);
+      const f = spinning(t) && !inside(x0, y0, footprint(t)) ? footprint(t) : null;
+      let best = [x0, y0], bd = Infinity;
+      for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) {
+        const x = x0 + dx, y = y0 + dy;
+        if (f && (inside(x, y, f) || inside(x0 + Math.sign(dx), y0 + Math.sign(dy), f))) continue;
+        const d = Math.max(Math.abs(x1 - x), Math.abs(y1 - y)) * 100 + (Math.abs(x1 - x) + Math.abs(y1 - y)) * 10 + Math.abs(dx) + Math.abs(dy);
+        if (d < bd) { bd = d; best = [x, y]; }
+      }
+      out.push(best);
     }
     return out.flat();
   });
@@ -292,7 +363,7 @@ function convert(sim, tpl, scale) {
   for (const [t, kind, target] of sim.boss) {
     const phase = t < sp.p2 ? 'P1' : sp.p3 != null && t >= sp.p3 ? 'P3' : 'P2';
     const name = HER[phase][kind];
-    if (name) herAttacks.push([t, 0, name, target]);
+    if (name) herAttacks.push([t, 0, name, target >= 0 ? target : phase === 'P3' ? sim.tank ?? -1 : target]);
   }
   const webs = at(sim, 'Webs');
   if (webs != null) herAttacks.push([webs, 0, 'P3_WEBS', -1]);

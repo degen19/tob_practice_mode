@@ -113,6 +113,30 @@ chart, thresholds), fails that carry on to the kill.
 9. Eating and drinking: the sim's brews, restores, surges and sharks per player (the sim's supplies, the same for
    every player) play `human_eat` with the drink or eat sound, on ticks they don't attack. Spec transfers play the
    Lunar cast (4411) with Energy Transfer's graphic (734) on the target.
+
+**The owner's second look at sim raids (150170d), and their state:**
+1. P1 Dawnbringer: everyone with a Dawnbringer turn still to come stands on her centre tile (south of her middle) the
+   whole of P1 till their last turn is done; then they step off. Players with no turn never stand there.
+2. P1 orb from her lap: it left 140 high; now 70.
+3. P2 3 on / 1 off: they stood a step out and came in only to swing. Now they stand beside her and step out only on
+   the tick she attacks (her bounce), unless they swing on it (a chance). Reds: they stay beside her or their crab.
+4. Purple popping: the sim's setups had no purple DC (the purple healed her ~17 times a raid). P1 is now the purple
+   DC at every scale (cfgs2-5.json); the sim blowpipes it dead 11-15 ticks after it lands, as Blert's teams do.
+   The sim's 300 raids per scale, before -> after: 2s kills 36 -> 47, median 579 -> 548; 3s 7 -> 8, 333 -> 329;
+   4s 156 -> 132, 303 -> 294; 5s 237 -> 239, 284 -> 280. (4s: fewer kills, faster ones; the purple DC's lost
+   scythes. For the lobby to set.)
+5. Dodging crabs: from her purple attack till the purple and the nylocas that come with it are gone, everyone moves
+   tick for tick as the Blert team did (its Boak, its dodges, its blowpiper's walk), the nylocas with them; the
+   template's blowpiper plays the sim's purple DC, its tank the sim's tank.
+6. P3 attack animations: the sim's P3 attacks have no target, and the replay played no animation without one - her
+   P3 ranged and magic never animated. They now go at the sim's tank (a bolt at every player, as the real attack),
+   and she faces the tank through P3.
+7. Players turning to her: each player keeps facing what they last hit (her current form, or her when their crab
+   is gone).
+8. Webs: a web never lands on a tile a player stands on while it's up (the replay's players don't dodge it).
+9. A heal splat of her full P3 hitpoints on her P2 form as she died (the sim's P3 hitpoints read too early): gone.
+10. Players under her: no one's planned tile is under her, and while she spins webs (her tiles block players) every
+    step goes round her. Swings from a tile that can't reach: 386 of 177,715 over the 1,200 raids.
 - Found in the solo room, not yet fixed there: the death bat comes up 2 tiles off (it's transmogged from her 7x7 P3;
   it's 3x3, centred) and the empty throne shows while she sits on it.
 
