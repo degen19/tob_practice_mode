@@ -1,38 +1,38 @@
 package org.rsmod.content.raids.tob.bloat
 
 import dev.openrune.ServerCacheManager
+import dev.openrune.definition.type.widget.IfEvent
 import dev.openrune.rscm.RSCM
+import dev.openrune.rscm.RSCM.asRSCM
 import dev.openrune.rscm.RSCMType
+import dev.openrune.types.aconverted.interf.IfButtonOp
 import jakarta.inject.Inject
 import org.rsmod.api.combat.commons.magic.Spellbook
 import org.rsmod.api.config.constants
 import org.rsmod.api.invtx.invAdd
 import org.rsmod.api.player.output.mes
+import org.rsmod.api.player.output.runClientScript
 import org.rsmod.api.player.protect.ProtectedAccess
 import org.rsmod.api.player.stat.XpSource
 import org.rsmod.api.player.stat.statAdvance
 import org.rsmod.api.player.stat.statRestoreAll
-import org.rsmod.api.player.vars.intVarp
-import dev.openrune.definition.type.widget.IfEvent
-import dev.openrune.rscm.RSCM.asRSCM
-import dev.openrune.types.aconverted.interf.IfButtonOp
-import org.rsmod.api.player.output.runClientScript
 import org.rsmod.api.player.stopInvTransmit
 import org.rsmod.api.player.ui.ifSetEvents
+import org.rsmod.api.player.vars.intVarp
 import org.rsmod.api.script.onIfClose
 import org.rsmod.api.script.onIfModalButton
 import org.rsmod.api.script.onIfModalDrag
 import org.rsmod.api.script.onOpLoc1
+import org.rsmod.api.spells.autocast.MagicSpellbookManager
 import org.rsmod.content.raids.tob.bloat.SupplyCatalog.Tab
+import org.rsmod.game.entity.Player
 import org.rsmod.game.inv.InvObj
 import org.rsmod.game.inv.Inventory
-import org.rsmod.utils.bits.getBits
-import org.rsmod.utils.bits.withBits
-import org.rsmod.api.spells.autocast.MagicSpellbookManager
-import org.rsmod.game.entity.Player
 import org.rsmod.game.stat.PlayerSkillXPTable
 import org.rsmod.plugin.scripts.PluginScript
 import org.rsmod.plugin.scripts.ScriptContext
+import org.rsmod.utils.bits.getBits
+import org.rsmod.utils.bits.withBits
 
 /**
  * The supply chest outside each practice room: search every item in the game and take it, switch
@@ -47,6 +47,7 @@ class SupplyChest @Inject constructor(private val spellbooks: MagicSpellbookMana
         get() = invMap.getOrPut(SUPPLY_INV)
 
     override fun ScriptContext.startup() {
+        solo.supplies = { it.open() }
         onOpLoc1(CHEST) { open() }
         for (tab in Tab.entries) onIfModalButton("component.tob_supplies:tab${tab.ordinal}") { showTab(tab) }
         onIfModalButton("component.tob_supplies:grid") { take(it.comsub, it.op) }
@@ -228,7 +229,6 @@ fun fillCharges(inv: Inventory) {
         if (obj.vars.getBits(varobj.bits) == 0) inv[slot] = obj.copy(vars = obj.vars.withBits(varobj.bits, full))
     }
 }
-
 
 private val CHARGES =
     mapOf(

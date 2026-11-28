@@ -17,15 +17,16 @@ import org.rsmod.plugin.scripts.ScriptContext
  * The rotten potato: the practice switches ([PracticeSettings]) on its right-click. Settings lists them all (deaths,
  * NPC hitpoints, supplies, infinite prayer, always max hit, infinite special attack, Nylo wave numbers and death
  * indicators) and stays open while you flip
- * them; Toggle deaths, Toggle NPC HP and Toggle supplies flip theirs straight away (any time, mid-fight too). Restart room puts you back outside the
- * barrier with the room as it was (Verzik: in the middle before P1, the Dawnbringer on the floor).
+ * them; Toggle deaths and Toggle NPC HP flip theirs straight away (any time, mid-fight too). Gear opens the supplies (what
+ * the lobby's chest has). Restart room puts you back outside the barrier with the room as it was (Verzik: in the middle
+ * before P1, the Dawnbringer on the floor).
  */
 class RottenPotatoScript @Inject constructor(private val solo: SoloRaids) : PluginScript() {
     override fun ScriptContext.startup() {
         onOpHeld1(POTATO) { settings() }
         onOpHeld2(POTATO) { toggleDeaths() }
         onOpHeld3(POTATO) { toggleNpcHp() }
-        onOpHeld4(POTATO) { toggleSupplies() }
+        onOpHeld4(POTATO) { solo.supplies?.invoke(this) ?: mes("The supplies aren't ready yet.") }
         onOpHeld5(POTATO) {
             if (solo.rewatch?.invoke(player) == true) return@onOpHeld5 mes("A fresh trio heads in from outside.")
             val room = solo.forPlayer(player) ?: return@onOpHeld5 mes("You can only restart a room from inside the Theatre.")
@@ -78,11 +79,6 @@ class RottenPotatoScript @Inject constructor(private val solo: SoloRaids) : Plug
     private fun ProtectedAccess.toggleNpcHp() {
         PracticeSettings.infiniteHp = !PracticeSettings.infiniteHp
         mes("NPC hitpoints: ${if (PracticeSettings.infiniteHp) "infinite - hits show but take nothing off" else "normal"}.")
-    }
-
-    private fun ProtectedAccess.toggleSupplies() {
-        PracticeSettings.infiniteSupplies = !PracticeSettings.infiniteSupplies
-        mes("Supplies: ${if (PracticeSettings.infiniteSupplies) "infinite - food, potions, phoenix necklaces, runes and ammo aren't used up" else "used up as normal"}.")
     }
 
     private companion object {
