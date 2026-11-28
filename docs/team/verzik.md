@@ -133,7 +133,12 @@ chart, thresholds), fails that carry on to the kill.
    and she faces the tank through P3.
 7. Players turning to her: each player keeps facing what they last hit (her current form, or her when their crab
    is gone).
-8. Webs: a web never lands on a tile a player stands on while it's up (the replay's players don't dodge it).
+8. Webs: players now dodge them as real teams do (the owner; Blert: 3,324 of 3,515 web swings from the middle tile
+   of a side, 5 ticks apart, mostly south-west-north-east): each swing from the middle of the next side round her
+   (the way their template player went), off round to the next straight after. A swing the sim brings early (a
+   claw that didn't last-hit, a halberd that didn't kill) comes from the tile on the way that reaches her (a corner
+   tile): over the 1,200 sim raids 6,899 of 8,326 web swings from a middle tile. A web never lands on a tile a
+   player will stand on while it's up.
 9. A heal splat of her full P3 hitpoints on her P2 form as she died (the sim's P3 hitpoints read too early): gone.
 10. Players under her: no one's planned tile is under her, and while she spins webs (her tiles block players) every
     step goes round her. Swings from a tile that can't reach: 386 of 177,715 over the 1,200 raids.

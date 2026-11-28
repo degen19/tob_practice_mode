@@ -31,6 +31,33 @@ const HER = {
 };
 const SCYTHES = new Set([22325, 25736, 25739]);
 
+/** The middle tile beside each side of a footprint, south, west, north, east (her turn round during webs). */
+const SIDES = [
+  (f) => [f.x + (f.size >> 1), f.y - 1],
+  (f) => [f.x - 1, f.y + (f.size >> 1)],
+  (f) => [f.x + (f.size >> 1), f.y + f.size],
+  (f) => [f.x + f.size, f.y + (f.size >> 1)],
+];
+
+/** Which way round her a template player went during webs: 1 south-west-north-east, -1 the other way. */
+function webTurn(tpl, p, from) {
+  const v = tpl.npcs.find((x) => x.track.some((s) => s[1] === P3)).track;
+  const sideOf = (t) => {
+    let f = v[0]; for (const s of v) { if (s[0] > t) break; f = s; }
+    const dx = tpl.tiles[p][2 * t] - f[2], dy = tpl.tiles[p][2 * t + 1] - f[3];
+    return dy < 0 ? 0 : dx < 0 ? 1 : dy > 6 ? 2 : dx > 6 ? 3 : -1;
+  };
+  let turn = 0, last = -1;
+  for (const a of tpl.attacks) {
+    if (a[1] !== p || a[0] < from || a[0] > from + WEB_TICKS) continue;
+    const s = sideOf(a[0]);
+    if (s < 0) continue;
+    if (last >= 0 && s !== last) turn += ((s - last + 4) % 4) === 1 ? 1 : ((s - last + 4) % 4) === 3 ? -1 : 0;
+    last = s;
+  }
+  return turn < 0 ? -1 : 1;
+}
+
 const NYLOS = new Set([8381, 8382, 8383]);
 const HER_SWINGS = new Set(['Attack', 'Lightning', 'Purple crab', 'Blood heal']);
 const PURPLE_WINDOW = 16, LEAD = 2, WEB_TICKS = 44;
@@ -284,6 +311,29 @@ function convert(sim, tpl0, scale) {
       for (const a of mine) if (a.t >= sp.p3 && a.t <= end && melee(a.name)) desired[p][a.t] = beside(desired[p][a.t], footprint(a.t));
     }
   }
+  // webs: each swing from the middle tile of a side of her, straight off round to the next side's middle after it
+  // (Blert: 3,324 of 3,515 web swings from a side's middle, 5 ticks apart, mostly south-west-north-east)
+  const websAt = at(sim, 'Webs');
+  const spinning = (t) => websAt != null && t >= websAt && t <= websAt + WEB_TICKS;
+  if (websAt != null) {
+    const tplWebs = tpl.her.find((h) => h[2] === 'P3_WEBS')?.[0];
+    for (let p = 0; p < n; p++) {
+      const swings = acts.filter((a) => a.i === p && melee(a.name) && !a.key && spinning(a.t) && a.t <= end);
+      if (!swings.length) continue;
+      const f = footprint(swings[0].t);
+      const mid = (side) => SIDES[side](f);
+      const [x0, y0] = desired[p][websAt];
+      let at0 = 0, bd = Infinity;
+      SIDES.forEach((_, k) => { const [x, y] = mid(k); const d = Math.abs(x - x0) + Math.abs(y - y0); if (d < bd) { bd = d; at0 = k; } });
+      const dir = tplWebs != null ? webTurn(tpl, p, tplWebs) : 1;
+      let k = 0;
+      for (let t = websAt; t <= Math.min(end, websAt + WEB_TICKS); t++) {
+        while (k < swings.length && swings[k].t < t) k++;
+        if (k >= swings.length) break;
+        desired[p][t] = mid((((at0 + dir * k) % 4) + 4) % 4);
+      }
+    }
+  }
   // nobody under her (P2 on): a tile inside her goes to the nearest beside her
   for (let p = 0; p < n; p++) for (let t = sp.p1dies; t <= end; t++) {
     const f = footprint(t), [x, y] = desired[p][t];
@@ -300,6 +350,8 @@ function convert(sim, tpl0, scale) {
   const must = desired.map(() => Array(end + 1).fill(false));
   for (const a of acts) if (a.i < n && a.t <= end) must[a.i][a.t] = true;
   for (const run of dawnRuns) for (let t = 0; t <= Math.min(run.drop, sp.p1dies - 1, end); t++) must[run.i][t] = true;
+  const reach = desired.map(() => new Map());
+  for (const a of acts) if (a.t <= end && melee(a.name)) reach[a.i].set(a.t, [a.key ? crabFoot(a.key, a.t) ?? footprint(a.t) : footprint(a.t), a.name === 'CHALLY_SPEC']);
   desired.forEach((row, p) => {
     for (let t = end; t >= 1; t--) {
       if (!must[p][t]) continue;
@@ -311,19 +363,18 @@ function convert(sim, tpl0, scale) {
   });
   // each tick's step: the one (of up to two tiles) that ends nearest where they're going, never through her while she
   // spins webs (her tiles block them then)
-  const websAt = at(sim, 'Webs');
-  const spinning = (t) => websAt != null && t >= websAt && t <= websAt + WEB_TICKS;
   const inside = (x, y, f) => x >= f.x && x < f.x + f.size && y >= f.y && y < f.y + f.size;
-  const tiles = desired.map((row) => {
+  const tiles = desired.map((row, p) => {
     const out = [row[0]];
     for (let t = 1; t <= end; t++) {
+      const hit = reach[p].get(t);
       const [x0, y0] = out[t - 1], [x1, y1] = row[t];
       const f = spinning(t) && !inside(x0, y0, footprint(t)) ? footprint(t) : null;
       let best = [x0, y0], bd = Infinity;
       for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) {
         const x = x0 + dx, y = y0 + dy;
         if (f && (inside(x, y, f) || inside(x0 + Math.sign(dx), y0 + Math.sign(dy), f))) continue;
-        const d = Math.max(Math.abs(x1 - x), Math.abs(y1 - y)) * 100 + (Math.abs(x1 - x) + Math.abs(y1 - y)) * 10 + Math.abs(dx) + Math.abs(dy);
+        const d = (hit && !reaches([x, y], hit[0], hit[1]) ? 100000 : 0) + Math.max(Math.abs(x1 - x), Math.abs(y1 - y)) * 100 + (Math.abs(x1 - x) + Math.abs(y1 - y)) * 10 + Math.abs(dx) + Math.abs(dy);
         if (d < bd) { bd = d; best = [x, y]; }
       }
       out.push(best);
