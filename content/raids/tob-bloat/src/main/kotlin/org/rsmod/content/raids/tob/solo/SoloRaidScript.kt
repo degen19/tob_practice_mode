@@ -36,8 +36,8 @@ import org.rsmod.api.script.onOpNpc2
 import org.rsmod.api.script.onOpNpc3
 import org.rsmod.api.script.onPlayerLogin
 import org.rsmod.game.cheat.Cheat
+import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
-import org.rsmod.game.loc.LocShape
 import org.rsmod.game.movement.MoveSpeed
 import org.rsmod.map.CoordGrid
 import org.rsmod.map.util.Bounds
@@ -56,8 +56,8 @@ class SoloRaidModule : PluginModule() {
 
 /**
  * `::tob <room>` - the Theatre of Blood played solo, room by room, as in the game: you come in at the room's barrier
- * (with a supply chest beside you), Pass starts the room, and once its boss is dead you walk on out to the next room.
- * The supply chest also takes you to any room. `::tob stop` leaves.
+ * (a vyrewatch beside you takes you back to the lobby), Pass starts the room, and once its boss is dead you walk on out to
+ * the next room. `::tob stop` returns to the lobby.
  */
 private var Player.pvpTutorial by org.rsmod.api.player.vars.intVarp("varp.pvptut_active_tutorial")
 
@@ -129,6 +129,7 @@ constructor(
         for (loc in ROOM_LOCS) onOpLoc1(loc) { roomLoc(loc, it.loc.coords, 1) }
         onOpLoc1(PASSAGE) { passage(it.loc.coords) }
         onOpLoc2(PASSAGE) { passage(it.loc.coords) }
+        onOpNpc1(VYREWATCH) { returnToLobby(player, this) }
         onOpNpc1("npc.verzik_initial") { (raids.forPlayer(player) as? VerzikSolo)?.begin(this) }
         onOpNpc2("npc.verzik_initial") { (raids.forPlayer(player) as? VerzikSolo)?.begin(this) }
         onOpNpc3("npc.verzik_initial") { (raids.forPlayer(player) as? VerzikSolo)?.begin(this) }
@@ -137,17 +138,7 @@ constructor(
     private fun Cheat.tob() {
         val arg = args.getOrNull(0)?.lowercase() ?: return player.mes("::tob maiden | bloat | nylo | sote | xarpus | verzik | stop")
         when (arg) {
-            "stop" -> {
-                if (stopWatching(player)) return
-                val room = raids.byOwner[player.username] ?: return player.mes("You're not in the Theatre.")
-                close(room)
-                org.rsmod.api.player.SurgeCooldown.clear(player)
-                TobHud.close(player, d.eventBus)
-                protectedAccess.launch(player) { telejump(EXIT, TeleportType.Exempt) }
-                player.npcViewDistance = null
-                player.playerViewDistance = null
-                player.mes("You leave the Theatre.")
-            }
+            "stop" -> returnToLobby(player)
             "where" -> {
                 val room = raids.byOwner[player.username] ?: return player.mes("You're not in the Theatre.")
                 val r = room.real(player.coords)
@@ -164,6 +155,24 @@ constructor(
                 travel(player, room)
             }
         }
+    }
+
+    /** Leaves the room you're in (or stops watching a bot team) for the lobby; from inside a script ([access]) the jump is made there. */
+    private fun returnToLobby(player: Player, access: ProtectedAccess? = null) {
+        val dest = raids.lobby ?: EXIT
+        val watched = watching(player)
+        if (watched != null) {
+            endTrio(watched)
+        } else {
+            val room = raids.byOwner[player.username] ?: return player.mes("You're not in the Theatre.")
+            close(room)
+            org.rsmod.api.player.SurgeCooldown.clear(player)
+            TobHud.close(player, d.eventBus)
+            player.npcViewDistance = null
+            player.playerViewDistance = null
+        }
+        if (access != null) access.telejump(dest, TeleportType.Exempt) else protectedAccess.launch(player) { telejump(dest, TeleportType.Exempt) }
+        player.mes("You return to the lobby.")
     }
 
     /**
@@ -225,14 +234,16 @@ constructor(
         logger.info { "tob $room: instance cycle from clock ${solo.anchor} (built ${solo.builtAt})" }
         solo.build()
         if (System.getenv("TOB_MAPDUMP") != null) dumpMap(solo)
-        val (chestAt, angle) = solo.chest
-        d.locRepo.add(solo.at(chestAt), CHEST, Int.MAX_VALUE, angle, LocShape.CentrepieceStraight)
+        val guard = Npc(VYREWATCH, solo.at(solo.chest.first))
+        d.npcRepo.add(guard, Int.MAX_VALUE)
+        guard.respawns = false
+        d.instances.attachNpc(session.id, guard)
         player.npcViewDistance = VIEW_DISTANCE
         player.playerViewDistance = VIEW_DISTANCE
         TobHud.open(player, d.eventBus)
         val dest = solo.at(solo.entry)
         if (access != null) access.telejump(dest, TeleportType.Exempt) else protectedAccess.launch(player) { telejump(dest, TeleportType.Exempt) }
-        player.mes("${room.label}. Pass the barrier when you're ready; the supply chest is beside you.")
+        player.mes("${room.label}. Pass the barrier when you're ready: the potato's Gear has your supplies, and the vyrewatch takes you back to the lobby.")
         logger.info { "tob solo: ${player.username} -> $room (instance ${session.id})" }
     }
 
@@ -430,14 +441,6 @@ constructor(
             org.rsmod.game.entity.util.PathingEntityCommon.telejump(bot, d.collision, room.at(room.entry))
         }
         trios[room] = crewFor(room, crew.map { (seat, bot) -> bot to seat.role }, "") ?: return false
-        return true
-    }
-
-    private fun stopWatching(player: Player): Boolean {
-        val room = watching(player) ?: return false
-        endTrio(room)
-        protectedAccess.launch(player) { telejump(EXIT, TeleportType.Exempt) }
-        player.mes("You stop watching.")
         return true
     }
 
@@ -658,7 +661,7 @@ constructor(
     }
 
     companion object {
-        const val CHEST = "loc.tob_midway_chest_closed"
+        const val VYREWATCH = "npc.tob_lobby_vyrewatch"
 
         /** NPCs and players in a room drawn from this far (3x the game's 15): the whole room, end to end. */
         const val VIEW_DISTANCE = 45

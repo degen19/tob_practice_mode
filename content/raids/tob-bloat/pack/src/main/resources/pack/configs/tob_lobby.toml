@@ -66,3 +66,12 @@ defaultMode = "None"
 wanderRange = 0
 actions = { ops = [{ text = "Talk-to" }] }
 examine = "Knows what's behind the castle door. Ask him."
+
+# Outside every room's barrier: takes you back to the lobby.
+[[npc]]
+id = "npc.tob_lobby_vyrewatch"
+inherit = "npc.myq4_vyrewatch_1_crowd"
+defaultMode = "None"
+wanderRange = 0
+actions = { ops = [{ text = "Return to lobby" }] }
+examine = "Return to lobby: back to the lobby to change your team, gear or room."

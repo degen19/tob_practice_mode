@@ -1,18 +1,18 @@
 package org.rsmod.content.raids.tob.solo
 
-import org.rsmod.api.player.output.mes
 import jakarta.inject.Inject
 import jakarta.inject.Singleton
 import org.rsmod.api.death.PlayerDeathOverrideHook
-import org.rsmod.api.player.deathResetTimers
-import org.rsmod.api.player.disablePrayers
-import org.rsmod.api.player.stat.baseHitpointsLvl
-import org.rsmod.api.player.stat.statRestoreAll
 import org.rsmod.api.instances.InstanceManager
 import org.rsmod.api.npc.hit.NpcHitLandHook
 import org.rsmod.api.npc.hit.NpcHitpointsFloorHook
+import org.rsmod.api.player.deathResetTimers
+import org.rsmod.api.player.disablePrayers
 import org.rsmod.api.player.hit.modifier.PlayerHitModifier
+import org.rsmod.api.player.output.mes
 import org.rsmod.api.player.protect.ProtectedAccess
+import org.rsmod.api.player.stat.baseHitpointsLvl
+import org.rsmod.api.player.stat.statRestoreAll
 import org.rsmod.api.random.GameRandom
 import org.rsmod.api.repo.loc.LocRepository
 import org.rsmod.api.repo.npc.NpcRepository
@@ -109,6 +109,12 @@ class SoloRaids {
 
     /** Set by [SoloRaidScript]: the potato's Restart room for someone watching a bot trio (false: they aren't). */
     var rewatch: ((Player) -> Boolean)? = null
+
+    /** Set by the lobby once it's built: its spawn tile, where leaving the Theatre takes you. */
+    var lobby: CoordGrid? = null
+
+    /** Set by [org.rsmod.content.raids.tob.bloat.SupplyChest]: its supplies list (the potato's Gear opens it). */
+    var supplies: (suspend (ProtectedAccess) -> Unit)? = null
 
     fun isLive(room: SoloRoom): Boolean = byOwner[room.owner.username] === room
 

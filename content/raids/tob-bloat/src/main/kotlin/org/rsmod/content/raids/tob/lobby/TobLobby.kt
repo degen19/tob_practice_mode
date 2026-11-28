@@ -108,6 +108,7 @@ constructor(private val d: SoloDeps, private val raids: SoloRaids, private val b
         }
         val at = CoordGrid(region.southWest.x, region.southWest.z, 0)
         base = at
+        raids.lobby = at.translate(SPAWN.first, SPAWN.second)
         for ((npc, spot) in BOSS_SPOTS) place(npc, at, spot)
         place(TEACHER, at, CENTRE)
         place(TM19, at, TM19_SPOT)
