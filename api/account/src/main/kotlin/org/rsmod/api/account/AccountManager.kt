@@ -11,6 +11,7 @@ import org.rsmod.api.account.loader.request.AccountLoadRequest
 import org.rsmod.api.account.saver.AccountSavingService
 import org.rsmod.api.account.saver.request.AccountSaveCallback
 import org.rsmod.api.account.saver.request.AccountSaveRequest
+import org.rsmod.api.account.saver.request.AccountSaveResponse
 import org.rsmod.game.entity.Player
 import org.rsmod.game.world.WorldType
 
@@ -25,7 +26,12 @@ constructor(
 ) {
     private val pendingSaves = ArrayList<Pair<Player, AccountSaveCallback>>()
 
+    /** Queues [player]'s save; a headless bot (no account row: a non-positive character id) is never written. */
     public fun save(player: Player, callback: AccountSaveCallback) {
+        if (player.characterId <= 0) {
+            callback(AccountSaveResponse.Success(player))
+            return
+        }
         pendingSaves += player to callback
     }
 
