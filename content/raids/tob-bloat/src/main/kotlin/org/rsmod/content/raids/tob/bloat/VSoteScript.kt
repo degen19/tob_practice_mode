@@ -18,6 +18,7 @@ import org.rsmod.api.player.output.mes
 import org.rsmod.api.player.protect.ProtectedAccessLauncher
 import org.rsmod.api.player.vars.varMoveSpeed
 import org.rsmod.api.random.GameRandom
+import org.rsmod.api.repo.loc.LocRepository
 import org.rsmod.api.repo.npc.NpcRepository
 import org.rsmod.api.repo.obj.ObjRepository
 import org.rsmod.api.repo.world.WorldRepository
@@ -38,8 +39,8 @@ import org.rsmod.plugin.scripts.ScriptContext
 
 /**
  * `::sote [1-5] [way]` - a private Sotetseg room playing the sim's plan live with a team of bots (5 unless given) that
- * crosses the mazes its way (pneck, the default; shark, noneck, redemption, run: [SotePlan.of]); you watch from south of
- * the stack. `::sote [1-5] [way] median | top10 | top50 | slow | time 3:01.2 | seed x12 | stats | stop | log`, as
+ * crosses the mazes its way (pneck, the default; shark, noneck, redemption, run: [SotePlan.of]); you watch from the west
+ * wall, the camera yours. `::sote [1-5] [way] median | top10 | top50 | slow | time 3:01.2 | seed x12 | stats | stop | log`, as
  * `::maiden`; top50 plays a raid whose time is in Blert's top 50 for the team size.
  * `SOTE_SELFTEST=s1,3/s2,2/run/s3,...` plays the seeds in turn (team/way/seed; 5s and pneck if not given).
  */
@@ -49,6 +50,7 @@ constructor(
     private val instances: InstanceManager,
     private val npcRepo: NpcRepository,
     private val objRepo: ObjRepository,
+    private val locRepo: LocRepository,
     private val worldRepo: WorldRepository,
     private val mapClock: MapClock,
     private val random: GameRandom,
@@ -63,6 +65,7 @@ constructor(
 
     override fun ScriptContext.startup() {
         onEvent<GameLifecycle.StartCycle> { tickRooms() }
+        onEvent<GameLifecycle.LateCycle> { for (room in rooms.values) room.late() }
         onCommand("sote") {
             desc = "ToB Sotetseg: the sim's plan run live with bots - ::sote [1-5] [way] [median | top10 | top50 | slow | time m:ss.t | seed s | stats | stop]"
             invalidArgs = "Usage: ::sote [1-5] [pneck | shark | noneck | redemption | run] [median | top10 | top50 | slow | time m:ss.t | seed s | stats | stop]"
@@ -129,7 +132,7 @@ constructor(
         npc.moveRestrict = MoveRestrict.PassThru
         npc.ignoreCombatInteractions = true
         instances.attachNpc(session.id, npc)
-        val room = SoteLiveRoom(session, npc, seed, team, way, ::at, npcRepo, objRepo, worldRepo, npcHits, playerHits, protectedAccess, bots, look)
+        val room = SoteLiveRoom(session, npc, seed, team, way, ::at, npcRepo, objRepo, locRepo, worldRepo, npcHits, playerHits, protectedAccess, bots, look)
         for (p in room.engine.ps) {
             val bot = bots.spawn(p.name, room.outsideTile(p.i), emptyList(), emptyList()) ?: continue
             bot.varMoveSpeed = MoveSpeed.Run
@@ -139,9 +142,6 @@ constructor(
         if (player != null) {
             protectedAccess.launch(player) {
                 telejump(at(SoteRules.WATCH_X, SoteRules.WATCH_Y), TeleportType.Exempt)
-                // a fixed camera from behind the entry, over the room: the team coming in through the barrier, then the fight
-                Camera.camMoveTo(player, at(SoteRules.CAM_EYE_X, SoteRules.CAM_EYE_Y), SoteRules.CAM_EYE_H, CAM_RATE, CAM_RATE2)
-                Camera.camLookAt(player, at(SoteRules.CAM_LOOK_X, SoteRules.CAM_LOOK_Y), 0, CAM_RATE, CAM_RATE2)
             }
             player.npcViewDistance = 32
             player.mes("Sotetseg ($team-man, $way, the sim's plan, live) - seed $seed.")
@@ -183,9 +183,6 @@ constructor(
     }
 
     private companion object {
-        /** The camera's cut (the cutscenes' rates; 0/0 draws nothing). */
-        const val CAM_RATE = 232
-        const val CAM_RATE2 = 100
         const val INSTANCE_KEY = "vsote"
         const val SELF_TEST = "selftest"
         val EXIT = CoordGrid(3222, 3218, 0)

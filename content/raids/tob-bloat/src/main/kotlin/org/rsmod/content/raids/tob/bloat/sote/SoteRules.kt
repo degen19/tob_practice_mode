@@ -76,6 +76,10 @@ object SoteRules {
     const val SHARK_TICK = 12
     val SHARK_Y = mapOf(5 to 4327, 4 to 4327, 3 to 4326, 2 to 4326, 1 to 4325)
 
+    /** The tornado that walks the maze's path once anyone is past its third row. */
+    const val TORNADO = "npc.tob_sotetseg_creeper"
+    const val TORNADO_ROW = 3
+
     /** Under: out of sight (the shadow realm isn't copied). */
     const val UNDER_X = 3320
     const val UNDER_Y = 4345
@@ -84,12 +88,6 @@ object SoteRules {
     const val WATCH_X = 3269
     const val WATCH_Y = 4319
 
-    /** The fixed camera: high behind the entry barrier, looking north up the room to her. */
-    const val CAM_EYE_X = 3279
-    const val CAM_EYE_Y = 4302
-    const val CAM_EYE_H = 1150
-    const val CAM_LOOK_X = 3279
-    const val CAM_LOOK_Y = 4318
     const val ATTACK = "seq.tob_sotetseg_attack_ranged"
     const val MELEE = "seq.tob_sotetseg_attack_melee"
     const val DEATH = "seq.tob_sotetseg_death"

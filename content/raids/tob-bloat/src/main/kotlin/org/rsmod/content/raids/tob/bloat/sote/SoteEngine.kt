@@ -37,7 +37,14 @@ class SoteEngine(
         /** A maze procs: [under] goes under, the rest stall from [m] + 1 to [m] + 7; she's back on [back]. */
         fun maze(t: Int, n: Int, m: Int, under: P?, back: Int) {}
 
-        fun stallOut(t: Int, p: P) {}
+        /** Out of a stall: the hits they took in it, in order (the last one procced their phoenix necklace if [pneck]). */
+        fun stallOut(t: Int, p: P, hits: List<Int>, pneck: Boolean) {}
+
+        /** An orb landing on [from] splits to [to], landing on [lands]. */
+        fun orbSplit(t: Int, from: P, to: P, style: String, lands: Int) {}
+
+        /** The death ball lands on [on] (all of them when shared). */
+        fun ballLands(t: Int, on: List<P>) {}
 
         /** A maze everyone runs: [under] lights the path, the others follow [run]'s route. */
         fun mazeRun(t: Int, n: Int, run: Run, under: P?) {}
@@ -301,6 +308,20 @@ class SoteEngine(
     }
 
     private fun stallDead(h: Int, p: P, runners: Int) = stallSkip(h, p.pnecks > 0, runners).second == null
+
+    /** The hits a stall puts on them, in order, up to the one that kills them or procs their phoenix necklace. */
+    private fun stallHits(hp: Int, hasPneck: Boolean, runners: Int): List<Int> {
+        val q = ArrayList<Int>()
+        q += mazeDmg(hp)
+        repeat(max(0, runners - 1)) { q += splashDmg(hp) }
+        repeat(STALL_TICKS - 1) { q += mazeDmg(hp) }
+        var cur = hp
+        q.forEachIndexed { k, d ->
+            cur -= d
+            if (cur <= 0 || (hasPneck && cur <= PNECK_AT)) return q.take(k + 1)
+        }
+        return q
+    }
 
     private fun startMaze(t: Int) {
         mazes += t
@@ -688,17 +709,18 @@ class SoteEngine(
                     }
                     p.redeemNow = false
                     L("t$t ${p.name} out of the stall (Redemption): $before -> ${if (end <= 0) "DEAD" else end}, sips a restore (${p.restores} left)")
-                    events.stallOut(t, p)
+                    events.stallOut(t, p, List(STALL_TICKS * max(1, nRun)) { before }, false)
                     continue
                 }
                 val before = p.hp
+                val taken = stallHits(p.hp, p.pnecks > 0, nRun)
                 val (h, pneck) = stallSkip(p.hp, p.pnecks > 0, nRun)
                 p.hp = h
                 if (pneck == true) p.pnecks--
                 if (pneck == null) p.dead = true
                 L("t$t ${p.name} out of the stall: $before -> ${if (pneck == null) "DEAD" else h}${if (pneck == true) " (phoenix necklace)" else ""}")
                 if (pneck == true) afterPneck(t, p)
-                events.stallOut(t, p)
+                events.stallOut(t, p, taken, pneck == true)
             }
             pendingStall = null
         }
@@ -1028,7 +1050,10 @@ class SoteEngine(
             for (o in mine.filter { !it.split }) {
                 val others = alive().filter { it !== p }.toMutableList().also { shuffle(it) }.take(2)
                 val styles = if (rng.random() < 0.5) listOf("range", "mage") else listOf("mage", "range")
-                others.forEachIndexed { j, q -> orbs += Orb(t + ORB_DELAY, q, styles[j], true) }
+                others.forEachIndexed { j, q ->
+                    orbs += Orb(t + ORB_DELAY, q, styles[j], true)
+                    events.orbSplit(t, p, q, styles[j], t + ORB_DELAY)
+                }
                 if (others.isNotEmpty()) L("t$t orb splits -> ${others.withIndex().joinToString { (j, q) -> "${q.name} (${styles[j]})" }}, landing t${t + ORB_DELAY}")
             }
         }
@@ -1084,9 +1109,11 @@ class SoteEngine(
         if (splits(live, share)) {
             for (q in live) q.hp -= share
             L("t$t death ball shared by $n: $share each")
+            events.ballLands(t, live)
             return
         }
         if (tgt == null) return
+        events.ballLands(t, listOf(tgt))
         val c = live.filter { it !== tgt && it.hp > 1 && !meleeable(it, t) }.minByOrNull { it.hp }
         val give = if (c != null) min(floor(c.hp * 0.75).toInt(), 99) else 0
         if (tgt.rests > 0) {
