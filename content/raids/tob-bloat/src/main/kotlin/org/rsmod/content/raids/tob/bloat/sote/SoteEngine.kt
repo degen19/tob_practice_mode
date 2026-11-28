@@ -37,7 +37,14 @@ class SoteEngine(
         /** A maze procs: [under] goes under, the rest stall from [m] + 1 to [m] + 7; she's back on [back]. */
         fun maze(t: Int, n: Int, m: Int, under: P?, back: Int) {}
 
-        fun stallOut(t: Int, p: P) {}
+        /** Out of a stall: the hits they took in it, in order (the last one procced their phoenix necklace if [pneck]). */
+        fun stallOut(t: Int, p: P, hits: List<Int>, pneck: Boolean) {}
+
+        /** An orb landing on [from] splits to [to], landing on [lands]. */
+        fun orbSplit(t: Int, from: P, to: P, style: String, lands: Int) {}
+
+        /** The death ball lands on [on] (all of them when shared). */
+        fun ballLands(t: Int, on: List<P>) {}
 
         /** A maze everyone runs: [under] lights the path, the others follow [run]'s route. */
         fun mazeRun(t: Int, n: Int, run: Run, under: P?) {}
@@ -110,6 +117,7 @@ class SoteEngine(
         var eatKeep = 0
         var eatReady = 0
         var sipReady = 0
+        var orbDownAt = -1
         var duoBackingUp = false
         var ran = -1
 
@@ -302,6 +310,20 @@ class SoteEngine(
 
     private fun stallDead(h: Int, p: P, runners: Int) = stallSkip(h, p.pnecks > 0, runners).second == null
 
+    /** The hits a stall puts on them, in order, up to the one that kills them or procs their phoenix necklace. */
+    private fun stallHits(hp: Int, hasPneck: Boolean, runners: Int): List<Int> {
+        val q = ArrayList<Int>()
+        q += mazeDmg(hp)
+        repeat(max(0, runners - 1)) { q += splashDmg(hp) }
+        repeat(STALL_TICKS - 1) { q += mazeDmg(hp) }
+        var cur = hp
+        q.forEachIndexed { k, d ->
+            cur -= d
+            if (cur <= 0 || (hasPneck && cur <= PNECK_AT)) return q.take(k + 1)
+        }
+        return q
+    }
+
     private fun startMaze(t: Int) {
         mazes += t
         L("t$t *** MAZE ${mazes.size} (${if (mazes.size == 1) "66.6" else "33.3"}%) ***")
@@ -347,10 +369,15 @@ class SoteEngine(
             p.thrallBack = true
             p.lbFreezeUntil = m + 8
             p.redeemNow = p.how[mazes.size - 1] == "redemption" && p.restores >= 1
+            if (p.redeemNow && team == 1) {
+                p.orbDownAt = m - 3
+                p.next = m + 10
+                continue
+            }
             if (p.redeemNow) {
                 if (p.hp > REDEMPTION_HP) L("t$t ${p.name} wasn't down to $REDEMPTION_HP HP at the proc (${p.hp}) - orbs down late")
                 p.hp = REDEMPTION_HP
-                p.next = if (team == 1) m + 10 else m + 11
+                p.next = m + 11
                 continue
             }
             if (p.sharks > 0 && stallSkip(p.hp, p.pnecks > 0, stallers.size).second == null) {
@@ -671,6 +698,12 @@ class SoteEngine(
         t++
         val t = t
         if (blocked && t >= attackable) blocked = false
+        for (p in alive()) if (p.orbDownAt == t) {
+            val old = p.hp
+            p.hp = REDEMPTION_HP
+            p.orbDownAt = -1
+            L("t$t ${p.name} locator orbs down to $REDEMPTION_HP HP after the under portion (from $old)")
+        }
         mazeEats(t)
         sharkSkips(t)
         pendingStall?.let { (at, runners) ->
@@ -688,17 +721,18 @@ class SoteEngine(
                     }
                     p.redeemNow = false
                     L("t$t ${p.name} out of the stall (Redemption): $before -> ${if (end <= 0) "DEAD" else end}, sips a restore (${p.restores} left)")
-                    events.stallOut(t, p)
+                    events.stallOut(t, p, List(STALL_TICKS * max(1, nRun)) { before }, false)
                     continue
                 }
                 val before = p.hp
+                val taken = stallHits(p.hp, p.pnecks > 0, nRun)
                 val (h, pneck) = stallSkip(p.hp, p.pnecks > 0, nRun)
                 p.hp = h
                 if (pneck == true) p.pnecks--
                 if (pneck == null) p.dead = true
                 L("t$t ${p.name} out of the stall: $before -> ${if (pneck == null) "DEAD" else h}${if (pneck == true) " (phoenix necklace)" else ""}")
                 if (pneck == true) afterPneck(t, p)
-                events.stallOut(t, p)
+                events.stallOut(t, p, taken, pneck == true)
             }
             pendingStall = null
         }
@@ -850,10 +884,11 @@ class SoteEngine(
         val ph = mazes.size
         val near = hp - stopAt <= max * ORB_DOWN_AT
         for (p in alive()) {
-            if (p.how[ph] != "redemption" || p.hp <= REDEMPTION_HP || p.restores < 1 || t < p.prayOffUntil || t < p.healFrom || meleeable(p, t)) continue
+            val downTo = if (team == 1) SOLO_PROC_HP else REDEMPTION_HP
+            if (p.how[ph] != "redemption" || p.hp <= downTo || p.restores < 1 || t < p.prayOffUntil || t < p.healFrom || meleeable(p, t)) continue
             if (p.orbedDown == ph) {
-                p.hp = REDEMPTION_HP
-                L("t$t ${p.name} locator orbs back down to $REDEMPTION_HP HP")
+                p.hp = downTo
+                L("t$t ${p.name} locator orbs back down to $downTo HP")
                 continue
             }
             val done = p.vengPops[ph] >= 2 || (p.vengPops[ph] >= 1 && p.hp <= ORB_MAX) || p.hp <= ORB_MAX
@@ -867,8 +902,8 @@ class SoteEngine(
                 L("t$t ${p.name} heals other ${q.name} (+$give) before orbing down: ${p.name} ${p.hp}, ${q.name} ${q.hp}")
                 break
             }
-            L("t$t ${p.name} locator orbs down to $REDEMPTION_HP HP for the redemption skip (from ${p.hp}; ${p.vengPops[ph]} veng${if (p.vengPops[ph] == 1) "" else "s"})")
-            p.hp = REDEMPTION_HP
+            L("t$t ${p.name} locator orbs down to $downTo HP for the redemption skip (from ${p.hp}; ${p.vengPops[ph]} veng${if (p.vengPops[ph] == 1) "" else "s"})")
+            p.hp = downTo
             p.orbedDown = ph
         }
     }
@@ -1028,7 +1063,10 @@ class SoteEngine(
             for (o in mine.filter { !it.split }) {
                 val others = alive().filter { it !== p }.toMutableList().also { shuffle(it) }.take(2)
                 val styles = if (rng.random() < 0.5) listOf("range", "mage") else listOf("mage", "range")
-                others.forEachIndexed { j, q -> orbs += Orb(t + ORB_DELAY, q, styles[j], true) }
+                others.forEachIndexed { j, q ->
+                    orbs += Orb(t + ORB_DELAY, q, styles[j], true)
+                    events.orbSplit(t, p, q, styles[j], t + ORB_DELAY)
+                }
                 if (others.isNotEmpty()) L("t$t orb splits -> ${others.withIndex().joinToString { (j, q) -> "${q.name} (${styles[j]})" }}, landing t${t + ORB_DELAY}")
             }
         }
@@ -1084,9 +1122,11 @@ class SoteEngine(
         if (splits(live, share)) {
             for (q in live) q.hp -= share
             L("t$t death ball shared by $n: $share each")
+            events.ballLands(t, live)
             return
         }
         if (tgt == null) return
+        events.ballLands(t, listOf(tgt))
         val c = live.filter { it !== tgt && it.hp > 1 && !meleeable(it, t) }.minByOrNull { it.hp }
         val give = if (c != null) min(floor(c.hp * 0.75).toInt(), 99) else 0
         if (tgt.rests > 0) {
@@ -1275,6 +1315,12 @@ class SoteEngine(
                 29 to mapOf(0 to 'S', 3 to 'S', 6 to 'S', 8 to 'G'),
             )
         const val REDEMPTION_HP = 1
+
+        /**
+         * Solos (owner): before the proc they orb down to 5, not 1 - HP for any chip while under - then locator orb down
+         * to 1 once up from the under portion (3 ticks before they step off) and cross on Redemption and NPC Contact.
+         */
+        const val SOLO_PROC_HP = 5
         const val REDEMPTION_HEAL = 24
         const val ORB_DOWN_AT = 0.09
 

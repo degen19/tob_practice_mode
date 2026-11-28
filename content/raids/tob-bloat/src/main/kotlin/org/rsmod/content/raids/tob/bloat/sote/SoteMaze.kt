@@ -88,6 +88,12 @@ object SoteMaze {
 
     private val MOVES = listOf(-2 to -2, -1 to -2, 0 to -2, 1 to -2, 2 to -2, -2 to -1, -1 to -1, 0 to -1, 1 to -1, 2 to -1, -2 to 0, -1 to 0, 1 to 0, 2 to 0)
 
+    /** Every safe tile in walking order, from the first on row A (what the tornado follows). */
+    fun path(m: Array<BooleanArray>, seed: List<Int>): List<Tile> {
+        val w = pathOrder(m, seed)
+        return (0 until W).flatMap { x -> (0 until H).filter { w[x][it] > 0 }.map { y -> Tile(x, y) } }.sortedBy { w[it.x][it.y] }
+    }
+
     /** The trainer's best route: each tick, the safe tile furthest along the path a move of up to 2 reaches safely. */
     fun bestRoute(m: Array<BooleanArray>, seed: List<Int>): List<Tile> {
         val w = pathOrder(m, seed)
