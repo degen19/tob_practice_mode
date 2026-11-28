@@ -382,7 +382,10 @@ class MaidenCrew(
         return (b.raw() == "qfz" && !qfzSpent(b)) || (b.raw() == "tfz" && !tfzSpent(b, b.next))
     }
 
-    /** Waiting on the 30s, a four's freezer stands where its barrage reaches every 1 and 2 as they come in. */
+    /**
+     * Waiting on the 30s with 50s freezes still to make, a four's freezer stands where its barrage reaches every 1 and 2
+     * as they come in; its freezes made, it goes back out to its tbow spot as the trio mage does.
+     */
     private fun coverSpawns(b: Bot) {
         val here = room.real(b.player.coords)
         if (covers(here)) return
@@ -396,7 +399,7 @@ class MaidenCrew(
         room.inArena(c) && !room.under(c) && !room.blocked(c) && !room.bloody(c) &&
             FIRST_SPAWNS.all { spot -> room.spawnAt(spot).let { s -> SoloRoom.boxDist(c.x, c.z, s.x, s.z, s.x + 1, s.z + 1) in 1..CAST_RANGE && bots.sees(room.at(c), room.at(s), 2) } }
 
-    private fun awaits30s(b: Bot): Boolean = quad && b.role.freezes && room.phase == WAVES.size - 1
+    private fun awaits30s(b: Bot): Boolean = quad && b.role.freezes && room.phase == WAVES.size - 1 && !qfzSpent(b)
 
     private fun dodge(b: Bot): Boolean {
         val p = b.player
