@@ -35,3 +35,8 @@ before claiming a gain: the server's mean moves by about ±0.5 ticks between 60-
 - **The Nylo boss** goes into the sim.
 - **PPO:** a learner started from Blert players (one part per role), with a penalty for drifting from them, so it stays
   human.
+
+**From the Admin (515271e, held):** the PC doesn't run main's NyloCrew. Live is still `NyloCrew.kt`, `NyloPolicy.kt` and
+`nylo_policy.tsv` as of 05aa401 (snapE, no specs). Compare against that, not main. Admin's interleaved A/B, 48 trio
+rooms a side, same machine: live mean 296.00, median 296, 17 at 2:55.2 or better, 34 at 2:57.6 or better; 515271e
+(main's spec crew + the new weights) 297.33, 296, 9, 28. The spec build has to beat 05aa401 before it goes live.
