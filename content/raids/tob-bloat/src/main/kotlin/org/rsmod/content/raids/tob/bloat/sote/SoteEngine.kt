@@ -117,6 +117,7 @@ class SoteEngine(
         var eatKeep = 0
         var eatReady = 0
         var sipReady = 0
+        var orbDownAt = -1
         var duoBackingUp = false
         var ran = -1
 
@@ -368,10 +369,15 @@ class SoteEngine(
             p.thrallBack = true
             p.lbFreezeUntil = m + 8
             p.redeemNow = p.how[mazes.size - 1] == "redemption" && p.restores >= 1
+            if (p.redeemNow && team == 1) {
+                p.orbDownAt = m - 3
+                p.next = m + 10
+                continue
+            }
             if (p.redeemNow) {
                 if (p.hp > REDEMPTION_HP) L("t$t ${p.name} wasn't down to $REDEMPTION_HP HP at the proc (${p.hp}) - orbs down late")
                 p.hp = REDEMPTION_HP
-                p.next = if (team == 1) m + 10 else m + 11
+                p.next = m + 11
                 continue
             }
             if (p.sharks > 0 && stallSkip(p.hp, p.pnecks > 0, stallers.size).second == null) {
@@ -692,6 +698,12 @@ class SoteEngine(
         t++
         val t = t
         if (blocked && t >= attackable) blocked = false
+        for (p in alive()) if (p.orbDownAt == t) {
+            val old = p.hp
+            p.hp = REDEMPTION_HP
+            p.orbDownAt = -1
+            L("t$t ${p.name} locator orbs down to $REDEMPTION_HP HP after the under portion (from $old)")
+        }
         mazeEats(t)
         sharkSkips(t)
         pendingStall?.let { (at, runners) ->
@@ -872,10 +884,11 @@ class SoteEngine(
         val ph = mazes.size
         val near = hp - stopAt <= max * ORB_DOWN_AT
         for (p in alive()) {
-            if (p.how[ph] != "redemption" || p.hp <= REDEMPTION_HP || p.restores < 1 || t < p.prayOffUntil || t < p.healFrom || meleeable(p, t)) continue
+            val downTo = if (team == 1) SOLO_PROC_HP else REDEMPTION_HP
+            if (p.how[ph] != "redemption" || p.hp <= downTo || p.restores < 1 || t < p.prayOffUntil || t < p.healFrom || meleeable(p, t)) continue
             if (p.orbedDown == ph) {
-                p.hp = REDEMPTION_HP
-                L("t$t ${p.name} locator orbs back down to $REDEMPTION_HP HP")
+                p.hp = downTo
+                L("t$t ${p.name} locator orbs back down to $downTo HP")
                 continue
             }
             val done = p.vengPops[ph] >= 2 || (p.vengPops[ph] >= 1 && p.hp <= ORB_MAX) || p.hp <= ORB_MAX
@@ -889,8 +902,8 @@ class SoteEngine(
                 L("t$t ${p.name} heals other ${q.name} (+$give) before orbing down: ${p.name} ${p.hp}, ${q.name} ${q.hp}")
                 break
             }
-            L("t$t ${p.name} locator orbs down to $REDEMPTION_HP HP for the redemption skip (from ${p.hp}; ${p.vengPops[ph]} veng${if (p.vengPops[ph] == 1) "" else "s"})")
-            p.hp = REDEMPTION_HP
+            L("t$t ${p.name} locator orbs down to $downTo HP for the redemption skip (from ${p.hp}; ${p.vengPops[ph]} veng${if (p.vengPops[ph] == 1) "" else "s"})")
+            p.hp = downTo
             p.orbedDown = ph
         }
     }
@@ -1302,6 +1315,12 @@ class SoteEngine(
                 29 to mapOf(0 to 'S', 3 to 'S', 6 to 'S', 8 to 'G'),
             )
         const val REDEMPTION_HP = 1
+
+        /**
+         * Solos (owner): before the proc they orb down to 5, not 1 - HP for any chip while under - then locator orb down
+         * to 1 once up from the under portion (3 ticks before they step off) and cross on Redemption and NPC Contact.
+         */
+        const val SOLO_PROC_HP = 5
         const val REDEMPTION_HEAL = 24
         const val ORB_DOWN_AT = 0.09
 
