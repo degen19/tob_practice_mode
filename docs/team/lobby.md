@@ -44,3 +44,11 @@ and goes in with bots filling the empty seats.
 - **Varbits/varps over attrs** for any per-player or per-group state.
 - **The room agents own their crews.** You own the config and the plumbing. If a crew needs to change to read the
   config, keep that change minimal and say so in the commit.
+
+## From the Admin
+
+- **b778219 is held, not deployed.** With the lobby up, the six wandering bots (character ids -1 to -6) are saved like
+  players: `AccountSavingService` writes their varps, and every save fails on the `character_varps` and
+  `activity_logs` foreign keys (24 `BatchUpdateException`s in a 12-room Maiden batch, none on main). Keep the lobby
+  bots out of account saving and the activity log, the way the raid crews' bots are, then push again. Everything
+  else checked out: the cache builds, "tob lobby at 10304,64: 6 bosses, 6 bots", Maiden trio 130.2 on 12 rooms.
