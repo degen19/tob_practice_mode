@@ -12,6 +12,7 @@ dependencies {
 dependencies {
     implementation(projects.api.net)
     implementation(projects.content.other.bots)
+    implementation(projects.content.other.specialWeapons)
     implementation(libs.rsprot.api)
 }
 

@@ -17,6 +17,10 @@ object VerzikBlert {
 
     class Her(val t: Int, val npc: Int, val name: String, val target: Int)
 
+    class Drop(val t: Int, val x: Int, val y: Int, val dropped: Boolean)
+
+    class Dawn(val t: Int, val player: Int, val damage: Int)
+
     class Step(val t: Int, val type: Int, val x: Int, val y: Int, val hp: Int, val base: Int)
 
     class Track(val spawn: Int, val death: Int?, val steps: List<Step>) {
@@ -29,6 +33,7 @@ object VerzikBlert {
         val end: Int,
         val rank: Int,
         private val tiles: List<IntArray>,
+        private val hitpoints: List<IntArray>,
         val gear: List<List<Triple<Int, Int, Int>>>,
         val overheads: List<List<Pair<Int, String>>>,
         val npcs: List<Track>,
@@ -36,6 +41,9 @@ object VerzikBlert {
         val spells: List<Spell>,
         val her: List<Her>,
         val marks: List<Pair<Int, String>>,
+        val drops: List<Drop>,
+        val dawns: List<Dawn>,
+        val yellows: List<Pair<Int, List<Pair<Int, Int>>>>,
     ) {
         val players get() = tiles.size
         val time get() = MaidenIndex.fmt(end)
@@ -43,6 +51,9 @@ object VerzikBlert {
         fun x(player: Int, t: Int): Int = tiles[player][2 * t.coerceIn(0, end)]
 
         fun y(player: Int, t: Int): Int = tiles[player][2 * t.coerceIn(0, end) + 1]
+
+        /** The player's hitpoints on tick [t] (Blert has them for the players who recorded), -1 when not known. */
+        fun hp(player: Int, t: Int): Int = hitpoints.getOrNull(player)?.getOrNull(t) ?: -1
 
         fun markAt(name: String): Int? = marks.firstOrNull { it.second == name }?.first
     }
@@ -60,6 +71,7 @@ object VerzikBlert {
             r["end"].asInt(),
             rank,
             r["tiles"].map { row -> IntArray(row.size()) { row[it].asInt() } },
+            r["hp"].map { row -> IntArray(row.size()) { row[it].asInt() } },
             r["gear"].map { p -> p.map { Triple(it[0].asInt(), it[1].asInt(), it[2].asInt()) } },
             r["prayers"].map { p -> p.map { it[0].asInt() to it[1].asText() } },
             r["npcs"].map { n ->
@@ -73,6 +85,9 @@ object VerzikBlert {
             r["spells"].map { Spell(it[0].asInt(), it[1].asInt(), it[2].asText(), it[3].asInt(), it[4].asInt(), it[5].asInt()) },
             r["her"].map { Her(it[0].asInt(), it[1].asInt(), it[2].asText(), it[3].asInt()) },
             r["marks"].map { it[0].asInt() to it[1].asText() },
+            r["drops"].map { Drop(it[0].asInt(), it[1].asInt(), it[2].asInt(), it[3].asInt() == 1) },
+            r["dawns"].map { Dawn(it[0].asInt(), it[1].asInt(), it[2].asInt()) },
+            r["yellows"].map { y -> y[0].asInt() to y[1].map { it[0].asInt() to it[1].asInt() } },
         )
 
     fun pick(scale: Int, rank: Int?, pick: Int): Raid? {

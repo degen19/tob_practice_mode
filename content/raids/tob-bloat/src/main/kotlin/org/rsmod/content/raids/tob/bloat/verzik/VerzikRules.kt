@@ -15,6 +15,10 @@ object VerzikRules {
     const val WATCH_Y = 4308
     val PHASE_NPC = mapOf("P1" to "npc.verzik_phase1", "P1 dies" to "npc.verzik_phase1_to2_transition", "P2" to "npc.verzik_phase2", "P2 dies" to "npc.verzik_phase2_to3_transition", "P3" to "npc.verzik_phase3")
     const val INITIAL = "npc.verzik_initial"
+
+    /** Her P2 and P3 hitpoints by team size, as verzikSim has them (p2.js P2_HP, p3.js P3_HP). */
+    val P2_HP = mapOf(1 to 2625, 2 to 2625, 3 to 2625, 4 to 3062, 5 to 3500)
+    const val RED_CRAB_5S = 200
     const val RED = "npc.tob_verzik_phase2_bloodnylocas"
     const val PURPLE = "npc.tob_verzik_phase2_armourednylocas"
     const val P1_ATTACK = "seq.verzik_phase1_attack_magic"

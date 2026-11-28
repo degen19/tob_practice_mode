@@ -44,6 +44,7 @@ constructor(
     private val instances: InstanceManager,
     private val npcRepo: NpcRepository,
     private val locRepo: LocRepository,
+    private val objRepo: org.rsmod.api.repo.obj.ObjRepository,
     private val worldRepo: WorldRepository,
     private val collision: CollisionFlagMap,
     private val mapClock: MapClock,
@@ -125,7 +126,7 @@ constructor(
         replays.remove(key)?.let { closeReplay(it) }
         val session = session() ?: return null
         fun at(x: Int, y: Int) = checkNotNull(instances.resolveCoord(session, CoordGrid(x, y, 0)))
-        val room = VerzikReplayRoom(session, raid, ::at, instances, npcRepo, locRepo, worldRepo, collision, look)
+        val room = VerzikReplayRoom(session, raid, ::at, instances, npcRepo, locRepo, objRepo, worldRepo, collision)
         for (i in 0 until raid.players) {
             val bot = bots.spawn("Player ${i + 1}", room.spot(i), emptyList(), emptyList()) ?: continue
             room.bots += bot
@@ -133,6 +134,8 @@ constructor(
         room.start()
         replays[key] = room
         if (player != null) {
+            room.watchers += player
+            room.throne(false)
             protectedAccess.launch(player) { telejump(at(VerzikRules.WATCH_X, VerzikRules.WATCH_Y), TeleportType.Exempt) }
             player.npcViewDistance = 32
         }

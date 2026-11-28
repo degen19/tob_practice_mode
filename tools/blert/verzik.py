@@ -15,7 +15,7 @@ DEFS = os.path.join(HERE, 'defs')
 
 PLAYER_UPDATE, PLAYER_ATTACK, NPC_SPAWN, NPC_UPDATE, NPC_DEATH, NPC_ATTACK, PLAYER_SPELL = 4, 5, 7, 8, 9, 10, 11
 OVERHEADS = [(16, 'magic'), (17, 'missiles'), (18, 'melee'), (21, 'retribution'), (22, 'redemption'), (23, 'smite')]
-PHASE, REDS, BOUNCE, HEAL, DAWN = 150, 151, 154, 155, 156
+PHASE, REDS, YELLOWS, BOUNCE, HEAL, DAWN, DAWN_DROP = 150, 151, 153, 154, 155, 156, 157
 
 ATTACKS = {a['protoId']: a for a in json.load(open(os.path.join(DEFS, 'attack_definitions.json')))}
 SPELLS = {s['id']: s for s in json.load(open(os.path.join(DEFS, 'spell_definitions.json')))}
@@ -79,7 +79,7 @@ def gear_deltas(raw):
 def replay(chal, ev):
     """One raid as the server replays it. Tiles are the room's real coordinates; ticks start at 0."""
     end = max(e['tick'] for e in ev)
-    names, tiles, gear, prayers = [], [], [], []
+    names, tiles, gear, prayers, php = [], [], [], [], []
     by_name = {}
     for e in sorted((e for e in ev if e['type'] == PLAYER_UPDATE), key=lambda e: e['tick']):
         n = e['player']['name']
@@ -87,10 +87,13 @@ def replay(chal, ev):
             by_name[n] = len(names)
             names.append(n)
             tiles.append([None] * (end + 1))
+            php.append([-1] * (end + 1))
             gear.append([])
             prayers.append([])
         i = by_name[n]
         tiles[i][e['tick']] = (e['xCoord'], e['yCoord'])
+        if 'hitpoints' in e['player']:
+            php[i][e['tick']] = e['player']['hitpoints'] >> 16
         for slot, item, qty in sorted(gear_deltas(e['player'].get('equipmentDeltas') or []), key=lambda d: d[1] >= 0):
             gear[i].append([e['tick'], slot, item])
         ps = e['player'].get('prayerSet')
@@ -135,6 +138,10 @@ def replay(chal, ev):
                            (d.get('animationIds') or [-1])[0], gfx, target])
     her = [[e['tick'], room_index.get(e['npc']['roomId'], -1), NPC_ATTACKS.get(e['npcAttack']['attack'], 'UNKNOWN'),
             by_name.get(e['npcAttack'].get('target'), -1)] for e in ev if e['type'] == NPC_ATTACK]
+    drops = [[e['tick'], e['xCoord'], e['yCoord'], 1 if e['verzikDawnDrop'].get('dropped') else 0] for e in ev if e['type'] == DAWN_DROP]
+    dawns = [[e['verzikDawn']['attackTick'], by_name.get(e['verzikDawn'].get('player'), -1), e['verzikDawn'].get('damage', 0)]
+             for e in ev if e['type'] == DAWN]
+    yellows = [[e['tick'], [[p['x'], p['y']] for p in e['verzikYellows']]] for e in ev if e['type'] == YELLOWS]
     marks = []
     for e in ev:
         if e['type'] == PHASE:
@@ -145,7 +152,8 @@ def replay(chal, ev):
             marks.append([e['tick'], 'heal'])
     return {
         'uuid': chal['uuid'], 'scale': chal['scale'], 'end': end, 'players': len(names),
-        'tiles': [[c for xy in row for c in xy] for row in tiles], 'gear': gear, 'prayers': prayers,
+        'tiles': [[c for xy in row for c in xy] for row in tiles], 'hp': php, 'gear': gear, 'prayers': prayers,
+        'drops': sorted(drops), 'dawns': sorted(dawns), 'yellows': yellows,
         'npcs': npcs, 'attacks': sorted(attacks), 'spells': sorted(spells), 'her': sorted(her), 'marks': sorted(marks),
     }
 
