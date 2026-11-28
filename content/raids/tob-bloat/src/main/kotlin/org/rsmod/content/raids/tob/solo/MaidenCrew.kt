@@ -573,6 +573,7 @@ class MaidenCrew(
             (b.step until b.seq.size).map { b.seq[it] }
                 .firstOrNull { it != "surge" && !(it == "tfz" && tfzSpent(b, tt)) && !(it == "qfz" && qfzSpent(b)) && !(it == "zcbs" && spec < atkOf(it).spec && !clawsOver(b, spec)) } ?: b.raw()
         if (a == "zcbs" && clawsOver(b, spec)) return "claws"
+        if (a == "zcbs" && b.role.freezes && zcbProcs(tt)) return "tbr"
         if (a != "tpile") return a
         if (phase == 0) return "scythe"
         return if (pileSwing(b, tt)) a else "tbr"
