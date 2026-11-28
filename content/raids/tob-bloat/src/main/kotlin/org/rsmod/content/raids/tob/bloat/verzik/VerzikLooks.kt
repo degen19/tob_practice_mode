@@ -96,16 +96,17 @@ class VerzikLooks(
         v.anim(P3_MELEE)
     }
 
-    fun p3Ranged(v: Npc, p: Player) {
-        v.facePlayer(p)
+    /** Her P3 ranged attack: at the tank, a bolt at every player. */
+    fun p3Ranged(v: Npc, tank: Player?, all: List<Player>) {
+        tank?.let { v.facePlayer(it) }
         v.anim(P3_RANGED)
-        proj(P3_RANGE_PROJ, v, p, delay = 30, speed = 6, startHeight = 120)
+        for (p in all) proj(P3_RANGE_PROJ, v, p, delay = 30, speed = 6, startHeight = 120)
     }
 
-    fun p3Magic(v: Npc, p: Player) {
-        v.facePlayer(p)
+    fun p3Magic(v: Npc, tank: Player?, all: List<Player>) {
+        tank?.let { v.facePlayer(it) }
         v.anim(P3_MAGIC)
-        proj(P3_MAGE_PROJ, v, p, delay = 30, speed = 6, startHeight = 120)
+        for (p in all) proj(P3_MAGE_PROJ, v, p, delay = 30, speed = 6, startHeight = 120)
     }
 
     fun webs(v: Npc) = v.anim(P3_WEBS)
@@ -183,7 +184,7 @@ class VerzikLooks(
         /** A real raid frame by frame: the orb leaves her hands ~1.5 ticks into her attack, high, and lands ~2.3 ticks in. */
         const val P1_LAUNCH = 45
         const val P1_LAND_CYCLES = 70
-        const val P1_START_HEIGHT = 140
+        const val P1_START_HEIGHT = 70
         const val P1_ANGLE = 16
         const val URN_TICKS = 2
         const val URN_LAUNCH = 15

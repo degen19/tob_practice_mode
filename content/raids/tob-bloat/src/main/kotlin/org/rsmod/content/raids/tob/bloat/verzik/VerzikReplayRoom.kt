@@ -88,6 +88,8 @@ class VerzikReplayRoom(
     private val spellsAt = raid.spells.groupBy { it.t }
     private val last = maxOf(raid.end, raid.npcs.maxOf { it.steps.last().t })
     private val usesAt = raid.uses.groupBy { it.t }
+    private val lastHit = HashMap<Int, Int>()
+    private var tank = -1
     private val herAt = raid.her.groupBy { it.t }
     private val gearAt = raid.gear.map { g -> g.groupBy { it.first } }
     private val overheadAt = raid.overheads.map { o -> o.associate { it.first to it.second } }
@@ -202,6 +204,7 @@ class VerzikReplayRoom(
         attacksAt[t]?.forEach { attack(it) }
         spellsAt[t]?.forEach { spell(it) }
         usesAt[t]?.forEach { use(it) }
+        faces()
     }
 
     /** Her bar on the Theatre's HUD: her hitpoints in the form she's in. */
@@ -302,11 +305,15 @@ class VerzikReplayRoom(
         val here = CoordGrid(raid.x(p, t), raid.y(p, t), 0)
         for (k in 0 until WEBS_A_VOLLEY) {
             val tile = if (k == 0) here else CoordGrid(here.x + random.nextInt(7) - 3, here.z + random.nextInt(7) - 3, 0)
-            if (!inArena(tile) || under(tile, vs, v.size)) continue
+            if (!inArena(tile) || under(tile, vs, v.size) || trodden(tile, t + 1, t + WEB_FLIGHT_MAX + WEB_LIFE)) continue
             val lands = looks.web(centre(vs, v.size), tile)
             later(lands) { web(tile) }
         }
     }
+
+    /** Whether a player stands on [tile] on any tick [from]..[to] (a web there would catch them; they dodge it). */
+    private fun trodden(tile: CoordGrid, from: Int, to: Int): Boolean =
+        (from..minOf(to, raid.end)).any { u -> bots.indices.any { raid.x(it, u) == tile.x && raid.y(it, u) == tile.z } }
 
     private fun web(tile: CoordGrid) {
         if (webs.any { it.second.first.isSlotAssigned && it.second.first.coords == at(tile.x, tile.z) }) return
@@ -594,6 +601,7 @@ class VerzikReplayRoom(
             if (a.anim >= 0) RSCM.getReverseMapping(RSCMType.SEQ, a.anim)?.let { bot.anim(it, priority = ATTACK_PRIORITY) }
             return
         }
+        lastHit[a.player] = a.target
         attackLooks.attack(bot, a.name, a.anim, a.weapon, target)
     }
 
@@ -622,8 +630,8 @@ class VerzikReplayRoom(
                 looks.p1Auto(v, vc, bots.mapIndexed { i, b -> b to pillarBetween(vc, tile(i)) })
             }
             "P2_CABBAGE" -> bots.forEachIndexed { i, b -> looks.urn(v, vc, b, tile(i)) }
-            "P2_ZAP" -> target?.let { looks.zap(v, it) }
-            "P2_MAGE" -> target?.let { looks.blood(v, it) }
+            "P2_ZAP" -> target?.let { looks.zap(v, it) } ?: v.anim(VerzikRules.P2_ATTACK)
+            "P2_MAGE" -> target?.let { looks.blood(v, it) } ?: v.anim(VerzikRules.P2_ATTACK)
             "P2_BOUNCE" ->
                 target?.let {
                     bouncedAt[h.target] = clock
@@ -631,14 +639,27 @@ class VerzikReplayRoom(
                 }
             "P2_PURPLE" -> nextPurple()?.let { looks.purple(v, vc, it) } ?: v.anim(VerzikRules.P2_ATTACK)
             "P3_MELEE" -> looks.p3Melee(v, target)
-            "P3_RANGE", "P3_AUTO" -> target?.let { looks.p3Ranged(v, it) }
-            "P3_MAGE" -> target?.let { looks.p3Magic(v, it) }
+            "P3_RANGE", "P3_AUTO" -> looks.p3Ranged(v, target, bots)
+            "P3_MAGE" -> looks.p3Magic(v, target, bots)
             "P3_WEBS" -> {
                 looks.webs(v)
                 websUntil = clock + WEB_TICKS
             }
             "P3_YELLOWS" -> looks.yellows(v)
             "P3_BALL" -> target?.let { looks.greenBall(v, it) }
+        }
+        if (h.name.startsWith("P3_") && h.target >= 0) tank = h.target
+    }
+
+    /** Who she faces in P3 (her tank), and each player what they last hit, kept through her changes of form. */
+    private fun faces() {
+        val v = her?.let { npcs[it] }?.takeIf { it.isSlotAssigned }
+        if (v != null && v.visType.id == P3.asRSCM(RSCMType.NPC)) {
+            bots.getOrNull(tank)?.let { b -> if (v.faceEntity.playerSlot != b.slotId || !v.faceEntity.isPlayer) v.facePlayer(b) }
+        }
+        bots.forEachIndexed { i, b ->
+            val n = lastHit[i]?.let { npcs[it] }?.takeIf { it.isSlotAssigned } ?: v ?: return@forEachIndexed
+            if (!b.faceEntity.isNpc || b.faceEntity.npcSlot != n.slotId) b.faceNpc(n)
         }
     }
 
@@ -689,6 +710,7 @@ class VerzikReplayRoom(
 
     companion object {
         const val WEB_TICKS = 44
+        const val WEB_FLIGHT_MAX = 4
         const val WEB_AFTER = 14
         const val WEB_LIFE = 30
         const val WEBS_A_VOLLEY = 3

@@ -35,7 +35,8 @@ for (let k = 1; k <= n; k++) {
     else if (/^surge /.test(what)) ev.push([t, i, 'surge', -1]);
     else if ((x = /^spec transfer -> (\S+)/.exec(what))) ev.push([t, i, 'transfer', names.indexOf(x[1])]);
   }
-  raids.push({ seed, end: r.end ?? null, marks, atk, boss, hp, ev });
+  const tank = r.log.map(String).map((l) => /Tank: (\S+?)[ .(]/.exec(l)).find(Boolean);
+  raids.push({ seed, end: r.end ?? null, marks, atk, boss, hp, ev, tank: tank ? names.indexOf(tank[1]) : -1, purpleDc: cfgs.findIndex((c) => c.PurpleDC) });
 }
 const out = process.argv[4] || `verzik${TEAM}.json.gz`;
 writeFileSync(out, gzipSync(JSON.stringify(raids)));
