@@ -1,8 +1,5 @@
 package org.rsmod.content.raids.tob.solo
 
-import org.rsmod.api.player.clearInteractionRoute
-import org.rsmod.api.player.righthand
-import org.rsmod.api.player.syncPrayerOverrides
 import com.github.michaelbull.logging.InlineLogger
 import dev.openrune.rscm.RSCM
 import dev.openrune.rscm.RSCM.asRSCM
@@ -16,30 +13,32 @@ import org.rsmod.api.instances.InstanceAccess
 import org.rsmod.api.instances.InstanceArea
 import org.rsmod.api.instances.InstanceSpec
 import org.rsmod.api.instances.RegionLocal
+import org.rsmod.api.player.clearInteractionRoute
 import org.rsmod.api.player.hook.TeleportType
 import org.rsmod.api.player.output.mes
+import org.rsmod.api.player.protect.ProtectedAccess
+import org.rsmod.api.player.protect.ProtectedAccessLauncher
+import org.rsmod.api.player.protect.forcedWalk
 import org.rsmod.api.player.stat.hitpoints
 import org.rsmod.api.player.stat.stat
 import org.rsmod.api.player.stat.statAdd
 import org.rsmod.api.player.stat.statBase
 import org.rsmod.api.player.stat.statBoost
-import org.rsmod.api.player.protect.ProtectedAccess
-import org.rsmod.api.player.protect.forcedWalk
-import org.rsmod.api.player.protect.ProtectedAccessLauncher
+import org.rsmod.api.player.syncPrayerOverrides
+import org.rsmod.api.player.vars.varMoveSpeed
 import org.rsmod.api.repo.region.RegionTemplate
 import org.rsmod.api.script.onCommand
 import org.rsmod.api.script.onEvent
 import org.rsmod.api.script.onOpLoc1
 import org.rsmod.api.script.onOpLoc2
-import org.rsmod.api.script.onPlayerLogin
 import org.rsmod.api.script.onOpNpc1
 import org.rsmod.api.script.onOpNpc2
 import org.rsmod.api.script.onOpNpc3
+import org.rsmod.api.script.onPlayerLogin
 import org.rsmod.game.cheat.Cheat
 import org.rsmod.game.entity.Player
-import org.rsmod.game.movement.MoveSpeed
-import org.rsmod.api.player.vars.varMoveSpeed
 import org.rsmod.game.loc.LocShape
+import org.rsmod.game.movement.MoveSpeed
 import org.rsmod.map.CoordGrid
 import org.rsmod.map.util.Bounds
 import org.rsmod.plugin.module.PluginModule
@@ -310,7 +309,12 @@ constructor(
 
     private fun startTrios(teams: Int) {
         val where = TobRoom.parse(System.getenv("TOB_TRIO_ROOM") ?: "nylo") ?: TobRoom.NYLOCAS
-        val roles = if (where == TobRoom.MAIDEN && System.getenv("TOB_TRIO_SIZE") == "4") NyloRole.QUAD else NyloRole.TRIO
+        val roles =
+            when {
+                where == TobRoom.XARPUS -> List((System.getenv("TOB_TRIO_SIZE")?.toIntOrNull() ?: NyloRole.TRIO.size).coerceIn(1, XARPUS_MAX)) { NyloRole.Melee }
+                where == TobRoom.MAIDEN && System.getenv("TOB_TRIO_SIZE") == "4" -> NyloRole.QUAD
+                else -> NyloRole.TRIO
+            }
         for (i in 1..teams) startTrio("$i", where, trioParams.getOrNull(i - 1) ?: "", roles) ?: return
     }
 
@@ -320,8 +324,13 @@ constructor(
     /** A bot team in a fresh room (bots named for their roles, Mage[tag] and so on); null if they can't all log in. */
     private fun startTrio(tag: String, where: TobRoom, params: String, roles: List<NyloRole> = NyloRole.TRIO): SoloRoom? {
         val maiden = where == TobRoom.MAIDEN
+        val xarpus = where == TobRoom.XARPUS
         val quad = roles.size == 4
-        val crew = roles.map { role -> role to spawnCrewBot("${role.name}$tag", role, if (maiden) NyloLoadout.maidenSets(role, quad) else NyloLoadout.sets(role), maiden) }
+        val crew =
+            roles.mapIndexed { k, role ->
+                val sets = if (xarpus) NyloLoadout.xarpusSets() else if (maiden) NyloLoadout.maidenSets(role, quad) else NyloLoadout.sets(role)
+                role to spawnCrewBot(if (xarpus) "X${k + 1}_$tag" else "${role.name}$tag", role, sets, maiden || xarpus)
+            }
         if (crew.any { it.second == null }) {
             for ((_, bot) in crew) bot?.let(bots::remove)
             logger.warn { "${where.name.lowercase()} trio $tag: no room for its bots" }
@@ -345,6 +354,7 @@ constructor(
         when (room) {
             is MaidenSolo -> MaidenCrew(room, members, bots, d.mapClock, barrageButton, rushButton, MaidenCrewParams.parse(params))
             is NyloSolo -> NyloCrew(room, members, bots, d.mapClock, barrageButton)
+            is XarpusSolo -> XarpusCrew(room, members.map { it.first }, bots, d.mapClock)
             else -> null
         }
 
@@ -611,9 +621,12 @@ constructor(
 
     companion object {
         const val CHEST = "loc.tob_midway_chest_closed"
+
         /** NPCs and players in a room drawn from this far (3x the game's 15): the whole room, end to end. */
         const val VIEW_DISTANCE = 45
         const val SELF_TEST_AT = 30
+        const val XARPUS_MAX = 5
+
         /** NPCs whose hits are judged when thrown (Vasilias's colour, Xarpus's gaze, a nylocas' damage on its way). */
         val QUEUE_WATCHED =
             listOf(
@@ -636,6 +649,7 @@ constructor(
         const val ANCIENTS = 1
         const val LUNARS = 2
         const val ARCEUUS = 3
+
         /** Bots keep each style's prayer on at once: the same as flicking the right one with every switch. */
         val TRIO_START_TICK = System.getenv("TOB_TRIO_START")?.toIntOrNull() ?: 0
         val OFFENSIVE_PRAYERS = listOf("varbit.prayer_piety", "varbit.prayer_rigour", "varbit.prayer_augury")

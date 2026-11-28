@@ -65,6 +65,7 @@ object NyloLoadout {
     val CLAWS = GearSet(MELEE_ARMOUR + (Wearpos.RightHand to "obj.dragon_claws"))
     val DINH = GearSet(MELEE_ARMOUR + (Wearpos.RightHand to "obj.dinhs_bulwark"))
     val AYAK = GearSet(MELEE_ARMOUR + listOf(Wearpos.RightHand to "obj.eye_of_ayak", Wearpos.LeftHand to "obj.book_of_the_dead"))
+
     /** Barrage in the ranged gear with the magic pieces over it: the highest magic accuracy the team has (as the sim). */
     val BARRAGE = GearSet(RANGED_ARMOUR.filter { (slot, _) -> MAGE_ARMOUR.none { it.first == slot } } + MAGE_ARMOUR + (Wearpos.RightHand to "obj.ancient_sceptre_ice"))
     val TBOW = GearSet(RANGED_ARMOUR + (Wearpos.RightHand to "obj.twisted_bow"))
@@ -75,6 +76,8 @@ object NyloLoadout {
     val TOME = GearSet(RANGED_ARMOUR.filter { (slot, _) -> MAGE_ARMOUR.none { it.first == slot } } + MAGE_ARMOUR + (Wearpos.RightHand to "obj.zoryas_tome"))
     val ZCB = GearSet(RANGED_ARMOUR + (Wearpos.RightHand to "obj.zaryte_xbow"))
     val MAUL = GearSet(MELEE_ARMOUR + (Wearpos.RightHand to "obj.elder_maul"))
+    val BGS = GearSet(MELEE_ARMOUR + (Wearpos.RightHand to "obj.bgs"))
+    val HALBERD = GearSet(MELEE_ARMOUR + (Wearpos.RightHand to "obj.crystal_halberd"))
     val HORN = GearSet(MELEE_ARMOUR + (Wearpos.RightHand to "obj.soulflame_horn"))
 
     const val BOLTS = "obj.ascension_bolts"
@@ -120,6 +123,9 @@ object NyloLoadout {
             NyloRole.Ranger -> listOf(TBOW, RALOS, SCYTHE, ZCB) + if (quad) listOf(CHINS, CLAWS, HORN) else listOf(CLAWS, BLOWPIPE)
             NyloRole.Mage, NyloRole.Freezer -> listOf(TBOW, RALOS, BARRAGE, SCYTHE, ZCB, CROSSBOWS, TOME, CLAWS)
         }
+
+    /** At Xarpus everyone scythes, with the Defence specs, claws, the halberd for the last hit and a ZCB (Blert). */
+    fun xarpusSets(): List<GearSet> = listOf(SCYTHE, MAUL, BGS, CLAWS, HALBERD, ZCB, RALOS)
 
     /** Worn at the start: the first set plus bolts in the ammo slot. */
     fun worn(sets: List<GearSet>): List<Pair<Int, String>> =
