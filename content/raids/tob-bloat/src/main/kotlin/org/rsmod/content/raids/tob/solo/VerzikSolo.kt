@@ -22,7 +22,7 @@ import kotlin.math.abs
 import kotlin.math.max
 
 /**
- * Verzik Vitur, solo (P1 1500 hitpoints, P2 and P3 2437 each), every phase and the transitions between them.
+ * Verzik Vitur, solo (P1 1500 hitpoints, P2 and P3 2625 each), every phase and the transitions between them.
  *
  * - P1: on her throne behind a shield - melee hits are capped at 10 a hitsplat, ranged and magic at 3; the Dawnbringer
  *   (it comes to you as the fight starts) has a special that hits for 75-150 through it. Every 14 ticks from tick 20
@@ -1074,8 +1074,8 @@ class VerzikSolo(owner: Player, session: InstanceSession, d: SoloDeps, origin: C
         const val P3_X = 3165
         const val P3_Y = 4311
         const val P1_HP = 1500
-        const val P2_HP = 2437
-        const val P3_HP = 2437
+        const val P2_HP = 2625
+        const val P3_HP = 2625
         const val P1_FIRST = 20
         const val P1_EVERY = 14
         const val P1_MAX = 137
