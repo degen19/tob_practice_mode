@@ -105,7 +105,7 @@ def route(p, goal, bx, by, avoid=()):
                 if (dx or dy) and 8 <= n[0] <= 23 and 8 <= n[1] <= 23 and not in_tank(*n):
                     if dx and dy and (in_tank(x + dx, y) or in_tank(x, y + dy)):
                         continue
-                    w = 1 + (5 if n in under else 0) + (6 if n in avoid else 0) + (0 if n in RING_SET else 0.5)
+                    w = 1 + (5 if n in under else 0) + (6 if n in avoid else 0) + (0 if n in RING_SET else 4)
                     if c + w < best.get(n, 10 ** 9):
                         best[n] = c + w
                         prev[n] = cur
@@ -153,7 +153,7 @@ def safe_step(p, goal, landing_next, bx=None, by=None, avoid=()):
         return nxt
     opts = [(x, y) for x in range(p[0] - 2, p[0] + 3) for y in range(p[1] - 2, p[1] + 3)
             if 8 <= x <= 23 and 8 <= y <= 23 and not in_tank(x, y) and (x, y) not in landing_next]
-    return min(opts, key=lambda c: max(abs(c[0] - goal[0]), abs(c[1] - goal[1]))) if opts else nxt
+    return min(opts, key=lambda c: (c not in RING_SET, max(abs(c[0] - goal[0]), abs(c[1] - goal[1])))) if opts else nxt
 
 
 def step_towards(p, goal, n):
@@ -289,7 +289,7 @@ def run(proc, seed, record=False, weapons=None):
             elif not p.stall and down is None:
                 target = plan_tile(p, room, t, hands_by, stallers)
             else:
-                target = goal_tile(p, bx, by, danger, None if p.stall else stallers)
+                target = goal_tile(p, bx, by, danger, None if (p.stall or down is not None) else stallers)
             ready = t >= p.next_attack
             wpn = None
             if down is not None:
@@ -380,7 +380,7 @@ def hide_tile(p, room, danger, lead):
     near = [c for c in OUTER if max(abs(c[0] - p.pos[0]), abs(c[1] - p.pos[1])) <= 6]
     def cost(c):
         seen = ray_clear(bx + 2, by + 2, *c) or ray_clear(nx + 2, ny + 2, *c)
-        return (c in danger, seen, c in footprint(bx, by), abs(c[0] - fx - 2) + abs(c[1] - fy - 2) + (0 if c in RING_SET else 2))
+        return (c in danger, c not in RING_SET, seen, c in footprint(bx, by), abs(c[0] - fx - 2) + abs(c[1] - fy - 2))
     return min(near or OUTER, key=cost)
 
 
@@ -438,7 +438,7 @@ def plan_tile(p, room, t, hands_by, stallers, ready=None, side="front", still=Fa
             ahead = -ahead
         elif side == "any":
             ahead = 0
-        cost = (c in hand_at, ahead, d, ring, seen_now and bounce, seen_now) if still else (c in hand_at, ahead, ring, seen_now and bounce, seen_now, d)
+        cost = (c in hand_at, ahead, d, ring, seen_now and bounce, seen_now) if still else (c in hand_at, ring, ahead, seen_now and bounce, seen_now, d)
         if best_cost is None or cost < best_cost:
             best, best_cost = c, cost
     return best or goal_tile(p, nbx, nby, hand_at, stallers)
@@ -460,9 +460,9 @@ def sneak(p, room, t, swing_at, hands_by, stallers, others=()):
     budget = 2 * (swing_at - t)
     seen_set = {c for c in OUTER if ray_clear(bx + 2, by + 2, *c)}
     best, best_cost = None, None
-    for c in OUTER:
-        if max(abs(c[0] - p.pos[0]), abs(c[1] - p.pos[1])) > 2 or steps_to(p.pos, c, bx, by) > 2:
-            continue
+    near = [c for c in OUTER if max(abs(c[0] - p.pos[0]), abs(c[1] - p.pos[1])) <= 2 and steps_to(p.pos, c, bx, by) <= 2]
+    lane = [c for c in near if (c in RING_SET or c == goal) and c not in landing_next]
+    for c in lane or near:
         hidden = len(route(c, goal, bx, by, seen_set)) - 1
         to_goal = hidden if hidden <= budget else steps_to(c, goal, bx, by)
         if to_goal > budget:
