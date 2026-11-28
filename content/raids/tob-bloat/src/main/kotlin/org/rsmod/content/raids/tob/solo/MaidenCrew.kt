@@ -2753,12 +2753,19 @@ class MaidenCrew(
 
     private fun fire(b: Bot, o: Order) {
         val p = b.player
-        if (!within(b, o)) return
+        var target = o.target
+        if (!within(b, o)) {
+            // a DPS swing due on the team's tick never waits on a crab: it goes on her instead
+            if (b.dps == null || !o.move.melee || p.actionDelay > clock.cycle || teamTick != Math.floorMod(t, SWING) || !room.besideHer(room.real(p.coords))) return
+            trace { "t$t ${b.role} keeps the team's tick: its ${o.move} goes on her" }
+            target = her
+            b.order = null
+        }
         o.walkTo = null
         b.route.clear()
-        b.aimed = o.target
+        b.aimed = target
         b.aimedFor = max(clock.cycle, p.actionDelay)
-        trace { "t$t ${b.role} fires ${o.move} at ${crabs.firstOrNull { it.npc === o.target }?.key ?: "her"} from ${room.real(p.coords).let { "${it.x - ROOM_X},${ROOM_Y - it.z}" }} energy ${b.spec} delay ${p.actionDelay - clock.cycle} weapon ${p.worn[3]?.id}" }
+        trace { "t$t ${b.role} fires ${o.move} at ${crabs.firstOrNull { it.npc === target }?.key ?: "her"} from ${room.real(p.coords).let { "${it.x - ROOM_X},${ROOM_Y - it.z}" }} energy ${b.spec} delay ${p.actionDelay - clock.cycle} weapon ${p.worn[3]?.id}" }
         for ((slot, obj) in o.move.set.worn) {
             val id = obj.asRSCM(RSCMType.OBJ)
             if (p.worn[slot.slot]?.id != id) bots.equip(p, slot.slot, id)
@@ -2767,9 +2774,9 @@ class MaidenCrew(
         if (o.move != Move.Barrage && o.move != Move.Rush) VarPlayerIntMapSetter.set(p, "varp.com_mode", o.move.stance)
         if (o.move.spec) VarPlayerIntMapSetter.set(p, "varp.sa_attack", 1)
         when (o.move) {
-            Move.Barrage -> bots.cast(p, o.target, barrage)
-            Move.Rush -> bots.cast(p, o.target, rush)
-            else -> if (current(p) !== o.target || o.move.spec) bots.attack(p, o.target)
+            Move.Barrage -> bots.cast(p, target, barrage)
+            Move.Rush -> bots.cast(p, target, rush)
+            else -> if (current(p) !== target || o.move.spec) bots.attack(p, target)
         }
     }
 
