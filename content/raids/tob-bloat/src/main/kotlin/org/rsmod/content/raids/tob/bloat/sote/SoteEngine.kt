@@ -1,20 +1,20 @@
 package org.rsmod.content.raids.tob.bloat.sote
 
-import org.rsmod.content.raids.tob.bloat.maiden.MaidenNumbers
-import org.rsmod.content.raids.tob.bloat.maiden.SimRng
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import org.rsmod.content.raids.tob.bloat.maiden.MaidenNumbers
+import org.rsmod.content.raids.tob.bloat.maiden.SimRng
 
 /**
- * The sim's Sotetseg (verzikSim engine/sote.js runSote) for the 5s, line for line, so the same seed gives the same
- * raid: prefires, the P1 horn and mauls, ZCBs held for the mauls (and carried past a maze), backups, late-maul swaps,
- * her orbs (prayed, or taken for veng) and their splits, her melee off the flinch, the death ball, both mazes stalled on
- * a phoenix necklace (one player under), Heal Other, thralls, spec regen and surges, and the P3 halberd last hit.
- *
- * The 5s players all cross the mazes on a phoenix necklace (two each, no sharks): the paths for shark skips, redemption
- * skips, running the maze, duos and solos aren't here. Runs a tick at a time ([tick]); [Events] says what happens.
+ * The sim's Sotetseg (verzikSim engine/sote.js runSote), line for line, so the same seed gives the same raid, for every
+ * scale: prefires, horns and mauls, ZCBs held for the mauls (and carried past a maze), backups, late-maul swaps, her
+ * orbs (prayed, or taken for veng) and their splits, her melee off the flinch (3-5 man; duos and solos don't flinch),
+ * the death ball (shared, or tick-eaten), both mazes skipped - stalled on a phoenix necklace with one player under,
+ * shark skips, redemption skips with a locator orb (solos skip both that way after going under first) - Heal Other,
+ * thralls, spec regen, Lightbearer, surges, the duos' backup maul and the solos' maul until one lands, and the P3
+ * halberd last hit. Running the maze isn't here. Runs a tick at a time ([tick]); [Events] says what happens.
  */
 class SoteEngine(
     plans: List<SotePlan>,
@@ -49,12 +49,19 @@ class SoteEngine(
         val converted: String? = null,
         val maulFor: Int? = null,
         val fromMaul: Boolean = false,
+        val duoBackup: Boolean = false,
+        val untilHit: Boolean = false,
     )
 
     inner class P(val i: Int, plan: SotePlan) {
-        val name = "Player ${i + 1}"
+        val name = "P${i + 1}"
         val prefire = plan.prefire
         var pnecks = plan.pnecks
+        var sharks = plan.sharks
+        var rests = if (team == 1) 0 else plan.rests
+        var restores = plan.restores
+        val how = if (team == 1) listOf("redemption", "redemption") else plan.mazes.take(2).map { if (it == "redemption" && team > 4) "pneck" else it }
+        val sharkMazes = if (team == 1) emptyList() else listOf(0, 1).filter { how[it] == "shark" }
         var spec = plan.startSpec
         val surgePlan = plan.surge
         var regen = 0
@@ -65,6 +72,13 @@ class SoteEngine(
         var zcbCarry = -1
         var clawCarry = -1
         val vengPops = IntArray(3)
+        var orbedDown = -1
+        var redeemNow = false
+        var cycleAfter = 0
+        var lb = false
+        var lbLeft = 0
+        var lbStarted = false
+        var lbFreezeUntil = -1
         val specDone = IntArray(3)
         val swings = IntArray(3)
         val mauled = IntArray(3)
@@ -89,7 +103,11 @@ class SoteEngine(
         var thrallBack = false
         var healFrom = 0
         var keptForMaze = -1
-        var pendingMark: String? = null
+        var mazeEatTill = -1
+        var eatKeep = 0
+        var eatReady = 0
+        var sipReady = 0
+        var duoBackingUp = false
 
         /** What they're holding (the last attack), for the look. */
         var holding = "scythe"
@@ -101,9 +119,11 @@ class SoteEngine(
 
     private class Ball(val at: Int, val tgt: P)
 
-    val team = 5
-    private val max = SOTE_HP
-    private val marks = listOf(floor(max * 2.0 / 3).toInt(), floor(max * 1.0 / 3).toInt(), 0)
+    private class SharkSkip(val p: P, val m: Int, val eats: Map<Int, Char>)
+
+    val team = plans.size
+    private val max = SOTE_HP.getValue(team)
+    private val marks = listOf(floor(max * (2.0 / 3)).toInt(), floor(max * (1.0 / 3)).toInt(), 0)
     var hp = max
         private set
     var defLvl = SOTE_DEF
@@ -131,6 +151,7 @@ class SoteEngine(
     private val maulHits = IntArray(3)
     private val swapPlanned = BooleanArray(3)
     private var pendingStall: Pair<Int, List<P>>? = null
+    private var pendingSharks = ArrayList<SharkSkip>()
     var t = 0
         private set
 
@@ -142,6 +163,7 @@ class SoteEngine(
 
     init {
         ps = plans.mapIndexed { i, pl -> P(i, pl) }
+        require(ps.none { "run" in it.how }) { "running the maze isn't ported" }
         pid = ps.toMutableList().also { shuffle(it) }
         for (p in ps) {
             var after = 0
@@ -156,10 +178,10 @@ class SoteEngine(
             while (t < after) t += ATTACK_EVERY
             p.next = t
             val s0 = p.specs[0]
-            if (pf != null && after > 0 && after < t && (s0.backup || isDef(s0.spec))) {
+            if (team > 2 && pf != null && after > 0 && after < t && (s0.backup || isDef(s0.spec))) {
                 p.next = after
                 p.entry = if (s0.backup) "backup" else "maul"
-            } else if (pf != null && after > 0 && after < t && s0.spec == "claws") {
+            } else if (team > 2 && pf != null && after > 0 && after < t && s0.spec == "claws") {
                 p.next = after
                 p.entry = "claw"
             }
@@ -190,24 +212,24 @@ class SoteEngine(
 
     private fun defRoll(lvl: Int, style: String) = if (style == "mage") (SOTE_MAG + 9) * (30 + 64) else (lvl + 9) * ((if (style == "range") 150 else 70) + 64)
 
-    private fun melee(weapon: String, d: Int, accMult: Double = 1.0): Pair<Double, Int> {
-        val r = SoteNumbers.MELEE.getValue(weapon)
+    private fun melee(p: P, weapon: String, d: Int, accMult: Double = 1.0): Pair<Double, Int> {
+        val r = (if (p.lb) SoteNumbers.MELEE_LB else SoteNumbers.MELEE).getValue(weapon)
         return hitChance(floor(r.ea.toDouble() * r.ab * accMult).toInt(), defRoll(d, "melee")) to r.mx
     }
 
-    private fun scythe(d: Int) = melee("Scythe of vitur", d)
+    private fun scythe(p: P, d: Int) = melee(p, "Scythe of vitur", d)
 
     private class Halb(val avg: Double, val roll: () -> List<Int>)
 
-    private fun halbSpec(d: Int): Halb {
-        val r = SoteNumbers.HALB
+    private fun halbSpec(p: P, d: Int): Halb {
+        val r = if (p.lb) SoteNumbers.HALB_LB else SoteNumbers.HALB
         val ch = { m: Double -> hitChance(floor(r.ea.toDouble() * r.ab * m).toInt(), defRoll(d, "melee")) }
         val avg = { m: Double -> ch(m) * (r.mx / 2.0 + 0.5 + r.mx / 10) }
         return Halb(avg(1.0) + avg(0.75)) { listOf(ch(1.0), ch(0.75)).map { c -> if (rng.random() < c) max(1, rng.randint(0, r.mx)) + r.mx / 10 else 0 } }
     }
 
-    private fun clawSpec(d: Int, horned: Boolean): List<Int> {
-        val (ch, mx) = melee("Dragon claws", d)
+    private fun clawSpec(p: P, d: Int, horned: Boolean): List<Int> {
+        val (ch, mx) = melee(p, "Dragon claws", d)
         for (k in 0 until 4) {
             if (!(horned && k == 1) && rng.random() >= ch) continue
             return when (k) {
@@ -234,6 +256,15 @@ class SoteEngine(
     private fun instanceOf(t: Int) = (t + 1) % 4
 
     private fun isHerTick(x: Int) = x >= nextAttack && (x - nextAttack) % ATTACK_EVERY == 0
+
+    /** Duos and solos don't flinch, unless a melee through prayer could kill them. */
+    private fun flinches(p: P) = team > 2 || p.hp <= floor(MELEE_MAX * 0.6).toInt()
+
+    private fun nextAfter(t: Int, speed: Int, p: P) = if (team > 2) t + speed else if (flinches(p) && isHerTick(t + speed + 1)) t + speed + 1 else t + speed
+
+    private fun sharkNext(p: P) = mazes.size in p.sharkMazes
+
+    private fun redeemAhead(p: P) = p.how.drop(mazes.size).contains("redemption")
 
     private fun spend(p: P, n: Int, t: Int) {
         p.spec -= n
@@ -282,19 +313,52 @@ class SoteEngine(
         defLvl = SOTE_DEF
         var m = t + 5
         while (instanceOf(m) != 0) m++
+        if (team == 1) m += SOLO_UNDER
         attackable = m + 9
         nextAttack = m + 10
         back += attackable
         val live = alive()
         val under = if (live.size > 1) choice(live) else null
-        val stallers = live.filter { it !== under }
+        val runners = live.filter { it !== under }
+        val skippers = runners.filter { (mazes.size - 1) in it.sharkMazes }
+        val stallers = runners.filter { it !in skippers }
+        for (p in skippers) {
+            p.next = m + 10
+            p.thrallBack = true
+            if (p.hp < SHARK_SKIP_MIN && p.sharks > 0 && p.rests > 0) {
+                val old = p.hp
+                p.hp = min(99, p.hp + SHARK_HEAL + REST_HEAL)
+                p.sharks--
+                p.rests--
+                L("t$t ${p.name} eats a shark + Guthix rest for the shark skip: $old -> ${p.hp}")
+            }
+            val eats = SHARK_SKIP.firstOrNull { p.hp >= it.first }?.second ?: SHARK_SKIP.last().second
+            pendingSharks += SharkSkip(p, m, eats)
+            L("t$t ${p.name} shark skips (HP ${p.hp}): ${eats.entries.joinToString { (o, x) -> "${if (x == 'S') "shark" else "rest"} t${m + o}" }}")
+        }
         for (p in stallers) {
             p.noVengUntil = m + 8
             p.next = m + 10
             p.thrallBack = true
+            p.lbFreezeUntil = m + 8
+            p.redeemNow = p.how[mazes.size - 1] == "redemption" && p.restores >= 1
+            if (p.redeemNow) {
+                if (p.hp > REDEMPTION_HP) L("t$t ${p.name} wasn't down to $REDEMPTION_HP HP at the proc (${p.hp}) - orbs down late")
+                p.hp = REDEMPTION_HP
+                p.next = m + 11
+                continue
+            }
+            if (p.sharks > 0 && stallSkip(p.hp, p.pnecks > 0, stallers.size).second == null) {
+                val old = p.hp
+                p.hp = min(99, p.hp + SHARK_HEAL)
+                p.sharks--
+                L("t$t ${p.name} eats a shark before the stall: $old -> ${p.hp} (${p.sharks} left)")
+            }
         }
         val uFirst = m + 10 + UNDER_AFTER[instanceOf(t)]
         if (under != null) {
+            under.mazeEatTill = uFirst
+            under.eatKeep = 1
             under.next = uFirst
             under.healFrom = uFirst + 1
             under.thrallBack = true
@@ -329,6 +393,16 @@ class SoteEngine(
         p.vengPops[mazes.size]++
         events.veng(t, p, floor(dmg * 0.75).toInt())
         damage(t, floor(dmg * 0.75).toInt(), "${p.name} veng ($src $dmg)")
+    }
+
+    /** A phoenix necklace just procced: with more sharks than mazes still to come, they eat one the same tick. */
+    private fun afterPneck(t: Int, p: P) {
+        if (p.sharks > 2 - mazes.size) {
+            val old = p.hp
+            p.hp = min(99, p.hp + SHARK_HEAL)
+            p.sharks--
+            L("t$t ${p.name} eats a shark with the phoenix necklace: $old -> ${p.hp} (${p.sharks} left)")
+        }
     }
 
     private fun hurt(t: Int, p: P, d: Int) {
@@ -366,7 +440,7 @@ class SoteEngine(
 
     private fun ticksTo50(q: P): Int {
         if (q.spec >= 50) return 0
-        val per = 50
+        val per = if (q.lb || q.lbLeft > 0) 25 else 50
         return max(1, per - q.regen) + (ceil((50 - q.spec) / 10.0).toInt() - 1) * per
     }
 
@@ -432,7 +506,7 @@ class SoteEngine(
     private fun hornWait(p: P, ph: Int) = ph > 0 && alive().any { c -> c.specs[ph].horn > 0 && !c.hornDone[ph] && c.spec >= HORN_COST && (c === p || hornRecipients(c, ph).contains(p)) }
 
     private fun scytheAvg(q: P): Double {
-        val (ch, mx) = scythe(defLvl)
+        val (ch, mx) = scythe(q, defLvl)
         return listOf(mx, mx / 2, mx / 4).fold(0.0) { n, m -> n + ch * (m / 2.0 + 0.5) }
     }
 
@@ -441,10 +515,9 @@ class SoteEngine(
     private fun chooseAct(p: P, t: Int, ph: Int): String {
         var a = chooseAct0(p, t, ph)
         if (a == "scythe" && ph == 2 && halbReady(p)) {
-            val next = alive().fold(0.0) { n, q -> n + (if (q === p) halbSpec(defLvl).avg else if (hits.any { it.p === q }) scytheAvg(q) else if (halbReady(q)) halbSpec(defLvl).avg else scytheAvg(q)) }
+            val next = alive().fold(0.0) { n, q -> n + (if (q === p) halbSpec(q, defLvl).avg else if (hits.any { it.p === q }) scytheAvg(q) else if (halbReady(q)) halbSpec(q, defLvl).avg else scytheAvg(q)) }
             if (next >= hp - stopAt) a = "halb"
         }
-        p.pendingMark = null
         return a
     }
 
@@ -478,6 +551,11 @@ class SoteEngine(
         }
         if (!sp.backup) {
             if (isDef(sp.spec) && p.mauled[ph] == 0) return if (p.spec >= 50 && !hornWait(p, ph)) defAct(sp.spec) else "scythe"
+            if (sp.untilHit && isDef(sp.spec) && p.mauled[ph] >= 1 && maulHits[ph] == 0 && !anyMaulPending() && p.spec >= 50) return defAct(sp.spec)
+            if (sp.duoBackup && p.mauled[ph] == 1 && !alive().any(mauls) && !anyMaulPending() && maulHits[ph] == 0 && p.spec >= 50) {
+                p.duoBackingUp = true
+                return defAct(sp.spec)
+            }
             if (p.specDone[ph] > 0 || sp.spec == "none") return spare()
             if (sp.spec == "zcb") {
                 if (alive().any(mauls) || anyMaulPending() || p.spec < ZCB_SPEC) return "scythe"
@@ -554,16 +632,33 @@ class SoteEngine(
         t++
         val t = t
         if (blocked && t >= attackable) blocked = false
+        mazeEats(t)
+        sharkSkips(t)
         pendingStall?.let { (at, runners) ->
             if (t != at) return@let
             for (p in runners.filter { !it.dead }) {
                 val nRun = runners.count { !it.dead }
+                if (p.redeemNow) {
+                    val before = p.hp
+                    val end = p.hp + REDEMPTION_HEAL - STALL_TICKS * max(1, nRun) * p.hp
+                    p.hp = end
+                    if (end <= 0) p.dead = true
+                    else {
+                        p.restores--
+                        p.sipReady = t + 3
+                    }
+                    p.redeemNow = false
+                    L("t$t ${p.name} out of the stall (Redemption): $before -> ${if (end <= 0) "DEAD" else end}, sips a restore (${p.restores} left)")
+                    events.stallOut(t, p)
+                    continue
+                }
                 val before = p.hp
                 val (h, pneck) = stallSkip(p.hp, p.pnecks > 0, nRun)
                 p.hp = h
                 if (pneck == true) p.pnecks--
                 if (pneck == null) p.dead = true
                 L("t$t ${p.name} out of the stall: $before -> ${if (pneck == null) "DEAD" else h}${if (pneck == true) " (phoenix necklace)" else ""}")
+                if (pneck == true) afterPneck(t, p)
                 events.stallOut(t, p)
             }
             pendingStall = null
@@ -586,9 +681,12 @@ class SoteEngine(
             }
         }
         if (!blocked) healOthers(t)
+        if (!blocked && mazes.size < 2 && kill == null) orbDown(t)
+        if (!blocked && (mazes.size >= 2 || team == 2) && kill == null) locatorOrbs(t)
         landHits(t)
         landOrbs(t)
         val b = ball
+        if (b != null && t == b.at - 1 && kill == null && !b.tgt.dead && !blocked) healBeforeBall(t, b)
         if (b != null && t == b.at && kill == null) landBall(t, b)
         if (!blocked && t == nextAttack && alive().isNotEmpty() && t == skipAt) {
             nextAttack += ATTACK_EVERY
@@ -601,24 +699,13 @@ class SoteEngine(
                 p.surged = true
                 L("t$t ${p.name} surge (cooldown up) $o% -> ${p.spec}%")
             }
-            if (!p.regenHold) {
-                if (p.spec < 100) {
-                    if (++p.regen >= 50) {
-                        val own = p.startRegen
-                        p.startRegen = false
-                        val o0 = p.spec
-                        p.regen = 0
-                        p.spec = min(100, p.spec + 10)
-                        if (own) L("t$t ${p.name} spec regen $o0% -> ${p.spec}% (95% start - not a Lightbearer cycle)")
-                    }
-                } else p.regen = 0
-            }
+            lightbearer(t, p)
             if (!blocked && p.thrallNext == t) {
                 hits += H(t + 1, p, rng.randint(0, 3), "thrall", "thrall")
                 p.thrallNext = t + 4
             }
         }
-        if (!blocked && !swapPlanned[phase]) {
+        if (team > 2 && !blocked && !swapPlanned[phase]) {
             swapPlanned[phase] = true
             planSwaps(phase, t)
         }
@@ -637,6 +724,48 @@ class SoteEngine(
         }
     }
 
+    /** Under (in the maze): a shark whenever below 85 HP, one every 3 ticks, none that would push their swing back. */
+    private fun mazeEats(t: Int) {
+        for (p in alive()) {
+            if (!(p.mazeEatTill > t) || t + 3 > p.mazeEatTill || t < p.eatReady || p.hp >= UNDER_EAT_BELOW || p.sharks <= p.eatKeep) continue
+            val old = p.hp
+            p.hp = min(99, p.hp + SHARK_HEAL)
+            p.sharks--
+            p.eatReady = t + 3
+            L("t$t ${p.name} eats a shark in the maze: $old -> ${p.hp} (${p.sharks} left)")
+        }
+    }
+
+    /** Shark skips: a maze hit a tick on m+2..m+8 (sized from their HP, capped at it), food after it (tick-eaten). */
+    private fun sharkSkips(t: Int) {
+        for (sk in pendingSharks) {
+            val p = sk.p
+            val o = t - sk.m
+            if (p.dead || o < 0 || o > 8) continue
+            if (o >= 2) {
+                val d = min(mazeDmg(p.hp), p.hp)
+                p.hp -= d
+                L("t$t ${p.name} maze hit $d (HP ${p.hp})")
+            }
+            val x = sk.eats[o]
+            if (x == 'S' && p.sharks > 0) {
+                p.sharks--
+                p.hp = min(99, p.hp + SHARK_HEAL)
+                L("t$t ${p.name} eats a shark (HP ${p.hp}, ${p.sharks} left)")
+            }
+            if (x == 'G' && p.rests > 0) {
+                p.rests--
+                p.hp = min(99, p.hp + REST_HEAL)
+                L("t$t ${p.name} sips a Guthix rest (HP ${p.hp})")
+            }
+            if (p.hp <= 0) {
+                p.dead = true
+                L("t$t ${p.name} dies on the shark skip")
+            }
+        }
+        pendingSharks = ArrayList(pendingSharks.filter { !it.p.dead && t - it.m < 8 })
+    }
+
     private fun healOthers(t: Int) {
         val after2 = mazes.size >= 2
         val targeted = orbs.filter { it.t >= t }.map { it.p }.toSet()
@@ -647,8 +776,10 @@ class SoteEngine(
             if (c.keptForMaze == mazes.size) continue
             val cUnprayed = prayPlan(c, t, c.prayOffUntil).unprayed
             val pairNeed = { q: P -> ORB_MAX * prayPlan(q, t, q.prayOffUntil).unprayed }
-            val mazeDanger = { q: P, h: Int -> stallDead(h, q, runnersNext) }
-            val cands = alive().filter { q -> q !== c && ((q.veng && q.hp <= ORB_MAX && q in targeted) || (!after2 && mazeDanger(q, q.hp)) || q.hp <= pairNeed(q)) }.sortedBy { it.hp }
+            val mazeDanger = { q: P, h: Int -> if (q.how.getOrNull(mazes.size) == "redemption") false else if (sharkNext(q)) h <= ORB_MAX else stallDead(h, q, runnersNext) }
+            val skipUp = { q: P -> if (mazes.size == 1 && sharkNext(q) && q.hp <= ORB_MAX) 1 else 0 }
+            val cands = alive().filter { q -> q !== c && !redeemAhead(q) && ((q.veng && q.hp <= ORB_MAX && q in targeted) || (!after2 && mazeDanger(q, q.hp)) || q.hp <= pairNeed(q)) }
+                .sortedWith(compareBy<P> { -skipUp(it) }.thenBy { it.hp })
             for (q in cands) {
                 val give = min(floor(c.hp * 0.75).toInt(), 99 - q.hp)
                 val left = c.hp - give
@@ -656,15 +787,111 @@ class SoteEngine(
                 val vengGain = q.veng && q.hp <= ORB_MAX && q in targeted && q.hp + give > ORB_MAX
                 val mazeGain = !after2 && mazeDanger(q, q.hp) && !mazeDanger(q, q.hp + give)
                 val pairGain = q.hp <= pairNeed(q) && q.hp + give > pairNeed(q)
-                if (!vengGain && !mazeGain && !pairGain) continue
-                if (vengSafe) continue
+                val skipGain = skipUp(q) == 1
+                if (!vengGain && !mazeGain && !pairGain && !skipGain) continue
+                if (vengSafe && !skipGain) continue
                 if (cUnprayed > 0 && left <= ORB_MAX * cUnprayed) continue
-                if (!after2 && (left < 17 || mazeDanger(c, left))) continue
+                val shark = skipGain && c.sharks > 0 && !mazeDanger(c, min(99, left + SHARK_HEAL))
+                if (!after2 && !shark && (left < 17 || mazeDanger(c, left))) continue
                 c.hp = left
                 q.hp += give
                 if (mazeGain) q.keptForMaze = mazes.size
                 L("t$t ${c.name} heals other ${q.name} (+$give): ${c.name} ${c.hp}, ${q.name} ${q.hp}")
                 break
+            }
+        }
+    }
+
+    /**
+     * Before a redemption skip there's no time to orb down after the proc, so in the phase before it they pop a veng or
+     * two (one if it left them on 50 or less), Heal Other someone with what they have, then locator orb down to 1 HP -
+     * regardless once she's within 9% of the maze. Not with their prayer off.
+     */
+    private fun orbDown(t: Int) {
+        val ph = mazes.size
+        val near = hp - stopAt <= max * ORB_DOWN_AT
+        for (p in alive()) {
+            if (p.how[ph] != "redemption" || p.hp <= REDEMPTION_HP || p.restores < 1 || t < p.prayOffUntil || t < p.healFrom || meleeable(p, t)) continue
+            if (p.orbedDown == ph) {
+                p.hp = REDEMPTION_HP
+                L("t$t ${p.name} locator orbs back down to $REDEMPTION_HP HP")
+                continue
+            }
+            val done = p.vengPops[ph] >= 2 || (p.vengPops[ph] >= 1 && p.hp <= ORB_MAX) || p.hp <= ORB_MAX
+            if (!done && !near) continue
+            val nRun = alive().size - 1
+            for (q in alive().filter { it !== p && !redeemAhead(it) }.sortedBy { it.hp }) {
+                val give = min(floor(p.hp * 0.75).toInt(), 99 - q.hp)
+                if (give <= 0 || stallDead(q.hp + give, q, nRun)) continue
+                p.hp -= give
+                q.hp += give
+                L("t$t ${p.name} heals other ${q.name} (+$give) before orbing down: ${p.name} ${p.hp}, ${q.name} ${q.hp}")
+                break
+            }
+            L("t$t ${p.name} locator orbs down to $REDEMPTION_HP HP for the redemption skip (from ${p.hp}; ${p.vengPops[ph]} veng${if (p.vengPops[ph] == 1) "" else "s"})")
+            p.hp = REDEMPTION_HP
+            p.orbedDown = ph
+        }
+    }
+
+    /**
+     * The locator orb (redemption skippers, after the second maze; duos every phase): at 1 HP the orb's 0 triggers
+     * Redemption (to 25, a restore sip), and they Heal Other a teammate - between swings, with no orb landing on them
+     * in the next 3 ticks, keeping a sip for each redemption skip still to come.
+     */
+    private fun locatorOrbs(t: Int) {
+        val ph = min(mazes.size, 2)
+        val keep = { q: P -> q.how.drop(mazes.size).count { it == "redemption" } }
+        for (p in alive().filter { q -> "redemption" in q.how && q.restores >= 1 + keep(q) && q.hp < REDEMPTION_HP + REDEMPTION_HEAL }) {
+            if (t == p.next || meleeable(p, t) || t < p.cycleAfter || t < p.sipReady || p.swings[ph] == 0 || t < p.healFrom || t < p.noVengUntil) continue
+            if (orbs.any { it.p === p && it.t >= t && it.t <= t + 3 }) continue
+            val q = if (team == 2) alive().firstOrNull { it !== p && it.hp <= ORB_MAX && !redeemAhead(it) } else alive().filter { it !== p && it.veng && it.hp < ORB_MAX }.maxByOrNull { it.hp }
+            q ?: continue
+            val old = p.hp
+            p.hp = REDEMPTION_HP + REDEMPTION_HEAL
+            p.restores--
+            p.sipReady = t + 3
+            val give = min(floor(p.hp * 0.75).toInt(), 99 - q.hp)
+            p.hp -= give
+            q.hp += give
+            p.cycleAfter = (p.next ?: t) + 1
+            L("t$t ${p.name} locator orb -> Redemption ($old -> 25, restore: ${p.restores} left), heals other ${q.name} (+$give): ${p.name} ${p.hp}, ${q.name} ${q.hp}")
+            if (p.how.getOrNull(mazes.size) == "redemption" && mazes.size < 2) {
+                p.hp = REDEMPTION_HP
+                p.orbedDown = mazes.size
+            }
+        }
+    }
+
+    private fun lightbearer(t: Int, p: P) {
+        val frozen = t <= p.lbFreezeUntil
+        val wantLb = if (frozen) p.lb else p.lbLeft > 0 && p.spec < 100 && !p.regenHold
+        if (!wantLb && p.lb && p.lbLeft <= 0) {
+            p.lb = false
+            L("t$t ${p.name} out of the stall - swaps Lightbearer to Ultor (${p.spec}%)")
+        }
+        if (wantLb != p.lb) {
+            p.lb = wantLb
+            if (p.lbLeft > 0 && p.lbStarted) L("t$t ${p.name} ${if (wantLb) "back on Lightbearer (${p.lbLeft} cycles left)" else "at 100% - Ultor until they spec (${p.lbLeft} Lightbearer cycles left)"}")
+            if (wantLb) p.lbStarted = true
+        }
+        if (p.regenHold) return
+        if (p.spec >= 100) {
+            p.regen = 0
+            return
+        }
+        if (++p.regen < (if (p.lb) 25 else 50)) return
+        val own = p.startRegen
+        p.startRegen = false
+        val o0 = p.spec
+        p.regen = 0
+        p.spec = min(100, p.spec + 10)
+        if (own) L("t$t ${p.name} spec regen $o0% -> ${p.spec}% (95% start - not a Lightbearer cycle)")
+        if (!own && p.lb && p.lbLeft > 0 && --p.lbLeft <= 0) {
+            if (frozen) L("t$t ${p.name} Lightbearer cycles done (${p.spec}%) in the stall - stays on it until they're out")
+            else {
+                p.lb = false
+                L("t$t ${p.name} Lightbearer cycles done (${p.spec}%) - swaps to Ultor")
             }
         }
     }
@@ -705,7 +932,25 @@ class SoteEngine(
                 } else L("t$t ${p.name} ZCB spec misses")
             } else if (kind == "maul") {
                 if (h.hit) maulHits[phase]++
-                else if (p.specs[phase].converted != null && p.specs[phase].maulFor != null) swapMissed(p, phase, t)
+                else if (team > 2 && p.specs[phase].converted != null && p.specs[phase].maulFor != null) swapMissed(p, phase, t)
+                if (p.duoBackingUp && phase == 0) {
+                    p.duoBackingUp = false
+                    if (maulHits[0] == 0) {
+                        val b = ps.firstOrNull { it !== p && !it.dead }
+                        if (b != null) {
+                            b.specs[1] = Spec("maul")
+                            b.specs[2] = Spec("none")
+                        }
+                        p.specs[1] = Spec("none")
+                        p.specs[2] = Spec("maul")
+                        val need = max(0, ceil((50 - p.spec) / 10.0).toInt())
+                        if (need > 0) {
+                            p.lb = true
+                            p.lbLeft = need
+                        }
+                        L("t$t ${p.name}'s backup missed too: ${b?.name ?: "-"} mauls P2, ${p.name} camps Lightbearer ($need regens) to maul P3")
+                    }
+                }
                 damage(t, h.amt ?: 0, "${p.name} ${h.label}")
             } else damage(t, h.amt ?: 0, "${p.name} ${h.label}")
             events.hit(t, p, before - hp)
@@ -721,7 +966,7 @@ class SoteEngine(
             if (mine.isEmpty()) continue
             val pp = prayPlan(p, t, p.prayOffUntil)
             val pairAhead = prayPlan(p, t + 1, t + PRAYER_OFF + 1).unprayed > 0
-            val off = t !in pp.ticks || (p.veng && mine.size == 1 && (p.hp > ORB_MAX && !pairAhead))
+            val off = t !in pp.ticks || (p.veng && mine.size == 1 && !sharkNext(p) && (p.hp > ORB_MAX && !pairAhead))
             val prayStyle = if (off) null else mine.last().style
             var hitHere = false
             for (o in mine) {
@@ -751,30 +996,83 @@ class SoteEngine(
         orbs = ArrayList(orbs.filter { it.t != t })
     }
 
+    private fun ballShare(n: Int): Pair<Int, Int> {
+        val tb = BALL[min(5, n)] ?: BALL.getValue(1)
+        return (tb[n] ?: tb.getValue(1)) to tb.getValue(1)
+    }
+
+    private fun splits(live: List<P>, share: Int) = team > 2 && live.size > 1 && live.all { it.hp > share }
+
+    /** The tick before a death ball the target will tick-eat: they Heal Other their HP away first. */
+    private fun healBeforeBall(t: Int, b: Ball) {
+        val live = alive()
+        val tg = b.tgt
+        val willEat = !splits(live, ballShare(live.size).first) && (tg.rests > 0 || tg.sharks > 0)
+        if (!willEat || tg.hp <= 1 || meleeable(tg, t)) return
+        val nRun = live.size - 1
+        val others = live.filter { it !== tg }
+        val order =
+            if (mazes.size < 2) others.filter { !redeemAhead(it) }.sortedBy { it.hp }
+            else others.filter { it.hp <= ORB_MAX }.sortedByDescending { it.hp }.ifEmpty { others.sortedBy { it.hp } }
+        for (q in order) {
+            val give = min(floor(tg.hp * 0.75).toInt(), 99 - q.hp)
+            if (give <= 0 || (mazes.size < 2 && !q.how.drop(mazes.size).contains("redemption") && stallDead(q.hp + give, q, nRun))) continue
+            tg.hp -= give
+            q.hp += give
+            L("t$t ${tg.name} heals other ${q.name} (+$give) before tick-eating the death ball: ${tg.name} ${tg.hp}, ${q.name} ${q.hp}")
+            break
+        }
+    }
+
+    private fun pushBack(tgt: P, t: Int) {
+        if (tgt.next!! < t + 3) {
+            tgt.next = t + 3
+            if (flinches(tgt) && isHerTick(tgt.next!! + 1)) tgt.next = tgt.next!! + 1
+        }
+    }
+
+    /**
+     * The death ball lands: shared if everyone can take their share (3-5 man), else the target tick-eats it - a Guthix
+     * rest (to 5, no delay), purple sweets in a solo (1-3), a shark (to 20, no attack for 3 ticks), or tick-healed by
+     * the lowest-HP teammate (a 3-tick stall).
+     */
     private fun landBall(t: Int, b: Ball) {
         val live = alive()
         val n = live.size
-        val tb = BALL[min(5, n)] ?: BALL.getValue(1)
-        val share = tb[n] ?: tb.getValue(1)
+        val (share, full) = ballShare(n)
         val tgt = if (b.tgt.dead) null else b.tgt
         ball = null
-        if (n > 1 && live.all { it.hp > share }) {
+        if (splits(live, share)) {
             for (q in live) q.hp -= share
             L("t$t death ball shared by $n: $share each")
             return
         }
         if (tgt == null) return
-        val full = tb.getValue(1)
         val c = live.filter { it !== tgt && it.hp > 1 && !meleeable(it, t) }.minByOrNull { it.hp }
         val give = if (c != null) min(floor(c.hp * 0.75).toInt(), 99) else 0
-        if (give > 0 && c != null) {
+        if (tgt.rests > 0) {
+            val old = tgt.hp
+            tgt.hp = REST_HEAL
+            tgt.rests--
+            L("t$t death ball on ${tgt.name} alone ($full): tick-eats it with a Guthix rest, $old -> 0 -> ${tgt.hp} (${tgt.rests} sips left)")
+        } else if (team == 1) {
+            val old = tgt.hp
+            tgt.hp = rng.randint(1, 3)
+            tgt.eatReady = t + 3
+            pushBack(tgt, t)
+            L("t$t death ball on ${tgt.name} ($full): tick-eats it with purple sweets, $old -> 0 -> ${tgt.hp}")
+        } else if (tgt.sharks > 0) {
+            val old = tgt.hp
+            tgt.hp = SHARK_HEAL
+            tgt.sharks--
+            tgt.eatReady = t + 3
+            pushBack(tgt, t)
+            L("t$t death ball on ${tgt.name} alone ($full): tick-eats it with a shark, $old -> 0 -> ${tgt.hp} (${tgt.sharks} left)")
+        } else if (give > 0 && c != null) {
             val old = tgt.hp
             c.hp -= give
             tgt.hp = give
-            if (tgt.next!! < t + 3) {
-                tgt.next = t + 3
-                if (isHerTick(tgt.next!! + 1)) tgt.next = tgt.next!! + 1
-            }
+            pushBack(tgt, t)
             L("t$t death ball on ${tgt.name} alone ($full): tick-healed (stall) - $old -> 0, ${c.name} heals other +$give (${c.name} ${c.hp})")
         } else {
             hurt(t, tgt, full)
@@ -817,7 +1115,7 @@ class SoteEngine(
                 return
             }
         }
-        if (p.entry == null && act == "scythe" && isHerTick(t + 1)) {
+        if (team > 2 && p.entry == null && act == "scythe" && isHerTick(t + 1)) {
             p.next = t + 1
             L("t$t ${p.name} drops a tick (back on her attack ticks)")
             return
@@ -833,7 +1131,7 @@ class SoteEngine(
                 }
                 hits += H(t + ZCB_DELAY, p, 0, "ZCB spec", "zcb")
                 L("t$t ${p.name} ZCB spec (${p.spec}% left)")
-                p.next = t + 5
+                p.next = nextAfter(t, 5, p)
                 p.holding = "zcb"
                 events.attack(t, p, "zcb", t + ZCB_DELAY)
             }
@@ -842,7 +1140,7 @@ class SoteEngine(
                 p.mauled[ph]++
                 p.specDone[ph]++
                 val bgs = act == "bgs"
-                val (ch, mx) = if (bgs) melee("Bandos godsword", defLvl, 2.0).let { (c, m0) -> c to floor(floor(m0 * 1.1) * 1.1).toInt() } else melee("Elder maul", defLvl, 1.25)
+                val (ch, mx) = if (bgs) melee(p, "Bandos godsword", defLvl, 2.0).let { (c, m0) -> c to floor(floor(m0 * 1.1) * 1.1).toInt() } else melee(p, "Elder maul", defLvl, 1.25)
                 val hornOn = horned()
                 if (hornOn) p.hornUntil = -1
                 val hit = hornOn || rng.random() < ch
@@ -851,17 +1149,17 @@ class SoteEngine(
                 hits += H(t + 1, p, d, "${if (bgs) "BGS" else "Elder maul"} spec ${if (hit) d.toString() else "misses"}", "maul", hit, bgs)
                 L("t$t ${p.name} ${if (bgs) "BGS" else "Elder maul"} spec${if (hornOn) " (horned)" else ""} (${p.spec}% left)")
                 p.lastMelee = t
-                p.next = t + 6
+                p.next = nextAfter(t, 6, p)
                 p.holding = act
                 events.attack(t, p, act, t + 1)
             }
             "halb" -> {
                 spend(p, 30, t)
-                val parts = halbSpec(defLvl).roll()
+                val parts = halbSpec(p, defLvl).roll()
                 hits += H(t + 1, p, parts[0] + parts[1], "halberd spec ${parts.joinToString("/")}", "halb")
                 L("t$t ${p.name} Crystal halberd spec - last hit (${p.spec}% left)")
                 p.lastMelee = t
-                p.next = t + 7
+                p.next = nextAfter(t, 7, p)
                 p.holding = "halb"
                 events.attack(t, p, "halb", t + 1)
             }
@@ -873,21 +1171,21 @@ class SoteEngine(
                 }
                 val hornOn = horned()
                 if (hornOn) p.hornUntil = -1
-                val parts = clawSpec(defLvl, hornOn)
+                val parts = clawSpec(p, defLvl, hornOn)
                 hits += H(t + 1, p, parts.sum(), "claw spec ${parts.joinToString("/")}", "claw")
                 p.lastMelee = t
-                p.next = t + 4
+                p.next = nextAfter(t, 4, p)
                 p.holding = "claw"
                 events.attack(t, p, "claw", t + 1)
             }
             else -> {
-                val (ch, mx) = scythe(defLvl)
+                val (ch, mx) = scythe(p, defLvl)
                 val hornOn = horned()
                 if (hornOn) p.hornUntil = -1
                 val parts = listOf(mx, mx / 2, mx / 4).mapIndexed { j, m -> if ((hornOn && j == 0) || rng.random() < ch) max(1, rng.randint(0, m)) else 0 }
                 hits += H(t + 1, p, parts.sum(), "scythe ${parts.joinToString("/")}", null)
                 p.lastMelee = t
-                p.next = t + 5
+                p.next = nextAfter(t, 5, p)
                 p.holding = "scythe"
                 events.attack(t, p, "scythe", t + 1)
             }
@@ -901,7 +1199,7 @@ class SoteEngine(
     class Prefire(val weapon: String, val tick: Int, val delay: Int, val spec: Int = 0)
 
     companion object {
-        const val SOTE_HP = 4000
+        val SOTE_HP = mapOf(5 to 4000, 4 to 3500, 3 to 3000, 2 to 3000, 1 to 3000)
         const val SOTE_DEF = 200
         const val SOTE_DEF_FLOOR = 100
         const val SOTE_MAG = 250
@@ -920,6 +1218,28 @@ class SoteEngine(
         const val STALL_TICKS = 7
         const val HORN_TICK = 8
         const val ZCB_MARGIN = 100
+
+        /** Solos go under first: the skip after it is 14 ticks later. */
+        const val SOLO_UNDER = 14
+        const val SHARK_HEAL = 20
+        const val REST_HEAL = 5
+        const val UNDER_EAT_BELOW = 85
+        const val SHARK_SKIP_MIN = 29
+
+        /** A shark skip's food by HP at the proc (from the highest): S shark, G Guthix rest, by tick after the move. */
+        val SHARK_SKIP =
+            listOf(
+                92 to mapOf(7 to 'S'),
+                71 to mapOf(6 to 'S', 8 to 'G'),
+                68 to mapOf(4 to 'S', 7 to 'S'),
+                51 to mapOf(0 to 'S', 6 to 'S', 8 to 'G'),
+                48 to mapOf(0 to 'S', 4 to 'S', 7 to 'S'),
+                29 to mapOf(0 to 'S', 3 to 'S', 6 to 'S', 8 to 'G'),
+            )
+        const val REDEMPTION_HP = 1
+        const val REDEMPTION_HEAL = 24
+        const val ORB_DOWN_AT = 0.09
+
         /** The death ball's damage by players alive (the table) and players sharing it. */
         val BALL = mapOf(5 to mapOf(5 to 14, 4 to 21, 3 to 38, 2 to 87, 1 to 350), 4 to mapOf(4 to 17, 3 to 31, 2 to 70, 1 to 280), 3 to mapOf(3 to 23, 2 to 52, 1 to 210), 2 to mapOf(2 to 35, 1 to 140), 1 to mapOf(1 to 70))
         const val BALL_EVERY = 10

@@ -35,8 +35,10 @@ import org.rsmod.plugin.scripts.PluginScript
 import org.rsmod.plugin.scripts.ScriptContext
 
 /**
- * `::sote` - a private Sotetseg room playing the sim's 5s plan live with five bots; you watch from south of the stack.
- * `::sote median | top10 | slow | time 3:01.2 | seed x12 | stats | stop | log`, as `::maiden`.
+ * `::sote [1-5]` - a private Sotetseg room playing the sim's plan live with a team of bots (5 unless given); you watch
+ * from south of the stack. `::sote [1-5] median | top10 | top50 | slow | time 3:01.2 | seed x12 | stats | stop | log`,
+ * as `::maiden`; top50 plays a raid whose time is in Blert's top 50 for the team size.
+ * `SOTE_SELFTEST=s1,3/s2,...` plays the seeds in turn (team/seed; 5s if no team is given).
  */
 class VSoteScript
 @Inject
@@ -58,39 +60,46 @@ constructor(
     override fun ScriptContext.startup() {
         onEvent<GameLifecycle.StartCycle> { tickRooms() }
         onCommand("sote") {
-            desc = "ToB Sotetseg, 5s: the sim's plan run live with bots - ::sote [median | top10 | slow | time m:ss.t | seed s | stats | stop]"
-            invalidArgs = "Usage: ::sote [median | top10 | slow | time m:ss.t | seed s | stats | stop]"
+            desc = "ToB Sotetseg: the sim's plan run live with bots - ::sote [1-5] [median | top10 | top50 | slow | time m:ss.t | seed s | stats | stop]"
+            invalidArgs = "Usage: ::sote [1-5] [median | top10 | top50 | slow | time m:ss.t | seed s | stats | stop]"
             cheat { xarpus() }
         }
         System.getenv("SOTE_SELFTEST")?.let {
             val seeds = ArrayDeque(it.ifBlank { "s1" }.split(','))
             onEvent<GameLifecycle.StartCycle> {
-                if (mapClock.cycle >= 20 && SELF_TEST !in rooms && seeds.isNotEmpty()) open(SELF_TEST, null, seeds.removeFirst())
+                if (mapClock.cycle >= 20 && SELF_TEST !in rooms && seeds.isNotEmpty()) {
+                    val entry = seeds.removeFirst().split('/')
+                    if (entry.size == 2) open(SELF_TEST, null, entry[0].toInt(), entry[1]) else open(SELF_TEST, null, 5, entry[0])
+                }
             }
         }
     }
 
     private fun Cheat.xarpus() {
         val pick = random.of(0, 9999)
+        val team = args.getOrNull(0)?.toIntOrNull()?.takeIf { it in 1..5 }
+        val rest = if (team != null) args.drop(1) else args.toList()
+        val size = team ?: 5
         val chosen: SoteIndex.Run? =
-            when (args.getOrNull(0)?.lowercase()) {
+            when (rest.getOrNull(0)?.lowercase()) {
                 null, "again" -> null
                 "stop" -> return rooms[player.username]?.let { close(it); leave(player) } ?: player.mes("You have no Sotetseg room open.")
                 "log" -> return rooms[player.username]?.let { it.log = !it.log } ?: Unit
-                "stats" -> return player.mes(SoteIndex.stats())
-                "median" -> SoteIndex.median()
-                "top10", "fast" -> SoteIndex.top10(pick)
-                "slow" -> SoteIndex.slow10(pick)
-                "time" -> SoteIndex.time(args.getOrNull(1) ?: "", pick) ?: return player.mes("::sote time 1:25.2")
-                "seed" -> SoteIndex.seed(args.getOrNull(1) ?: return player.mes("::sote seed <seed>"))
-                else -> return player.mes("::sote [median | top10 | slow | time m:ss.t | seed s | stats | stop]")
+                "stats" -> return player.mes(SoteIndex.stats(size))
+                "median" -> SoteIndex.median(size)
+                "top10", "fast" -> SoteIndex.top10(size, pick)
+                "top50", "blert" -> SoteIndex.top50(size, pick)
+                "slow" -> SoteIndex.slow10(size, pick)
+                "time" -> SoteIndex.time(size, rest.getOrNull(1) ?: "", pick) ?: return player.mes("::sote [1-5] time 1:25.2")
+                "seed" -> SoteIndex.seed(size, rest.getOrNull(1) ?: return player.mes("::sote [1-5] seed <seed>"))
+                else -> return player.mes("::sote [1-5] [median | top10 | top50 | slow | time m:ss.t | seed s | stats | stop]")
             }
         val seed = chosen?.seed ?: "live${System.nanoTime() % 1_000_000}"
-        open(player.username, player, seed) ?: return player.mes("No instance space free; try again shortly.")
+        open(player.username, player, size, seed) ?: return player.mes("No instance space free; try again shortly.")
         if (chosen != null) player.mes("Raid ${chosen.seed}: ${chosen.time} (mazes t${chosen.mazes}${if (chosen.deaths > 0) ", ${chosen.deaths} died" else ""}).")
     }
 
-    private fun open(owner: String, player: Player?, seed: String): SoteLiveRoom? {
+    private fun open(owner: String, player: Player?, team: Int, seed: String): SoteLiveRoom? {
         rooms.remove(owner)?.let { close(it) }
         val session =
             instances.createServerOwned(
@@ -114,7 +123,7 @@ constructor(
         npc.moveRestrict = MoveRestrict.PassThru
         npc.ignoreCombatInteractions = true
         instances.attachNpc(session.id, npc)
-        val room = SoteLiveRoom(session, npc, seed, ::at, npcRepo, worldRepo, npcHits, playerHits, protectedAccess, bots, look)
+        val room = SoteLiveRoom(session, npc, seed, team, ::at, npcRepo, worldRepo, npcHits, playerHits, protectedAccess, bots, look)
         for (p in room.engine.ps) {
             val bot = bots.spawn(p.name, room.outsideTile(p.i), emptyList(), emptyList()) ?: continue
             bot.varMoveSpeed = MoveSpeed.Run
@@ -129,9 +138,9 @@ constructor(
                 Camera.camLookAt(player, at(SoteRules.CAM_LOOK_X, SoteRules.CAM_LOOK_Y), 0, CAM_RATE, CAM_RATE2)
             }
             player.npcViewDistance = 32
-            player.mes("Sotetseg (5s, the sim's plan, live) - seed $seed.")
+            player.mes("Sotetseg ($team-man, the sim's plan, live) - seed $seed.")
         }
-        logger.info { "vsote: room for $owner (instance ${session.id}, seed $seed)" }
+        logger.info { "vsote: room for $owner (instance ${session.id}, $team-man, seed $seed)" }
         return room
     }
 
@@ -140,7 +149,7 @@ constructor(
             try {
                 room.tick()
                 if (room.finished && owner == SELF_TEST) {
-                    logger.info { "vsote selftest done ${room.seed}: end t${room.engine.end} (index: end t${SoteIndex.seed(room.seed).end})" }
+                    logger.info { "vsote selftest done ${room.team}/${room.seed}: end t${room.engine.end} (index: end t${SoteIndex.seed(room.team, room.seed).end})" }
                     close(room)
                     rooms.remove(owner)
                 }

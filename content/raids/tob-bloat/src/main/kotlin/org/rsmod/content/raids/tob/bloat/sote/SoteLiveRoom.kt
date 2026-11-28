@@ -5,6 +5,7 @@ import dev.openrune.rscm.RSCM.asRSCM
 import dev.openrune.rscm.RSCMType
 import dev.openrune.types.NpcMode
 import dev.openrune.types.aconverted.SpotanimType
+import kotlin.math.max
 import org.rsmod.api.config.constants
 import org.rsmod.api.instances.InstanceSession
 import org.rsmod.api.npc.hit.modifier.NpcHitModifier
@@ -24,19 +25,19 @@ import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
 import org.rsmod.game.hit.HitType
 import org.rsmod.map.CoordGrid
-import kotlin.math.max
 
 /**
- * A live Sotetseg: the sim's Sotetseg ([SoteEngine]) runs it tick by tick. The five bots stand along her south side and
- * attack as the engine has them (prefires, mauls, ZCBs, claws, scythes, the halberd); her orbs fly at them (prayed or
- * taken for veng) and her melee comes off the flinch. At a maze one goes under (out of sight) and the others are taken
- * to the maze's first row, cast NPC Contact (the stall) and come back out when the stall ends. One seed, one raid: the
- * same as the index's ([SoteIndex]).
+ * A live Sotetseg: the sim's Sotetseg ([SoteEngine]) runs it tick by tick for a team of 1-5 bots. They stand round her
+ * on the team's tiles and attack as the engine has them (prefires, mauls, ZCBs, claws, scythes, the halberd); her orbs
+ * fly at them (prayed or taken for veng) and her melee comes off the flinch. At a maze one goes under (out of sight) and
+ * the others are taken to the maze's first row, cast NPC Contact (the stall) and come back out when the stall ends; a
+ * solo goes under first, then stalls. One seed, one raid: the same as the index's ([SoteIndex]).
  */
 class SoteLiveRoom(
     val session: InstanceSession,
     val sote: Npc,
     val seed: String,
+    val team: Int,
     private val at: (Int, Int) -> CoordGrid,
     private val npcRepo: NpcRepository,
     private val worldRepo: WorldRepository,
@@ -48,7 +49,10 @@ class SoteLiveRoom(
 ) {
     val bots = ArrayList<Player>()
     var log = false
-    val engine = SoteEngine(SotePlan.FIVE, SimRng(seed), Shows())
+    private val acts = HashMap<Pair<Int, Int>, String>()
+    private var her = ""
+    private var shown = 0
+    val engine = SoteEngine(SotePlan.of(team), SimRng(seed), Shows())
     private var clock = -PRE_TICKS
     private var idle = 0
     private val later = HashMap<Int, MutableList<() -> Unit>>()
@@ -58,10 +62,10 @@ class SoteLiveRoom(
 
     fun botOf(p: SoteEngine.P): Player? = bots.getOrNull(p.i)
 
-    fun stackTile(i: Int): CoordGrid = SoteRules.SPOTS[i % SoteRules.SPOTS.size].let { at(it[0], it[1]) }
+    fun stackTile(i: Int): CoordGrid = SoteRules.SPOTS.getValue(team)[i].let { (x, y) -> at(x, y) }
 
     /** Where each bot waits before the raid: just south of the barrier, on the column it comes in by. */
-    fun outsideTile(i: Int): CoordGrid = at(SoteRules.ENTRY_COLUMNS[i % SoteRules.ENTRY_COLUMNS.size], SoteRules.BARRIER_Y - 1)
+    fun outsideTile(i: Int): CoordGrid = at(SoteRules.ENTRY_COLUMNS.getValue(team)[i], SoteRules.BARRIER_Y - 1)
 
     private val entry = RoomEntry(clicks, at(SoteRules.BARRIER_X, SoteRules.BARRIER_Y), pass = -1, run = RUN_FROM)
 
@@ -76,6 +80,8 @@ class SoteLiveRoom(
     fun tick() {
         clock++
         sote.mode = NpcMode.None
+        val landing = shown
+        shown = 0
         if (clock > 0) {
             if (engine.kill == null) engine.tick() else idle++
         }
@@ -84,13 +90,28 @@ class SoteLiveRoom(
         entry.tick(clock, bots)
         if (clock == RUN_FROM) for (p in engine.ps) botOf(p)?.let { clicks.walk(it, stackTile(p.i)) }
         if (idle == END_HOLD && sote.isSlotAssigned) npcRepo.del(sote, Int.MAX_VALUE)
-        if (sote.isSlotAssigned && engine.kill == null) sote.hitpoints = max(1, engine.hp)
+        // her hitsplats land after this, a cycle after they were queued: the engine's HP already has them taken off
+        if (sote.isSlotAssigned) sote.hitpoints = max(1, engine.hp) + landing
         for (p in engine.ps) {
             val bot = botOf(p) ?: continue
             if (!look.wearing(bot)) look.equip(bot, kit(p.prefire))
             if (!engine.blocked && (clock > ARRIVED || bot.coords == stackTile(p.i))) bot.faceNpc(sote)
             bot.runEnergy = constants.run_max_energy
         }
+        if (TRACE && clock > 0) trace()
+    }
+
+    /** `SOTE_TRACE`: one line a tick - her HP, then each bot's room tile, level, HP and what it did (tools/sote-render). */
+    private fun trace() {
+        val base = at(SoteRules.X, SoteRules.Y)
+        val dx = base.x - SoteRules.X
+        val dz = base.z - SoteRules.Y
+        val bs = engine.ps.joinToString(";") { p ->
+            val c = botOf(p)?.coords
+            "${p.i},${(c?.x ?: 0) - dx},${(c?.z ?: 0) - dz},${c?.level ?: 0},${p.hp},${acts.remove(engine.t to p.i) ?: ""}"
+        }
+        println("sotetrace $seed ${engine.t} ${engine.hp} ${if (engine.blocked) 1 else 0} $her|$bs")
+        her = ""
     }
 
     fun remove() {
@@ -101,6 +122,7 @@ class SoteLiveRoom(
 
     private inner class Shows : SoteEngine.Events {
         override fun attack(t: Int, p: SoteEngine.P, act: String, lands: Int) {
+            acts[t to p.i] = act
             val bot = botOf(p) ?: return
             if (act == "horn") return bot.say("*Soulflame horn*")
             if (clock <= 0) return
@@ -109,10 +131,13 @@ class SoteLiveRoom(
 
         override fun hit(t: Int, p: SoteEngine.P, amt: Int) {
             val bot = botOf(p) ?: return
-            if (sote.isSlotAssigned) sote.queueHit(bot, 1, HitType.Typeless, amt, npcHits)
+            if (!sote.isSlotAssigned) return
+            sote.queueHit(bot, 1, HitType.Typeless, amt, npcHits)
+            shown += amt
         }
 
         override fun herAttack(t: Int, p: SoteEngine.P, kind: String) {
+            her = "$kind:${p.i}"
             val bot = botOf(p) ?: return
             sote.facePlayer(bot)
             if (kind == "melee") return sote.anim(SoteRules.MELEE)
@@ -123,7 +148,7 @@ class SoteLiveRoom(
 
         override fun orbLands(t: Int, p: SoteEngine.P, style: String, d: Int, prayed: Boolean) {
             val bot = botOf(p) ?: return
-            bot.queueHit(sote, 1, HitType.Magic, d, playerHits)
+            if (sote.isSlotAssigned) bot.queueHit(sote, 1, HitType.Magic, d, playerHits)
         }
 
         override fun veng(t: Int, p: SoteEngine.P, amt: Int) {
@@ -133,8 +158,12 @@ class SoteLiveRoom(
         override fun maze(t: Int, n: Int, m: Int, under: SoteEngine.P?, back: Int) {
             val stallers = engine.ps.filter { !it.dead && it !== under }
             under?.let { u -> botOf(u)?.let { go(it, at(SoteRules.UNDER_X, SoteRules.UNDER_Y)) } }
-            // teleported south of the maze, then onto its first row on m + 1: NPC Contact, and stand there
-            stallers.forEachIndexed { k, p -> botOf(p)?.let { go(it, at(SoteRules.MAZE_X + 4 + k, SoteRules.MAZE_A - 1)) } }
+            // teleported south of the maze (a solo goes under first), then onto its first row on m + 1: NPC Contact
+            val south = { stallers.forEachIndexed { k, p -> botOf(p)?.let { go(it, at(SoteRules.MAZE_X + 4 + k, SoteRules.MAZE_A - 1)) } } }
+            if (team == 1) {
+                stallers.forEach { p -> botOf(p)?.let { go(it, at(SoteRules.UNDER_X, SoteRules.UNDER_Y)) } }
+                at(m) { south() }
+            } else south()
             at(m + 1) {
                 stallers.forEachIndexed { k, p ->
                     val bot = botOf(p) ?: return@forEachIndexed
@@ -157,10 +186,12 @@ class SoteLiveRoom(
 
     companion object {
         const val PRE_TICKS = 7
-        /** The team runs from the barrier on t2 and is on the stack by t10 (Blert's 5s raids). */
+
+        /** The team runs from the barrier on t2 and is on its tiles by t10 (Blert's 5s raids). */
         const val RUN_FROM = 2
         const val ARRIVED = 10
         const val END_HOLD = 8
+        private val TRACE = System.getenv("SOTE_TRACE") != null
         val KIT = mapOf("Twisted bow" to "TB", "ZCB auto" to "Z", "ZCB spec" to "ZCB", "zcb" to "ZCB", "maul" to "EM", "bgs" to "BGS", "claw" to "C", "halb" to "HB", "scythe" to "S")
     }
 }
