@@ -21,7 +21,7 @@ Ground truth, in this order:
 
 ## How we work: branches, one Admin
 
-- Each room has its own agent and branch, named `room/<room>` (for example `room/maiden`), in `tob_practice_mode`. If
+- Each room has its own agent and branch, named `room/<room>` (for example `room/maiden`; the lobby is `room/lobby`), in `tob_practice_mode`. If
   you change verzikSim.JS, use a branch of the same name there.
 - **You never deploy.** Only the Admin puts anything on the owner's PC: no `.data/restart.flag`, no copying files to
   the PC. Two agents restarting the server collide, and the owner may be in it watching.
