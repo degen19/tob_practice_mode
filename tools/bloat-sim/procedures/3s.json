@@ -49,7 +49,7 @@
    "stall": true,
    "necks": 6,
    "hp": 115,
-   "first_swing": 6,
+   "first_swing": 15,
    "walk_specs": [
     {
      "weapon": "BGS_SPEC",
@@ -70,20 +70,19 @@
    "stall": true,
    "necks": 6,
    "hp": 115,
-   "first_swing": 7,
-   "walk_specs": [
-    {
-     "weapon": "BGS_SPEC",
-     "tick": 9
-    }
-   ],
+   "first_swing": 6,
+   "walk_specs": [],
    "down_specs": [
     {
      "weapon": "CLAW_SPEC",
      "at": 10
+    },
+    {
+     "weapon": "CLAW_SPEC",
+     "at": 14
     }
    ],
-   "enter": 3
+   "enter": 4
   }
  ],
  "entry": {

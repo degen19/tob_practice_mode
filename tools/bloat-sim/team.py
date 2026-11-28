@@ -119,13 +119,31 @@ def route(p, goal, bx, by, avoid=()):
 
 
 def steps_to(p, goal, bx, by):
-    return len(route(p, goal, bx, by)) - 1
+    """Fewest steps from p to goal round the tank (8-way, corners not cut)."""
+    from collections import deque
+    if p == goal:
+        return 0
+    seen = {p: 0}
+    q = deque([p])
+    while q:
+        x, y = q.popleft()
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                n = (x + dx, y + dy)
+                if (dx or dy) and n not in seen and 8 <= n[0] <= 23 and 8 <= n[1] <= 23 and not in_tank(*n):
+                    if dx and dy and (in_tank(x + dx, y) or in_tank(x, y + dy)):
+                        continue
+                    seen[n] = seen[(x, y)] + 1
+                    if n == goal:
+                        return seen[n]
+                    q.append(n)
+    return 10 ** 6
 
 
-def safe_step(p, goal, landing_next, bx=None, by=None):
+def safe_step(p, goal, landing_next, bx=None, by=None, avoid=()):
     """Up to 2 tiles toward the goal, ending the tick off any tile a hand lands on next tick."""
     if bx is not None:
-        path = route(p, goal, bx, by)
+        path = route(p, goal, bx, by, avoid)
         nxt = path[min(2, len(path) - 1)]
         if len(path) > 2 and path[1] not in landing_next and nxt in landing_next:
             nxt = path[1]
@@ -199,6 +217,8 @@ def run(proc, seed, record=False, weapons=None):
         start = (proc["entry"]["x"], side)
         east = proc["entry"].get("heading", "east") == "east"
         direction = (1 if side == 8 else -1) if east else (-1 if side == 8 else 1)
+    if start is not None:
+        start = LOOP[(LOOP.index(start) - direction) % len(LOOP)]
     room = Room(team, rng, start, direction)
     w = weapons or Weapons()
     factor = proc.get("damage_factor", 1.0)
@@ -238,12 +258,17 @@ def run(proc, seed, record=False, weapons=None):
         hands_by = {}
         for when, tiles in room.hands:
             hands_by.setdefault(when, set()).update(tiles)
+        seen_now = {c for c in OUTER if ray_clear(bx + 2, by + 2, *c)}
         for p in ps:
             if p.dead or t < p.stunned_until:
                 continue
             if p.pos[0] >= 24 or p.pos[0] <= 7:
                 if t >= p.enter:
-                    p.pos = (23, p.pos[1]) if p.pos[0] >= 24 else (8, p.pos[1])
+                    side_x = 23 if p.pos[0] >= 24 else 8
+                    first_act = min([p.first] + [k for k in p.walk_specs if k >= t])
+                    p.pos = (side_x, 15)
+                    aim = plan_tile(p, room, t, hands_by, [], ready=max(first_act, t + 1), side="any", still=True)
+                    p.pos = (side_x, min(max(aim[1], 14), 17))
                 continue
             hold = 5 if p.stall and down is None else 1
             danger = set().union(*[v for when, v in hands_by.items() if t < when <= t + hold]) if hands_by else set()
@@ -253,7 +278,10 @@ def run(proc, seed, record=False, weapons=None):
             if p.walk_swings is not None and down is None and room.walk_n == 1:
                 nxt = min([x for x in p.walk_swings if x > p.last_swing] or [10 ** 6])
             hiding = (t < p.first and down is None) or (rewalk and not p.rewalk_attack) or (nxt is not None and nxt - t > 4 and t >= p.next_attack - 1)
-            if nxt is not None and nxt < 10 ** 6 and not p.stall and t >= p.first and down is None:
+            first_act = min([p.first] + [k for k in p.walk_specs if k >= t])
+            if down is None and t <= first_act and first_act - t <= 6:
+                target = plan_tile(p, room, t, hands_by, stallers, ready=first_act, side="any", still=True)
+            elif nxt is not None and nxt < 10 ** 6 and not p.stall and t >= p.first and down is None:
                 target = sneak(p, room, t, nxt, hands_by, stallers)
             elif hiding:
                 danger = set().union(*[v for when, v in hands_by.items() if t < when <= t + 3]) if hands_by else set()
@@ -280,7 +308,7 @@ def run(proc, seed, record=False, weapons=None):
             landing_soon = set().union(*[v for when, v in hands_by.items() if t < when <= t + 3]) if hands_by else set()
             moving = hiding or not p.stall or down is not None or t < p.first or t >= p.next_attack or p.pos in landing_soon
             if moving:
-                p.pos = safe_step(p.pos, target, hands_by.get(t + 1, set()), bx, by)
+                p.pos = safe_step(p.pos, target, hands_by.get(t + 1, set()), bx, by, seen_now)
             elif p.pos in hands_by.get(t + 1, set()):
                 p.pos = safe_step(p.pos, p.pos, hands_by.get(t + 1, set()))
             if wpn in SPEC_COST and p.energy < SPEC_COST[wpn]:
@@ -384,7 +412,7 @@ def future_sw(room, k):
     return LOOP[li]
 
 
-def plan_tile(p, room, t, hands_by, stallers, ready=None, side="front"):
+def plan_tile(p, room, t, hands_by, stallers, ready=None, side="front", still=False):
     """A non-staller's tile for its next swing: in reach of where he'll be when the scythe is ready, hugging the tank,
     out of his sight and the stallers' while it waits, clear of hands, and reachable in time (running 2 tiles a tick)."""
     ready = max(p.next_attack, t) if ready is None else ready
@@ -410,7 +438,7 @@ def plan_tile(p, room, t, hands_by, stallers, ready=None, side="front"):
             ahead = -ahead
         elif side == "any":
             ahead = 0
-        cost = (c in hand_at, ring, ahead, seen_now and bounce, seen_now, d)
+        cost = (c in hand_at, ahead, d, ring, seen_now and bounce, seen_now) if still else (c in hand_at, ahead, ring, seen_now and bounce, seen_now, d)
         if best_cost is None or cost < best_cost:
             best, best_cost = c, cost
     return best or goal_tile(p, nbx, nby, hand_at, stallers)
@@ -426,6 +454,8 @@ def sneak(p, room, t, swing_at, hands_by, stallers):
     seen = {c for c in OUTER if ray_clear(bx + 2, by + 2, *c)}
     path = route(p.pos, goal, bx, by, avoid=seen)
     left = swing_at - t
+    if len(path) - 1 > 2 * (left + 1):
+        path = route(p.pos, goal, bx, by)
     best = goal
     for i, c in enumerate(path):
         if c not in seen and len(path) - 1 - i <= 2 * (left - 1):
