@@ -404,6 +404,8 @@ class MaidenCrew(
         if (!room.bloody(here) || b.order?.walkTo?.let { !room.bloody(it) } == true || p.routeDestination.isNotEmpty()) return false
         // a step on the click or the swing costs the swing: one due waits while the blood is still ticks away
         if (p.actionDelay <= clock.cycle + 1 && (b.order != null || current(p) != null) && (room.bloodIn(here) ?: 0) >= BLOOD_SLACK) return false
+        // a DPS swings first whenever the blood lands after its swing, and steps off on the tick after
+        if (b.dps != null && p.actionDelay <= clock.cycle + 1 && (b.order != null || current(p) != null) && (room.bloodIn(here) ?: 0) > max(0, p.actionDelay - clock.cycle)) return false
         val beside = room.besideHer(here)
         val to =
             (-DODGE..DODGE).flatMap { dx -> (-DODGE..DODGE).map { dz -> CoordGrid(here.x + dx, here.z + dz, here.level) } }
