@@ -46,6 +46,24 @@ object SoteRules {
             1 to listOf(3278),
         )
 
+    /**
+     * The maze crossing (every raid on Blert): the players skipping it are teleported 3 ticks after the proc to column
+     * 1, three south of row A; they set off up the column the tick before the stall starts, two tiles a tick, cast NPC
+     * Contact on row 3 (the stall's first tick) and are on row 15, by her south-west corner, as it ends.
+     */
+    const val CROSS_X = 3274
+    const val CROSS_START_Y = 4307
+    const val CROSS_TOP_Y = 4325
+    const val TELEPORT_AFTER = 3
+
+    /**
+     * The shark a player drops by her south-west corner at the start (top of column 1, as on Blert): the crossers click
+     * it to run up the column through their NPC Contact. The player on the west tile steps out for it on t12.
+     */
+    const val SHARK = "obj.shark"
+    const val SHARK_TICK = 12
+    val SHARK_Y = mapOf(5 to 4327, 4 to 4327, 3 to 4326, 2 to 4326, 1 to 4325)
+
     /** Under: out of sight (the shadow realm isn't copied). */
     const val UNDER_X = 3320
     const val UNDER_Y = 4345

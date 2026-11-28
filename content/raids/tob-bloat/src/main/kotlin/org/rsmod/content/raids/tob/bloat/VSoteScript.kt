@@ -19,6 +19,7 @@ import org.rsmod.api.player.protect.ProtectedAccessLauncher
 import org.rsmod.api.player.vars.varMoveSpeed
 import org.rsmod.api.random.GameRandom
 import org.rsmod.api.repo.npc.NpcRepository
+import org.rsmod.api.repo.obj.ObjRepository
 import org.rsmod.api.repo.world.WorldRepository
 import org.rsmod.api.script.onCommand
 import org.rsmod.api.script.onEvent
@@ -45,6 +46,7 @@ class VSoteScript
 constructor(
     private val instances: InstanceManager,
     private val npcRepo: NpcRepository,
+    private val objRepo: ObjRepository,
     private val worldRepo: WorldRepository,
     private val mapClock: MapClock,
     private val random: GameRandom,
@@ -123,7 +125,7 @@ constructor(
         npc.moveRestrict = MoveRestrict.PassThru
         npc.ignoreCombatInteractions = true
         instances.attachNpc(session.id, npc)
-        val room = SoteLiveRoom(session, npc, seed, team, ::at, npcRepo, worldRepo, npcHits, playerHits, protectedAccess, bots, look)
+        val room = SoteLiveRoom(session, npc, seed, team, ::at, npcRepo, objRepo, worldRepo, npcHits, playerHits, protectedAccess, bots, look)
         for (p in room.engine.ps) {
             val bot = bots.spawn(p.name, room.outsideTile(p.i), emptyList(), emptyList()) ?: continue
             bot.varMoveSpeed = MoveSpeed.Run

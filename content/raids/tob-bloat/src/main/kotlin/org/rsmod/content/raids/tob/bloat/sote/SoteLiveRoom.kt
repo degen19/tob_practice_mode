@@ -15,6 +15,7 @@ import org.rsmod.api.player.hit.queueHit
 import org.rsmod.api.player.hook.TeleportType
 import org.rsmod.api.player.protect.ProtectedAccessLauncher
 import org.rsmod.api.repo.npc.NpcRepository
+import org.rsmod.api.repo.obj.ObjRepository
 import org.rsmod.api.repo.world.WorldRepository
 import org.rsmod.content.raids.tob.bloat.MaidenRules
 import org.rsmod.content.raids.tob.bloat.RaidBots
@@ -24,14 +25,16 @@ import org.rsmod.content.raids.tob.bloat.maiden.SimRng
 import org.rsmod.game.entity.Npc
 import org.rsmod.game.entity.Player
 import org.rsmod.game.hit.HitType
+import org.rsmod.game.obj.Obj
 import org.rsmod.map.CoordGrid
 
 /**
  * A live Sotetseg: the sim's Sotetseg ([SoteEngine]) runs it tick by tick for a team of 1-5 bots. They stand round her
  * on the team's tiles and attack as the engine has them (prefires, mauls, ZCBs, claws, scythes, the halberd); her orbs
- * fly at them (prayed or taken for veng) and her melee comes off the flinch. At a maze one goes under (out of sight) and
- * the others are taken to the maze's first row, cast NPC Contact (the stall) and come back out when the stall ends; a
- * solo goes under first, then stalls. One seed, one raid: the same as the index's ([SoteIndex]).
+ * fly at them (prayed or taken for veng) and her melee comes off the flinch. On t12 the west bot drops a shark by her
+ * south-west corner. At a maze one goes under (out of sight); the others are teleported south of the maze and run up
+ * its first column to that shark through their NPC Contact (the stall), then walk back to their tiles; a solo goes
+ * under first, then crosses. One seed, one raid: the same as the index's ([SoteIndex]).
  */
 class SoteLiveRoom(
     val session: InstanceSession,
@@ -40,6 +43,7 @@ class SoteLiveRoom(
     val team: Int,
     private val at: (Int, Int) -> CoordGrid,
     private val npcRepo: NpcRepository,
+    private val objRepo: ObjRepository,
     private val worldRepo: WorldRepository,
     private val npcHits: NpcHitModifier,
     private val playerHits: PlayerHitModifier,
@@ -56,6 +60,7 @@ class SoteLiveRoom(
     private var clock = -PRE_TICKS
     private var idle = 0
     private val later = HashMap<Int, MutableList<() -> Unit>>()
+    private var shark: Obj? = null
 
     val finished: Boolean
         get() = idle > END_HOLD + 2
@@ -77,6 +82,18 @@ class SoteLiveRoom(
         later.getOrPut(t) { ArrayList() } += f
     }
 
+    /** The bot on the west-most tile drops the shark the crossers click, then steps back. */
+    private fun dropShark() {
+        val i = SoteRules.SPOTS.getValue(team).withIndex().minBy { it.value.first }.index
+        val bot = bots.getOrNull(i) ?: return
+        val tile = at(SoteRules.CROSS_X, SoteRules.SHARK_Y.getValue(team))
+        clicks.walk(bot, tile)
+        at(SoteRules.SHARK_TICK + 1) {
+            shark = objRepo.add(SoteRules.SHARK, tile, Int.MAX_VALUE, reveal = 0)
+            clicks.walk(bot, stackTile(i))
+        }
+    }
+
     fun tick() {
         clock++
         sote.mode = NpcMode.None
@@ -89,6 +106,7 @@ class SoteLiveRoom(
         // through the barrier as the room starts, then the run north to the stack (on its tiles by t10, as on Blert)
         entry.tick(clock, bots)
         if (clock == RUN_FROM) for (p in engine.ps) botOf(p)?.let { clicks.walk(it, stackTile(p.i)) }
+        if (clock == SoteRules.SHARK_TICK) dropShark()
         if (idle == END_HOLD && sote.isSlotAssigned) npcRepo.del(sote, Int.MAX_VALUE)
         // her hitsplats land after this, a cycle after they were queued: the engine's HP already has them taken off
         if (sote.isSlotAssigned) sote.hitpoints = max(1, engine.hp) + landing
@@ -116,6 +134,7 @@ class SoteLiveRoom(
 
     fun remove() {
         if (sote.isSlotAssigned) npcRepo.del(sote, Int.MAX_VALUE)
+        shark?.let { objRepo.del(it) }
     }
 
     private fun kit(act: String): MaidenRules.Kit = MaidenRules.KITS.getValue(KIT[act] ?: "S")
@@ -156,18 +175,17 @@ class SoteLiveRoom(
         }
 
         override fun maze(t: Int, n: Int, m: Int, under: SoteEngine.P?, back: Int) {
-            val stallers = engine.ps.filter { !it.dead && it !== under }
-            under?.let { u -> botOf(u)?.let { go(it, at(SoteRules.UNDER_X, SoteRules.UNDER_Y)) } }
-            // teleported south of the maze (a solo goes under first), then onto its first row on m + 1: NPC Contact
-            val south = { stallers.forEachIndexed { k, p -> botOf(p)?.let { go(it, at(SoteRules.MAZE_X + 4 + k, SoteRules.MAZE_A - 1)) } } }
-            if (team == 1) {
-                stallers.forEach { p -> botOf(p)?.let { go(it, at(SoteRules.UNDER_X, SoteRules.UNDER_Y)) } }
-                at(m) { south() }
-            } else south()
+            val crossers = engine.ps.filter { !it.dead && it !== under }.mapNotNull { botOf(it) }
+            val start = at(SoteRules.CROSS_X, SoteRules.CROSS_START_Y)
+            at(t + SoteRules.TELEPORT_AFTER) {
+                under?.let { u -> botOf(u)?.let { go(it, at(SoteRules.UNDER_X, SoteRules.UNDER_Y)) } }
+                // a solo goes under first, then crosses
+                for (bot in crossers) go(bot, if (team == 1) at(SoteRules.UNDER_X, SoteRules.UNDER_Y) else start)
+            }
+            if (team == 1) at(m - 3) { for (bot in crossers) go(bot, start) }
+            at(m - 1) { for (bot in crossers) clicks.walk(bot, at(SoteRules.CROSS_X, SoteRules.CROSS_TOP_Y)) }
             at(m + 1) {
-                stallers.forEachIndexed { k, p ->
-                    val bot = botOf(p) ?: return@forEachIndexed
-                    go(bot, at(SoteRules.MAZE_X + 4 + k, SoteRules.MAZE_A))
+                for (bot in crossers) {
                     bot.anim(RSCM.getReverseMapping(RSCMType.SEQ, SoteRules.CONTACT_SEQ))
                     bot.spotanim(RSCM.getReverseMapping(RSCMType.SPOTANIM, SoteRules.CONTACT_GFX), height = 96)
                 }
@@ -176,7 +194,7 @@ class SoteLiveRoom(
         }
 
         override fun stallOut(t: Int, p: SoteEngine.P) {
-            botOf(p)?.let { go(it, stackTile(p.i)) }
+            botOf(p)?.let { clicks.walk(it, stackTile(p.i)) }
         }
 
         override fun dead(t: Int) {

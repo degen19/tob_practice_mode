@@ -18,5 +18,13 @@ team skips both mazes. The sim's damage per scythe swing matches ordinary Blert 
 41.0, trio 41.7 vs 40.8); the top 50 are each team's luckiest runs and sit in the sim's fastest ~10%, so `top50` picks
 raids from that end rather than making the bots hit harder.
 
+**Live room (Blert):** every scale flinches (prefire t5, P1 maul t10, scythes on her attack ticks); the west bot drops
+a shark at the top of column 1 on t12-13; at a maze the crossers are teleported to column 1 south of the maze on proc
++3, run up it two tiles a tick from the tick before the stall, cast NPC Contact on row 3 and walk back off the top.
+
+**Open question for the owner:** on Blert 10-18% of her attacks are melees even on flinching teams (adjacent players:
+~20% when they swung on her tick, ~50% otherwise); the sim only melees a player who swung the tick before (~1%), so
+its bots cast more vengs than Blert's (duo 8.5 vs 4.6 a raid, 5s 10.9 vs 6.7).
+
 **Next:** the bots' look per scale (kits still show void for ranged; the sim's numbers are Masori), running the maze,
 and where the plan itself can beat the default (the sim's solver finds solos ~2% faster).

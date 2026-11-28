@@ -10,11 +10,11 @@ import org.rsmod.content.raids.tob.bloat.maiden.SimRng
 /**
  * The sim's Sotetseg (verzikSim engine/sote.js runSote), line for line, so the same seed gives the same raid, for every
  * scale: prefires, horns and mauls, ZCBs held for the mauls (and carried past a maze), backups, late-maul swaps, her
- * orbs (prayed, or taken for veng) and their splits, her melee off the flinch (3-5 man; duos and solos don't flinch),
- * the death ball (shared, or tick-eaten), both mazes skipped - stalled on a phoenix necklace with one player under,
- * shark skips, redemption skips with a locator orb (solos skip both that way after going under first) - Heal Other,
- * thralls, spec regen, Lightbearer, surges, the duos' backup maul and the solos' maul until one lands, and the P3
- * halberd last hit. Running the maze isn't here. Runs a tick at a time ([tick]); [Events] says what happens.
+ * orbs (prayed, or taken for veng) and their splits, her melee off the flinch (every scale keeps it), the death ball
+ * (shared, or tick-eaten), both mazes skipped - stalled on a phoenix necklace with one player under, shark skips,
+ * redemption skips with a locator orb (solos skip both that way after going under first) - Heal Other, thralls, spec
+ * regen, Lightbearer, surges, the duos' backup maul and the solos' maul until one lands, and the P3 halberd last hit.
+ * Running the maze isn't here. Runs a tick at a time ([tick]); [Events] says what happens.
  */
 class SoteEngine(
     plans: List<SotePlan>,
@@ -178,10 +178,10 @@ class SoteEngine(
             while (t < after) t += ATTACK_EVERY
             p.next = t
             val s0 = p.specs[0]
-            if (team > 2 && pf != null && after > 0 && after < t && (s0.backup || isDef(s0.spec))) {
+            if (pf != null && after > 0 && after < t && (s0.backup || isDef(s0.spec))) {
                 p.next = after
                 p.entry = if (s0.backup) "backup" else "maul"
-            } else if (team > 2 && pf != null && after > 0 && after < t && s0.spec == "claws") {
+            } else if (pf != null && after > 0 && after < t && s0.spec == "claws") {
                 p.next = after
                 p.entry = "claw"
             }
@@ -256,11 +256,6 @@ class SoteEngine(
     private fun instanceOf(t: Int) = (t + 1) % 4
 
     private fun isHerTick(x: Int) = x >= nextAttack && (x - nextAttack) % ATTACK_EVERY == 0
-
-    /** Duos and solos don't flinch, unless a melee through prayer could kill them. */
-    private fun flinches(p: P) = team > 2 || p.hp <= floor(MELEE_MAX * 0.6).toInt()
-
-    private fun nextAfter(t: Int, speed: Int, p: P) = if (team > 2) t + speed else if (flinches(p) && isHerTick(t + speed + 1)) t + speed + 1 else t + speed
 
     private fun sharkNext(p: P) = mazes.size in p.sharkMazes
 
@@ -345,7 +340,7 @@ class SoteEngine(
             if (p.redeemNow) {
                 if (p.hp > REDEMPTION_HP) L("t$t ${p.name} wasn't down to $REDEMPTION_HP HP at the proc (${p.hp}) - orbs down late")
                 p.hp = REDEMPTION_HP
-                p.next = m + 11
+                p.next = if (team == 1) m + 10 else m + 11
                 continue
             }
             if (p.sharks > 0 && stallSkip(p.hp, p.pnecks > 0, stallers.size).second == null) {
@@ -1027,13 +1022,13 @@ class SoteEngine(
     private fun pushBack(tgt: P, t: Int) {
         if (tgt.next!! < t + 3) {
             tgt.next = t + 3
-            if (flinches(tgt) && isHerTick(tgt.next!! + 1)) tgt.next = tgt.next!! + 1
+            if (isHerTick(tgt.next!! + 1)) tgt.next = tgt.next!! + 1
         }
     }
 
     /**
      * The death ball lands: shared if everyone can take their share (3-5 man), else the target tick-eats it - a Guthix
-     * rest (to 5, no delay), purple sweets in a solo (1-3), a shark (to 20, no attack for 3 ticks), or tick-healed by
+     * rest (to 5, no delay), purple sweets in a solo (1-3, no delay), a shark (to 20, no attack for 3 ticks), or tick-healed by
      * the lowest-HP teammate (a 3-tick stall).
      */
     private fun landBall(t: Int, b: Ball) {
@@ -1059,7 +1054,6 @@ class SoteEngine(
             val old = tgt.hp
             tgt.hp = rng.randint(1, 3)
             tgt.eatReady = t + 3
-            pushBack(tgt, t)
             L("t$t death ball on ${tgt.name} ($full): tick-eats it with purple sweets, $old -> 0 -> ${tgt.hp}")
         } else if (tgt.sharks > 0) {
             val old = tgt.hp
@@ -1115,7 +1109,7 @@ class SoteEngine(
                 return
             }
         }
-        if (team > 2 && p.entry == null && act == "scythe" && isHerTick(t + 1)) {
+        if (p.entry == null && act == "scythe" && isHerTick(t + 1)) {
             p.next = t + 1
             L("t$t ${p.name} drops a tick (back on her attack ticks)")
             return
@@ -1131,7 +1125,7 @@ class SoteEngine(
                 }
                 hits += H(t + ZCB_DELAY, p, 0, "ZCB spec", "zcb")
                 L("t$t ${p.name} ZCB spec (${p.spec}% left)")
-                p.next = nextAfter(t, 5, p)
+                p.next = t + 5
                 p.holding = "zcb"
                 events.attack(t, p, "zcb", t + ZCB_DELAY)
             }
@@ -1149,7 +1143,7 @@ class SoteEngine(
                 hits += H(t + 1, p, d, "${if (bgs) "BGS" else "Elder maul"} spec ${if (hit) d.toString() else "misses"}", "maul", hit, bgs)
                 L("t$t ${p.name} ${if (bgs) "BGS" else "Elder maul"} spec${if (hornOn) " (horned)" else ""} (${p.spec}% left)")
                 p.lastMelee = t
-                p.next = nextAfter(t, 6, p)
+                p.next = t + 6
                 p.holding = act
                 events.attack(t, p, act, t + 1)
             }
@@ -1159,7 +1153,7 @@ class SoteEngine(
                 hits += H(t + 1, p, parts[0] + parts[1], "halberd spec ${parts.joinToString("/")}", "halb")
                 L("t$t ${p.name} Crystal halberd spec - last hit (${p.spec}% left)")
                 p.lastMelee = t
-                p.next = nextAfter(t, 7, p)
+                p.next = t + 7
                 p.holding = "halb"
                 events.attack(t, p, "halb", t + 1)
             }
@@ -1174,7 +1168,7 @@ class SoteEngine(
                 val parts = clawSpec(p, defLvl, hornOn)
                 hits += H(t + 1, p, parts.sum(), "claw spec ${parts.joinToString("/")}", "claw")
                 p.lastMelee = t
-                p.next = nextAfter(t, 4, p)
+                p.next = t + 4
                 p.holding = "claw"
                 events.attack(t, p, "claw", t + 1)
             }
@@ -1185,7 +1179,7 @@ class SoteEngine(
                 val parts = listOf(mx, mx / 2, mx / 4).mapIndexed { j, m -> if ((hornOn && j == 0) || rng.random() < ch) max(1, rng.randint(0, m)) else 0 }
                 hits += H(t + 1, p, parts.sum(), "scythe ${parts.joinToString("/")}", null)
                 p.lastMelee = t
-                p.next = nextAfter(t, 5, p)
+                p.next = t + 5
                 p.holding = "scythe"
                 events.attack(t, p, "scythe", t + 1)
             }
