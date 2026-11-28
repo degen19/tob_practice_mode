@@ -28,6 +28,8 @@ import org.rsmod.map.CoordGrid
  *   by how many opening mauls landed (read off his Defence), backups in turn down to the Defence target, ZCBs held for
  *   the screech, claws once no Defence spec is to come, the halberd for his last hitpoints, Lightbearer cycles.
  * - The acid: see [place] - the rag dance, under him for a solo.
+ * - The screech: a scythe due on his last tick before it tick fixes (the plan's claw spec or scratch, else a tick lost,
+ *   two a quarter of the time - the sim's); then each bot swings from the quarter that's safe when it lands ([stare]).
  */
 class XarpusCrew(
     override val room: XarpusSolo,
@@ -44,6 +46,7 @@ class XarpusCrew(
         Halberd(NyloLoadout.HALBERD, 1, 14, 300),
         Zcb(NyloLoadout.ZCB, 1, 58, 750),
         Ralos(NyloLoadout.RALOS, 1, 62, 500),
+        Scratch(NyloLoadout.CLAWS, 1, 19),
         ;
 
         val lands: Int
@@ -71,6 +74,7 @@ class XarpusCrew(
         var attacks = 0
         var lbLeft = src.lbCycles
         var lastSpec = -1
+        var holdTill = -1
         var thrallAt = -THRALL_COOLDOWN
         var cover: XarpusSolo.Exhumed? = null
 
@@ -289,8 +293,8 @@ class XarpusCrew(
         val here = here(b)
         val home = home(b)
         val due = t + max(0, b.player.actionDelay - clock.cycle)
-        val stared = room.phase == 3 && room.quarter(here) == room.gaze
-        if (due == t && !stared) return false
+        if (room.phase == 3) return stare(b, here, due)
+        if (due == t) return false
         val to =
             when {
                 room.phase == 2 && room.nextSpit == t -> if (due == t + 1) home else dump(b, home)
@@ -302,6 +306,33 @@ class XarpusCrew(
     }
 
     /**
+     * Phase 3: he never turns back to the quarter he's staring at, so a swing that lands after his next turn is safe
+     * from that quarter - and one before it from any other. Each bot stands, beside him, in the quarter its next swing
+     * is safe from (walking there between swings; standing in his stare costs nothing, only hitting does), on a clean
+     * tile - the ones beside the middles the rag dance left clean - so a turn never costs a swing. A crew tick's swing is judged on the stare after the room's step before it: it lands after
+     * the turn when it's past the turn's tick.
+     */
+    private fun stare(b: Bot, here: CoordGrid, due: Int): Boolean {
+        val afterTurn = due > room.nextTurnAt
+        val safe = { c: CoordGrid -> (room.quarter(c) == room.gaze) == afterTurn }
+        if (!safe(b.home) || b.home in room.pooled) {
+            val homes = crew.filter { it !== b }.map { it.home }.toSet()
+            RING.map { tile(it) }.filter { safe(it) }
+                .minWithOrNull(compareBy<CoordGrid> { it in room.pooled }.thenBy { it in homes }.thenBy { cheb(here, it) }.thenBy { abs(it.x - here.x) + abs(it.z - here.z) })
+                ?.let {
+                    trace { "t$t ${b.player.username} for its t$due swing (turn t${room.nextTurnAt}): ${it.x - X},${it.z - Y}" }
+                    b.home = it
+                }
+        }
+        if (here == b.home) return false
+        if (due == t && safe(here) && besideHim(here)) return false
+        walk(b, b.home)
+        return true
+    }
+
+    private fun besideHim(c: CoordGrid): Boolean = RING.any { tile(it) == c }
+
+    /**
      * Where a bot waits between swings: the tile a step out from home, or beside that one if a random bounce (duos,
      * solos) has put acid on it - all a step from home, so the swing still goes from there.
      */
@@ -311,20 +342,8 @@ class XarpusCrew(
         return REST_SHIFTS.map { l -> CoordGrid(out.x + l * n[1], out.z + l * n[0], out.level) }.firstOrNull { it !in room.pooled } ?: out
     }
 
-    /** Its home tile: its own for phase 2 (it rags it); in phase 3 moved round the ring out of his stare. */
-    private fun home(b: Bot): CoordGrid {
-        val cur = b.home
-        if (room.phase != 3 || room.quarter(cur) != room.gaze) return cur
-        val homes = crew.filter { it !== b }.map { it.home }.toSet()
-        // out of his stare first (a spit-back is worth far more than a tick of acid), then clean, then near
-        val next = RING.map { tile(it) }
-            .filter { it !in homes && room.quarter(it) != room.gaze }
-            .minWithOrNull(compareBy<CoordGrid> { it in room.pooled }.thenBy { cheb(cur, it) }.thenBy { abs(it.x - cur.x) + abs(it.z - cur.z) })
-            ?: return cur
-        trace { "t$t ${b.player.username} home ${cur.x - X},${cur.z - Y} -> ${next.x - X},${next.z - Y}" }
-        b.home = next
-        return next
-    }
+    /** Its home tile: its own for phase 2 (it rags it); phase 3 moves it ([stare]). */
+    private fun home(b: Bot): CoordGrid = b.home
 
     private fun dump(b: Bot, home: CoordGrid): CoordGrid {
         val n = outward(home)
@@ -351,8 +370,23 @@ class XarpusCrew(
     /* ---- the swings */
 
     private fun swing(b: Bot) {
-        if (!b.ready || t <= room.riseAt) return
-        val (move, role) = next(b)
+        if (!b.ready || t <= room.riseAt || t < b.holdTill) return
+        var (move, role) = next(b)
+        if (move == Move.Scythe && room.screechDue() == t) {
+            // the tick fix: a scythe thrown on his last tick before the screech would land on his stare
+            move =
+                when {
+                    b.src.fix == "claw" && b.spec >= Move.Claws.cost -> Move.Claws
+                    b.src.fix == "claw" || b.src.fix == "scratch" -> Move.Scratch
+                    else -> {
+                        b.holdTill = t + if (room.rand(LOSE_TWO_IN) == 0) 2 else 1
+                        trace { "t$t ${b.player.username} tick fixes: waits till t${b.holdTill}" }
+                        return
+                    }
+                }
+            role = ""
+            trace { "t$t ${b.player.username} tick fixes with $move" }
+        }
         val p = b.player
         for ((slot, obj) in move.set.worn) {
             val id = obj.asRSCM(RSCMType.OBJ)
@@ -534,6 +568,9 @@ class XarpusCrew(
         const val THRALL_COOLDOWN = 17
         const val THRALL_GAP = 2
         val START = CoordGrid(3170, 4380, 1)
+
+        /** The tick fix by waiting: 2 ticks lost one time in this many, else 1 (the sim's). */
+        const val LOSE_TWO_IN = 4
         const val SPEC_UNIT = 10
         const val MAX_SPEC = 1000
         const val MELEE_LANDS = 1
