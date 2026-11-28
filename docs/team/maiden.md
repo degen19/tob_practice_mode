@@ -32,3 +32,9 @@
   won't hit.
 - **The mfrz's tick in 4s:** check it against Blert's top 4s.
 - **The mage walking in** for a freeze that's then cancelled: the root cause of most close tbows.
+
+**From the Admin (d9e87e8, held):** the 4s Dinh's line-up was slower in the Admin's interleaved A/B, 48 4s rooms a
+side, same machine: main 119.0 mean, 2.31 leaks a room; d9e87e8 (merged on main) 121.8, 2.94. Slower in 3 of 4
+rounds. Find what the line-up costs (the walk to the tile on the cooldown, or the S1 scythe it skips) and push again.
+Note: rebase on main first; your branch predates the lobby's cache entries (`enum.tob_lobby_edges`) and won't boot on
+a cache built from main.
